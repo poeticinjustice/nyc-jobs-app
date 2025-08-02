@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: nyc-jobs-app
+    env: node
+    buildCommand: npm run install-all && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: NYC_JOBS_API_URL
+        value: https://data.cityofnewyork.us/resource/kpav-sd4t.json
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 100
