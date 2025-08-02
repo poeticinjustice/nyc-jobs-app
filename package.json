@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "MERN stack application for NYC job listings with user authentication and notes",
   "main": "server/index.js",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "scripts": {
     "start": "node server/index.js",
     "server": "nodemon server/index.js",
