@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { getNotes, deleteNote, setFilters } from '../store/slices/notesSlice';
-import { HiPlus, HiPencil, HiTrash, HiEye } from 'react-icons/hi';
+import {
+  HiPlus,
+  HiPencil,
+  HiTrash,
+  HiEye,
+  HiExternalLink,
+} from 'react-icons/hi';
+import { Link } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 
@@ -17,6 +24,7 @@ const Notes = () => {
   });
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [viewingNote, setViewingNote] = useState(null);
 
   useEffect(() => {
     dispatch(getNotes(filters));
@@ -50,9 +58,15 @@ const Notes = () => {
     setShowNoteModal(true);
   };
 
+  const handleViewNote = (note) => {
+    setViewingNote(note);
+    setShowNoteModal(true);
+  };
+
   const handleCloseModal = () => {
     setShowNoteModal(false);
     setEditingNote(null);
+    setViewingNote(null);
   };
 
   const getPriorityColor = (priority) => {
@@ -233,7 +247,15 @@ const Notes = () => {
 
                   <div className='flex items-center space-x-4 text-sm text-gray-500'>
                     <span>Created: {formatDate(note.createdAt)}</span>
-                    {note.job && <span>Job: {note.job.businessTitle}</span>}
+                    {note.job && (
+                      <Link
+                        to={`/job/${note.job.jobId}`}
+                        className='text-primary-600 hover:text-primary-700 flex items-center'
+                      >
+                        <HiExternalLink className='h-4 w-4 mr-1' />
+                        {note.job.businessTitle}
+                      </Link>
+                    )}
                   </div>
 
                   {note.tags && note.tags.length > 0 && (
@@ -252,12 +274,14 @@ const Notes = () => {
 
                 <div className='flex space-x-2 ml-4'>
                   <button
+                    onClick={() => handleViewNote(note)}
                     className='p-2 text-gray-400 hover:text-primary-600 transition-colors'
                     title='View note'
                   >
                     <HiEye className='h-5 w-5' />
                   </button>
                   <button
+                    onClick={() => handleEditNote(note)}
                     className='p-2 text-gray-400 hover:text-blue-600 transition-colors'
                     title='Edit note'
                   >
@@ -294,7 +318,8 @@ const Notes = () => {
       <NoteModal
         isOpen={showNoteModal}
         onClose={handleCloseModal}
-        note={editingNote}
+        note={editingNote || viewingNote}
+        isViewMode={!!viewingNote}
       />
     </div>
   );
