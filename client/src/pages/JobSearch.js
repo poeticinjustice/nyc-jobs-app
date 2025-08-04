@@ -247,9 +247,9 @@ const JobSearch = () => {
         ) : searchResults.length > 0 ? (
           <>
             <div className='space-y-4'>
-              {searchResults.map((job) => (
+              {searchResults.map((job, index) => (
                 <div
-                  key={job.job_id}
+                  key={job.job_id || job.jobId || `job-${index}`}
                   className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
                 >
                   <div className='flex justify-between items-start'>
@@ -278,7 +278,8 @@ const JobSearch = () => {
                         </div>
                         <div>
                           <p>
-                            <strong>Posted:</strong> {formatDate(job.post_date)}
+                            <strong>Posted:</strong>{' '}
+                            {formatDate(job.posting_date)}
                           </p>
                           <p>
                             <strong>Type:</strong>{' '}

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getJobDetails, saveJob, unsaveJob } from '../store/slices/jobsSlice';
@@ -8,14 +8,17 @@ import {
   HiLocationMarker,
   HiCalendar,
   HiCurrencyDollar,
+  HiPlus,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import NoteModal from '../components/Notes/NoteModal';
 
 const JobDetails = () => {
   const { jobId } = useParams();
   const dispatch = useDispatch();
   const { currentJob, loading, error } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
+  const [showNoteModal, setShowNoteModal] = useState(false);
 
   useEffect(() => {
     if (jobId) {
@@ -109,20 +112,29 @@ const JobDetails = () => {
           </div>
 
           {isAuthenticated && (
-            <button
-              onClick={handleSaveToggle}
-              className={`p-3 rounded-lg border transition-colors ${
-                currentJob.isSaved
-                  ? 'bg-primary-50 border-primary-200 text-primary-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {currentJob.isSaved ? (
-                <HiBookmarkAlt className='h-6 w-6' />
-              ) : (
-                <HiBookmark className='h-6 w-6' />
-              )}
-            </button>
+            <div className='flex space-x-2'>
+              <button
+                onClick={() => setShowNoteModal(true)}
+                className='p-3 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors'
+                title='Add note for this job'
+              >
+                <HiPlus className='h-6 w-6' />
+              </button>
+              <button
+                onClick={handleSaveToggle}
+                className={`p-3 rounded-lg border transition-colors ${
+                  currentJob.isSaved
+                    ? 'bg-primary-50 border-primary-200 text-primary-700'
+                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {currentJob.isSaved ? (
+                  <HiBookmarkAlt className='h-6 w-6' />
+                ) : (
+                  <HiBookmark className='h-6 w-6' />
+                )}
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -289,6 +301,14 @@ const JobDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Note Modal */}
+      <NoteModal
+        isOpen={showNoteModal}
+        onClose={() => setShowNoteModal(false)}
+        jobId={currentJob?.jobId}
+        jobTitle={currentJob?.businessTitle}
+      />
     </div>
   );
 };

@@ -5,7 +5,146 @@ const Job = require('../models/Job');
 const User = require('../models/User');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 
+// HTML entity decoder
+const decodeHtmlEntities = (text) => {
+  const entities = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'",
+    '&nbsp;': ' ',
+    '&mdash;': '—',
+    '&ndash;': '–',
+    '&hellip;': '…',
+    '&ldquo;': '"',
+    '&rdquo;': '"',
+    '&lsquo;': "'",
+    '&rsquo;': "'",
+    '&bull;': '•',
+    '&bullet;': '•',
+  };
+
+  return text.replace(/&[a-zA-Z0-9#]+;/g, (match) => {
+    return entities[match] || match;
+  });
+};
+
 const router = express.Router();
+
+// Helper function to clean and decode text
+const cleanText = (text) => {
+  if (!text) return text;
+
+  // First decode HTML entities
+  let cleaned = decodeHtmlEntities(text);
+
+  // Fix UTF-8 encoding issues (multiple variations)
+  cleaned = cleaned
+    // Fix apostrophes and quotes (multiple variations)
+    .replace(/â€™|â€™|â€™|â€™/g, "'") // Smart apostrophes
+    .replace(/â€œ|â€œ|â€œ|â€œ/g, '"') // Smart opening quotes
+    .replace(/â€|â€|â€|â€/g, '"') // Smart closing quotes
+    .replace(/â€˜|â€˜|â€˜|â€˜/g, "'") // Smart single quotes
+
+    // Fix dashes and other punctuation
+    .replace(/â€"|â€"|â€"|â€"/g, '–') // En dashes
+    .replace(/â€"|â€"|â€"|â€"/g, '—') // Em dashes
+    .replace(/â€¦|â€¦|â€¦|â€¦/g, '…') // Ellipsis
+
+    // Fix common encoding issues (individual patterns)
+    .replace(/â€™/g, "'") // Another apostrophe variation
+    .replace(/â€œ/g, '"') // Another quote variation
+    .replace(/â€/g, '"') // Another quote variation
+    .replace(/â€˜/g, "'") // Another quote variation
+
+    // Fix specific patterns that might be missed
+    .replace(/â€™/g, "'") // Yet another apostrophe variation
+    .replace(/â€œ/g, '"') // Yet another quote variation
+    .replace(/â€/g, '"') // Yet another quote variation
+    .replace(/â€˜/g, "'"); // Yet another quote variation
+
+  // Handle specific problematic patterns
+  cleaned = cleaned
+    .replace(/attorneyâ€™s/g, "attorney's")
+    .replace(/â€™s/g, "'s") // Fix possessive forms
+    .replace(/â€™t/g, "'t") // Fix contractions
+    .replace(/â€™re/g, "'re") // Fix contractions
+    .replace(/â€™ll/g, "'ll") // Fix contractions
+    .replace(/â€™ve/g, "'ve") // Fix contractions
+    .replace(/â€™d/g, "'d") // Fix contractions
+    .replace(/â¢/g, '•') // Fix bullet points
+    .replace(/â€"|â€"/g, '–') // Fix en dashes
+    .replace(/â€"|â€"/g, '—') // Fix em dashes
+    .replace(/â€¦/g, '…') // Fix ellipsis
+    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes
+    .replace(/â€|â€/g, '"') // Fix smart quotes
+    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes
+    .replace(/â€™|â€™/g, "'") // Fix smart apostrophes
+    .replace(/â€¢/g, '•') // Fix bullet points (alternative encoding)
+    .replace(/â€"|â€"/g, '–') // Fix en dashes (alternative encoding)
+    .replace(/â€"|â€"/g, '—') // Fix em dashes (alternative encoding)
+    .replace(/â€¦/g, '…') // Fix ellipsis (alternative encoding)
+    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes (alternative encoding)
+    .replace(/â€|â€/g, '"') // Fix smart quotes (alternative encoding)
+    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes (alternative encoding)
+    .replace(/â€™|â€™/g, "'") // Fix smart apostrophes (alternative encoding)
+    .replace(/â€¢/g, '•') // Fix bullet points (another variation)
+    .replace(/â€"|â€"/g, '–') // Fix en dashes (another variation)
+    .replace(/â€"|â€"/g, '—') // Fix em dashes (another variation)
+    .replace(/â€¦/g, '…') // Fix ellipsis (another variation)
+    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes (another variation)
+    .replace(/â€|â€/g, '"') // Fix smart quotes (another variation)
+    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes (another variation)
+    .replace(/â€™|â€™/g, "'") // Fix smart apostrophes (another variation)
+    .replace(/â€¢/g, '•') // Fix bullet points (yet another variation)
+    .replace(/â€"|â€"/g, '–') // Fix en dashes (yet another variation)
+    .replace(/â€"|â€"/g, '—') // Fix em dashes (yet another variation)
+    .replace(/â€¦/g, '…') // Fix ellipsis (yet another variation)
+    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes (yet another variation)
+    .replace(/â€|â€/g, '"') // Fix smart quotes (yet another variation)
+    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes (yet another variation)
+    .replace(/â€™|â€™/g, "'"); // Fix smart apostrophes (yet another variation)
+
+  return cleaned;
+};
+
+// Helper function to format job description with proper line breaks and bullet points
+const formatJobDescription = (text) => {
+  if (!text) return text;
+
+  // First clean the text
+  let formatted = cleanText(text);
+
+  // Replace bullet point patterns with proper formatting
+  formatted = formatted
+    // Replace bullet points with proper formatting (multiple variations)
+    .replace(/â¢/g, '\n- ')
+    .replace(/•/g, '\n- ')
+    .replace(/â€¢/g, '\n- ')
+    .replace(/â€¢/g, '\n- ')
+    .replace(/â¢/g, '\n- ')
+    .replace(/â€¢/g, '\n- ')
+    .replace(/â€¢/g, '\n- ')
+    .replace(/â€¢/g, '\n- ')
+
+    // Add line breaks for common patterns
+    .replace(/(\d+ Hours\/)/g, '\n$1')
+    .replace(/(Work Location:)/g, '\n\n$1')
+    .replace(/(Additional Information:)/g, '\n\n$1')
+    .replace(/(To Apply:)/g, '\n\n$1')
+    .replace(/(Hours\/Shift:)/g, '\n\n$1')
+
+    // Clean up multiple line breaks
+    .replace(/\n\n\n+/g, '\n\n')
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+
+    // Trim whitespace
+    .trim();
+
+  return formatted;
+};
 
 // In-memory cache for jobs
 let jobsCache = null;
@@ -245,7 +384,7 @@ router.get(
         savedJobIds = savedJobs.map((job) => job.jobId);
       }
 
-      // Add saved status to each job
+      // Add saved status to each job (keep original structure for search results)
       const jobsWithSavedStatus = paginatedJobs.map((job) => ({
         ...job,
         isSaved: savedJobIds.includes(job.job_id),
@@ -343,37 +482,37 @@ router.get('/:id', optionalAuth, async (req, res) => {
       isSaved = !!savedJob;
     }
 
-    // Transform the job data to match frontend expectations
+    // Transform the job data to match frontend expectations with cleaned text
     const transformedJob = {
       jobId: nycJob.job_id,
-      businessTitle: nycJob.business_title,
-      civilServiceTitle: nycJob.civil_service_title,
+      businessTitle: cleanText(nycJob.business_title),
+      civilServiceTitle: cleanText(nycJob.civil_service_title),
       titleCodeNo: nycJob.title_code_no,
       level: nycJob.level,
-      jobCategory: nycJob.job_category,
+      jobCategory: cleanText(nycJob.job_category),
       fullTimePartTimeIndicator: nycJob.full_time_part_time_indicator,
       salaryRangeFrom: nycJob.salary_range_from,
       salaryRangeTo: nycJob.salary_range_to,
       salaryFrequency: nycJob.salary_frequency,
-      workLocation: nycJob.work_location,
-      divisionWorkUnit: nycJob.division_work_unit,
-      jobDescription: nycJob.job_description,
-      minimumQualRequirements: nycJob.minimum_qual_requirements,
-      preferredSkills: nycJob.preferred_skills,
-      additionalInformation: nycJob.additional_information,
-      toApply: nycJob.to_apply,
-      hoursShift: nycJob.hours_shift,
-      workLocation1: nycJob.work_location_1,
-      residencyRequirement: nycJob.residency_requirement,
+      workLocation: cleanText(nycJob.work_location),
+      divisionWorkUnit: cleanText(nycJob.division_work_unit),
+      jobDescription: formatJobDescription(nycJob.job_description),
+      minimumQualRequirements: cleanText(nycJob.minimum_qual_requirements),
+      preferredSkills: cleanText(nycJob.preferred_skills),
+      additionalInformation: cleanText(nycJob.additional_information),
+      toApply: cleanText(nycJob.to_apply),
+      hoursShift: cleanText(nycJob.hours_shift),
+      workLocation1: cleanText(nycJob.work_location_1),
+      residencyRequirement: cleanText(nycJob.residency_requirement),
       postDate: nycJob.posting_date,
       postingUpdated: nycJob.posting_updated,
       processDate: nycJob.process_date,
       postUntil: nycJob.post_until,
-      agency: nycJob.agency,
+      agency: cleanText(nycJob.agency),
       postingType: nycJob.posting_type,
       numberOfPositions: nycJob.number_of_positions,
-      titleClassification: nycJob.title_classification,
-      careerLevel: nycJob.career_level,
+      titleClassification: cleanText(nycJob.title_classification),
+      careerLevel: cleanText(nycJob.career_level),
       isSaved: isSaved,
     };
 
@@ -406,34 +545,34 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 
       job = new Job({
         jobId: nycJob.job_id,
-        businessTitle: nycJob.business_title,
-        civilServiceTitle: nycJob.civil_service_title,
+        businessTitle: cleanText(nycJob.business_title),
+        civilServiceTitle: cleanText(nycJob.civil_service_title),
         titleCodeNo: nycJob.title_code_no,
         level: nycJob.level,
-        jobCategory: nycJob.job_category,
+        jobCategory: cleanText(nycJob.job_category),
         fullTimePartTimeIndicator: nycJob.full_time_part_time_indicator,
         salaryRangeFrom: nycJob.salary_range_from,
         salaryRangeTo: nycJob.salary_range_to,
         salaryFrequency: nycJob.salary_frequency,
-        workLocation: nycJob.work_location,
-        divisionWorkUnit: nycJob.division_work_unit,
-        jobDescription: nycJob.job_description,
-        minimumQualRequirements: nycJob.minimum_qual_requirements,
-        preferredSkills: nycJob.preferred_skills,
-        additionalInformation: nycJob.additional_information,
-        toApply: nycJob.to_apply,
-        hoursShift: nycJob.hours_shift,
-        workLocation1: nycJob.work_location_1,
-        residencyRequirement: nycJob.residency_requirement,
+        workLocation: cleanText(nycJob.work_location),
+        divisionWorkUnit: cleanText(nycJob.division_work_unit),
+        jobDescription: formatJobDescription(nycJob.job_description),
+        minimumQualRequirements: cleanText(nycJob.minimum_qual_requirements),
+        preferredSkills: cleanText(nycJob.preferred_skills),
+        additionalInformation: cleanText(nycJob.additional_information),
+        toApply: cleanText(nycJob.to_apply),
+        hoursShift: cleanText(nycJob.hours_shift),
+        workLocation1: cleanText(nycJob.work_location_1),
+        residencyRequirement: cleanText(nycJob.residency_requirement),
         postDate: nycJob.posting_date,
         postingUpdated: nycJob.posting_updated,
         processDate: nycJob.process_date,
         postUntil: nycJob.post_until,
-        agency: nycJob.agency,
+        agency: cleanText(nycJob.agency),
         postingType: nycJob.posting_type,
         numberOfPositions: nycJob.number_of_positions,
-        titleClassification: nycJob.title_classification,
-        careerLevel: nycJob.career_level,
+        titleClassification: cleanText(nycJob.title_classification),
+        careerLevel: cleanText(nycJob.career_level),
       });
     }
 

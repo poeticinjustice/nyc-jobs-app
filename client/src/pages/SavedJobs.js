@@ -1,15 +1,18 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { getSavedJobs, unsaveJob } from '../store/slices/jobsSlice';
-import { HiBookmarkAlt, HiTrash, HiEye } from 'react-icons/hi';
+import { HiBookmarkAlt, HiTrash, HiEye, HiPlus } from 'react-icons/hi';
 import { Link, useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import NoteModal from '../components/Notes/NoteModal';
 
 const SavedJobs = () => {
   const dispatch = useDispatch();
   const { savedJobs, loading, error } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const navigate = useNavigate();
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -19,6 +22,11 @@ const SavedJobs = () => {
 
   const handleUnsaveJob = (jobId) => {
     dispatch(unsaveJob(jobId));
+  };
+
+  const handleAddNote = (job) => {
+    setSelectedJob(job);
+    setShowNoteModal(true);
   };
 
   const formatSalary = (from, to, frequency) => {
@@ -128,6 +136,13 @@ const SavedJobs = () => {
 
                 <div className='flex flex-col items-end space-y-2 ml-4'>
                   <div className='flex space-x-2'>
+                    <button
+                      onClick={() => handleAddNote(job)}
+                      className='p-2 text-gray-400 hover:text-blue-600 transition-colors'
+                      title='Add note for this job'
+                    >
+                      <HiPlus className='h-5 w-5' />
+                    </button>
                     <Link
                       to={`/job/${job.jobId}`}
                       className='p-2 text-gray-400 hover:text-primary-600 transition-colors'
@@ -174,6 +189,17 @@ const SavedJobs = () => {
           </Link>
         </div>
       )}
+
+      {/* Note Modal */}
+      <NoteModal
+        isOpen={showNoteModal}
+        onClose={() => {
+          setShowNoteModal(false);
+          setSelectedJob(null);
+        }}
+        jobId={selectedJob?.jobId}
+        jobTitle={selectedJob?.businessTitle}
+      />
     </div>
   );
 };

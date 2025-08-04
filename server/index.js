@@ -20,11 +20,15 @@ app.use(helmet());
 // Trust proxy for rate limiting (only trust localhost for development)
 app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : 'loopback');
 
-// Rate limiting
+// Rate limiting - more generous for development
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+  max:
+    parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) ||
+    (process.env.NODE_ENV === 'development' ? 1000 : 500), // 1000 for dev, 500 for prod
   message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 app.use(limiter);
 
@@ -39,9 +43,15 @@ app.use(
   })
 );
 
-// Body parsing middleware
+// Body parsing middleware with proper encoding
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Set proper content type and encoding headers
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
 
 // MongoDB connection
 mongoose
@@ -70,6 +80,17 @@ app.get('*', (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'NYC Jobs API is running' });
+});
+
+// Rate limit status endpoint
+app.get('/api/rate-limit-status', (req, res) => {
+  const rateLimitInfo = {
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+    maxRequests: process.env.NODE_ENV === 'development' ? 1000 : 500,
+    environment: process.env.NODE_ENV || 'development',
+    message: 'Check RateLimit-* headers in API responses for current usage',
+  };
+  res.json(rateLimitInfo);
 });
 
 // Error handling middleware

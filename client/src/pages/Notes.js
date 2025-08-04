@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { getNotes, deleteNote, setFilters } from '../store/slices/notesSlice';
 import { HiPlus, HiPencil, HiTrash, HiEye } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import NoteModal from '../components/Notes/NoteModal';
 
 const Notes = () => {
   const dispatch = useDispatch();
@@ -14,6 +15,8 @@ const Notes = () => {
     type: '',
     priority: '',
   });
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [editingNote, setEditingNote] = useState(null);
 
   useEffect(() => {
     dispatch(getNotes(filters));
@@ -35,6 +38,21 @@ const Notes = () => {
     if (window.confirm('Are you sure you want to delete this note?')) {
       dispatch(deleteNote(noteId));
     }
+  };
+
+  const handleAddNote = () => {
+    setEditingNote(null);
+    setShowNoteModal(true);
+  };
+
+  const handleEditNote = (note) => {
+    setEditingNote(note);
+    setShowNoteModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowNoteModal(false);
+    setEditingNote(null);
   };
 
   const getPriorityColor = (priority) => {
@@ -99,7 +117,10 @@ const Notes = () => {
               {notes.length} {notes.length === 1 ? 'note' : 'notes'}
             </p>
           </div>
-          <button className='btn btn-primary flex items-center'>
+          <button
+            onClick={handleAddNote}
+            className='btn btn-primary flex items-center'
+          >
             <HiPlus className='h-5 w-5 mr-2' />
             Add Note
           </button>
@@ -263,9 +284,18 @@ const Notes = () => {
           <p className='text-gray-600 mb-4'>
             Start creating notes for your job applications to stay organized.
           </p>
-          <button className='btn btn-primary'>Create Your First Note</button>
+          <button onClick={handleAddNote} className='btn btn-primary'>
+            Create Your First Note
+          </button>
         </div>
       )}
+
+      {/* Note Modal */}
+      <NoteModal
+        isOpen={showNoteModal}
+        onClose={handleCloseModal}
+        note={editingNote}
+      />
     </div>
   );
 };
