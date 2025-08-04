@@ -51,7 +51,7 @@ const NoteModal = ({
         .split(',')
         .map((tag) => tag.trim())
         .filter((tag) => tag),
-      job: jobId,
+      jobId: jobId,
     };
 
     try {

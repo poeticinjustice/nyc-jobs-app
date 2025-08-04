@@ -10,7 +10,7 @@ const noteSchema = new mongoose.Schema(
     job: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Job',
-      required: true,
+      required: false, // Allow null for general notes
     },
     title: {
       type: String,

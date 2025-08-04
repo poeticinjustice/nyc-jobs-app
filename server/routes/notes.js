@@ -13,7 +13,7 @@ router.post(
   '/',
   [
     authenticateToken,
-    body('jobId').notEmpty(),
+    body('jobId').optional(),
     body('title').trim().isLength({ min: 1, max: 200 }),
     body('content').trim().isLength({ min: 1, max: 5000 }),
     body('type')
@@ -43,16 +43,19 @@ router.post(
         tags = [],
       } = req.body;
 
-      // Verify job exists
-      const job = await Job.findOne({ jobId });
-      if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
+      // Verify job exists if jobId is provided
+      let job = null;
+      if (jobId) {
+        job = await Job.findOne({ jobId });
+        if (!job) {
+          return res.status(404).json({ message: 'Job not found' });
+        }
       }
 
       // Create note
       const note = new Note({
         user: req.user._id,
-        job: job._id,
+        job: job?._id, // Allow null for general notes
         title,
         content,
         type,
