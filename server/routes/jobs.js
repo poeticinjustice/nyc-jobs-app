@@ -4,6 +4,7 @@ const { body, validationResult, query } = require('express-validator');
 const Job = require('../models/Job');
 const User = require('../models/User');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
+const iconv = require('iconv-lite');
 
 // HTML entity decoder
 const decodeHtmlEntities = (text) => {
@@ -33,79 +34,41 @@ const decodeHtmlEntities = (text) => {
 
 const router = express.Router();
 
-// Helper function to clean and decode text
+// Helper function to clean and decode text efficiently
 const cleanText = (text) => {
   if (!text) return text;
 
   // First decode HTML entities
   let cleaned = decodeHtmlEntities(text);
 
-  // Fix UTF-8 encoding issues (multiple variations)
+  // Fix UTF-8 encoding issues using a more systematic approach
+  // The issue is often that text is being treated as Latin-1 when it should be UTF-8
+  try {
+    // Try to fix common UTF-8 encoding issues by re-encoding
+    const buffer = Buffer.from(cleaned, 'latin1');
+    cleaned = iconv.decode(buffer, 'utf8');
+  } catch (error) {
+    // If re-encoding fails, fall back to regex replacements
+    console.log('UTF-8 re-encoding failed, using fallback method');
+  }
+
+  // Apply targeted fixes for common patterns that might still persist
   cleaned = cleaned
-    // Fix apostrophes and quotes (multiple variations)
-    .replace(/â€™|â€™|â€™|â€™/g, "'") // Smart apostrophes
-    .replace(/â€œ|â€œ|â€œ|â€œ/g, '"') // Smart opening quotes
-    .replace(/â€|â€|â€|â€/g, '"') // Smart closing quotes
-    .replace(/â€˜|â€˜|â€˜|â€˜/g, "'") // Smart single quotes
-
-    // Fix dashes and other punctuation
-    .replace(/â€"|â€"|â€"|â€"/g, '–') // En dashes
-    .replace(/â€"|â€"|â€"|â€"/g, '—') // Em dashes
-    .replace(/â€¦|â€¦|â€¦|â€¦/g, '…') // Ellipsis
-
-    // Fix common encoding issues (individual patterns)
-    .replace(/â€™/g, "'") // Another apostrophe variation
-    .replace(/â€œ/g, '"') // Another quote variation
-    .replace(/â€/g, '"') // Another quote variation
-    .replace(/â€˜/g, "'") // Another quote variation
-
-    // Fix specific patterns that might be missed
-    .replace(/â€™/g, "'") // Yet another apostrophe variation
-    .replace(/â€œ/g, '"') // Yet another quote variation
-    .replace(/â€/g, '"') // Yet another quote variation
-    .replace(/â€˜/g, "'"); // Yet another quote variation
-
-  // Handle specific problematic patterns
-  cleaned = cleaned
-    .replace(/attorneyâ€™s/g, "attorney's")
-    .replace(/â€™s/g, "'s") // Fix possessive forms
-    .replace(/â€™t/g, "'t") // Fix contractions
-    .replace(/â€™re/g, "'re") // Fix contractions
-    .replace(/â€™ll/g, "'ll") // Fix contractions
-    .replace(/â€™ve/g, "'ve") // Fix contractions
-    .replace(/â€™d/g, "'d") // Fix contractions
-    .replace(/â¢/g, '•') // Fix bullet points
-    .replace(/â€"|â€"/g, '–') // Fix en dashes
-    .replace(/â€"|â€"/g, '—') // Fix em dashes
-    .replace(/â€¦/g, '…') // Fix ellipsis
-    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes
-    .replace(/â€|â€/g, '"') // Fix smart quotes
-    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes
-    .replace(/â€™|â€™/g, "'") // Fix smart apostrophes
-    .replace(/â€¢/g, '•') // Fix bullet points (alternative encoding)
-    .replace(/â€"|â€"/g, '–') // Fix en dashes (alternative encoding)
-    .replace(/â€"|â€"/g, '—') // Fix em dashes (alternative encoding)
-    .replace(/â€¦/g, '…') // Fix ellipsis (alternative encoding)
-    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes (alternative encoding)
-    .replace(/â€|â€/g, '"') // Fix smart quotes (alternative encoding)
-    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes (alternative encoding)
-    .replace(/â€™|â€™/g, "'") // Fix smart apostrophes (alternative encoding)
-    .replace(/â€¢/g, '•') // Fix bullet points (another variation)
-    .replace(/â€"|â€"/g, '–') // Fix en dashes (another variation)
-    .replace(/â€"|â€"/g, '—') // Fix em dashes (another variation)
-    .replace(/â€¦/g, '…') // Fix ellipsis (another variation)
-    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes (another variation)
-    .replace(/â€|â€/g, '"') // Fix smart quotes (another variation)
-    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes (another variation)
-    .replace(/â€™|â€™/g, "'") // Fix smart apostrophes (another variation)
-    .replace(/â€¢/g, '•') // Fix bullet points (yet another variation)
-    .replace(/â€"|â€"/g, '–') // Fix en dashes (yet another variation)
-    .replace(/â€"|â€"/g, '—') // Fix em dashes (yet another variation)
-    .replace(/â€¦/g, '…') // Fix ellipsis (yet another variation)
-    .replace(/â€œ|â€œ/g, '"') // Fix smart quotes (yet another variation)
-    .replace(/â€|â€/g, '"') // Fix smart quotes (yet another variation)
-    .replace(/â€˜|â€˜/g, "'") // Fix smart single quotes (yet another variation)
-    .replace(/â€™|â€™/g, "'"); // Fix smart apostrophes (yet another variation)
+    // Fix bullet points (most common issue)
+    .replace(/â¢|â€¢|â¢/g, '•')
+    
+    // Fix smart quotes and apostrophes
+    .replace(/â€™|â€™|â€™/g, "'")
+    .replace(/â€œ|â€œ|â€œ/g, '"')
+    .replace(/â€|â€|â€/g, '"')
+    .replace(/â€˜|â€˜|â€˜/g, "'")
+    
+    // Fix dashes
+    .replace(/â€"|â€"/g, '–')
+    .replace(/â€"|â€"/g, '—')
+    
+    // Fix ellipsis
+    .replace(/â€¦/g, '…');
 
   return cleaned;
 };
@@ -117,18 +80,10 @@ const formatJobDescription = (text) => {
   // First clean the text
   let formatted = cleanText(text);
 
-  // Replace bullet point patterns with proper formatting
+  // Replace bullet points with proper formatting (all variations)
   formatted = formatted
-    // Replace bullet points with proper formatting (multiple variations)
-    .replace(/â¢/g, '\n- ')
-    .replace(/•/g, '\n- ')
-    .replace(/â€¢/g, '\n- ')
-    .replace(/â€¢/g, '\n- ')
-    .replace(/â¢/g, '\n- ')
-    .replace(/â€¢/g, '\n- ')
-    .replace(/â€¢/g, '\n- ')
-    .replace(/â€¢/g, '\n- ')
-
+    .replace(/[â¢•â€¢â€¢â¢â€¢â€¢â€¢]/g, '\n- ')
+    
     // Add line breaks for common patterns
     .replace(/(\d+ Hours\/)/g, '\n$1')
     .replace(/(Work Location:)/g, '\n\n$1')
@@ -149,7 +104,7 @@ const formatJobDescription = (text) => {
 // In-memory cache for jobs
 let jobsCache = null;
 let cacheTimestamp = null;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -207,7 +162,7 @@ const fetchAllJobs = async () => {
   // Update cache
   jobsCache = allJobs;
   cacheTimestamp = now;
-  console.log(`Cached ${allJobs.length} jobs for 5 minutes`);
+  console.log(`Cached ${allJobs.length} jobs for 60 minutes`);
 
   return allJobs;
 };
