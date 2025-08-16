@@ -12,6 +12,11 @@ const noteSchema = new mongoose.Schema(
       ref: 'Job',
       required: false, // Allow null for general notes
     },
+    jobId: {
+      type: String,
+      required: false, // Store NYC API jobId for unsaved jobs
+      trim: true,
+    },
     title: {
       type: String,
       required: true,
@@ -77,6 +82,7 @@ const noteSchema = new mongoose.Schema(
 
 // Indexes for better query performance
 noteSchema.index({ user: 1, job: 1 });
+noteSchema.index({ user: 1, jobId: 1 }); // Index for NYC API jobId
 noteSchema.index({ user: 1, createdAt: -1 });
 noteSchema.index({ type: 1 });
 noteSchema.index({ priority: 1 });

@@ -46,9 +46,16 @@ router.post(
       // Verify job exists if jobId is provided
       let job = null;
       if (jobId) {
+        // First try to find in our database
         job = await Job.findOne({ jobId });
+
+        // If not found in database, the jobId might be from NYC API
+        // We'll allow the note to be created without a database job reference
+        // This allows notes for jobs that haven't been saved yet
         if (!job) {
-          return res.status(404).json({ message: 'Job not found' });
+          console.log(
+            `Note created for NYC API job (jobId: ${jobId}) - not in database yet`
+          );
         }
       }
 
@@ -56,6 +63,7 @@ router.post(
       const note = new Note({
         user: req.user._id,
         job: job?._id, // Allow null for general notes
+        jobId: jobId, // Store the NYC API jobId for reference
         title,
         content,
         type,
@@ -109,9 +117,13 @@ router.get(
       const query = { user: req.user._id, status: 'active' };
 
       if (jobId) {
+        // First try to find by database job reference
         const job = await Job.findOne({ jobId });
         if (job) {
           query.job = job._id;
+        } else {
+          // If no database job, search by jobId field in notes
+          query.jobId = jobId;
         }
       }
 

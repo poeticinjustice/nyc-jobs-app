@@ -57,8 +57,10 @@ const NoteModal = ({
 
     try {
       if (note) {
-        await dispatch(updateNote({ id: note._id, ...noteData })).unwrap();
+        console.log('Updating note:', { note, noteId: note._id, noteData });
+        await dispatch(updateNote({ noteId: note._id, noteData })).unwrap();
       } else {
+        console.log('Creating new note:', noteData);
         await dispatch(createNote(noteData)).unwrap();
       }
       onClose();
