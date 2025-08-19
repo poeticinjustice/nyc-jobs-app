@@ -56,17 +56,17 @@ const cleanText = (text) => {
   cleaned = cleaned
     // Fix bullet points (most common issue)
     .replace(/â¢|â€¢|â¢/g, '•')
-    
+
     // Fix smart quotes and apostrophes
     .replace(/â€™|â€™|â€™/g, "'")
     .replace(/â€œ|â€œ|â€œ/g, '"')
     .replace(/â€|â€|â€/g, '"')
     .replace(/â€˜|â€˜|â€˜/g, "'")
-    
+
     // Fix dashes
     .replace(/â€"|â€"/g, '–')
     .replace(/â€"|â€"/g, '—')
-    
+
     // Fix ellipsis
     .replace(/â€¦/g, '…');
 
@@ -83,7 +83,7 @@ const formatJobDescription = (text) => {
   // Replace bullet points with proper formatting (all variations)
   formatted = formatted
     .replace(/[â¢•â€¢â€¢â¢â€¢â€¢â€¢]/g, '\n- ')
-    
+
     // Add line breaks for common patterns
     .replace(/(\d+ Hours\/)/g, '\n$1')
     .replace(/(Work Location:)/g, '\n\n$1')
@@ -339,9 +339,24 @@ router.get(
         savedJobIds = savedJobs.map((job) => job.jobId);
       }
 
-      // Add saved status to each job (keep original structure for search results)
+      // Add saved status to each job and clean text fields
       const jobsWithSavedStatus = paginatedJobs.map((job) => ({
         ...job,
+        business_title: cleanText(job.business_title),
+        job_category: cleanText(job.job_category),
+        work_location: cleanText(job.work_location),
+        work_location_1: cleanText(job.work_location_1),
+        division_work_unit: cleanText(job.division_work_unit),
+        agency: cleanText(job.agency),
+        job_description: cleanText(job.job_description),
+        minimum_qual_requirements: cleanText(job.minimum_qual_requirements),
+        preferred_skills: cleanText(job.preferred_skills),
+        additional_information: cleanText(job.additional_information),
+        to_apply: cleanText(job.to_apply),
+        hours_shift: cleanText(job.hours_shift),
+        residency_requirement: cleanText(job.residency_requirement),
+        title_classification: cleanText(job.title_classification),
+        career_level: cleanText(job.career_level),
         isSaved: savedJobIds.includes(job.job_id),
       }));
 

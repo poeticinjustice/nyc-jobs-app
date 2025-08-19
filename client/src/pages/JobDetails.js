@@ -12,6 +12,7 @@ import {
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
+import { cleanText } from '../utils/textUtils';
 
 const JobDetails = () => {
   const { jobId } = useParams();
@@ -81,17 +82,18 @@ const JobDetails = () => {
         <div className='flex justify-between items-start'>
           <div className='flex-1'>
             <h1 className='text-3xl font-bold text-gray-900 mb-2'>
-              {currentJob.businessTitle}
+              {cleanText(currentJob.businessTitle)}
             </h1>
             <p className='text-lg text-gray-600 mb-4'>
-              {currentJob.civilServiceTitle}
+              {cleanText(currentJob.civilServiceTitle)}
             </p>
 
             <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-6'>
               <div className='flex items-center text-gray-600'>
                 <HiLocationMarker className='h-5 w-5 mr-2' />
                 <span>
-                  {currentJob.workLocation || 'Location not specified'}
+                  {cleanText(currentJob.workLocation) ||
+                    'Location not specified'}
                 </span>
               </div>
               <div className='flex items-center text-gray-600'>
@@ -215,7 +217,7 @@ const JobDetails = () => {
                   Category
                 </span>
                 <p className='text-gray-900'>
-                  {currentJob.jobCategory || 'Not specified'}
+                  {cleanText(currentJob.jobCategory) || 'Not specified'}
                 </p>
               </div>
               <div>
@@ -227,7 +229,8 @@ const JobDetails = () => {
               <div>
                 <span className='text-sm font-medium text-gray-500'>Type</span>
                 <p className='text-gray-900'>
-                  {currentJob.fullTimePartTimeIndicator || 'Not specified'}
+                  {cleanText(currentJob.fullTimePartTimeIndicator) ||
+                    'Not specified'}
                 </p>
               </div>
               <div>
@@ -235,7 +238,7 @@ const JobDetails = () => {
                   Division
                 </span>
                 <p className='text-gray-900'>
-                  {currentJob.divisionWorkUnit || 'Not specified'}
+                  {cleanText(currentJob.divisionWorkUnit) || 'Not specified'}
                 </p>
               </div>
               <div>
@@ -243,7 +246,7 @@ const JobDetails = () => {
                   Hours/Shift
                 </span>
                 <p className='text-gray-900'>
-                  {currentJob.hoursShift || 'Not specified'}
+                  {cleanText(currentJob.hoursShift) || 'Not specified'}
                 </p>
               </div>
             </div>
@@ -257,7 +260,7 @@ const JobDetails = () => {
             {currentJob.toApply ? (
               <div className='prose max-w-none'>
                 <div className='whitespace-pre-wrap text-gray-700'>
-                  {currentJob.toApply}
+                  {cleanText(currentJob.toApply)}
                 </div>
               </div>
             ) : (

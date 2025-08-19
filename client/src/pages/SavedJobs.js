@@ -5,6 +5,7 @@ import { HiBookmarkAlt, HiTrash, HiEye, HiPlus } from 'react-icons/hi';
 import { Link, useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
+import { cleanText } from '../utils/textUtils';
 
 const SavedJobs = () => {
   const dispatch = useDispatch();
@@ -89,18 +90,20 @@ const SavedJobs = () => {
               <div className='flex justify-between items-start'>
                 <div className='flex-1'>
                   <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                    {job.businessTitle}
+                    {cleanText(job.businessTitle)}
                   </h3>
-                  <p className='text-gray-600 mb-3'>{job.civilServiceTitle}</p>
+                  <p className='text-gray-600 mb-3'>
+                    {cleanText(job.civilServiceTitle)}
+                  </p>
 
                   <div className='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mb-4'>
                     <div>
                       <span className='font-medium'>Category:</span>{' '}
-                      {job.jobCategory || 'Not specified'}
+                      {cleanText(job.jobCategory) || 'Not specified'}
                     </div>
                     <div>
                       <span className='font-medium'>Location:</span>{' '}
-                      {job.workLocation || 'Not specified'}
+                      {cleanText(job.workLocation) || 'Not specified'}
                     </div>
                     <div>
                       <span className='font-medium'>Salary:</span>{' '}
@@ -112,24 +115,21 @@ const SavedJobs = () => {
                     </div>
                   </div>
 
-                  <div className='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600'>
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                     <div>
                       <span className='font-medium'>Posted:</span>{' '}
                       {formatDate(job.postDate)}
                     </div>
                     <div>
                       <span className='font-medium'>Type:</span>{' '}
-                      {job.fullTimePartTimeIndicator || 'Not specified'}
-                    </div>
-                    <div>
-                      <span className='font-medium'>Level:</span>{' '}
-                      {job.level || 'Not specified'}
+                      {cleanText(job.fullTimePartTimeIndicator) ||
+                        'Not specified'}
                     </div>
                   </div>
 
                   {job.jobDescription && (
                     <p className='mt-3 text-gray-700 line-clamp-2'>
-                      {job.jobDescription.substring(0, 200)}...
+                      {cleanText(job.jobDescription).substring(0, 200)}...
                     </p>
                   )}
                 </div>
