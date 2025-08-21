@@ -37,6 +37,15 @@ const JobSearch = () => {
     salary_max: searchParams.get('salary_max') || '',
   });
 
+  // Track the active search (what's actually being searched for in results)
+  const [activeSearchParams, setActiveSearchParams] = useState({
+    q: searchParams.get('q') || '',
+    category: searchParams.get('category') || '',
+    location: searchParams.get('location') || '',
+    salary_min: searchParams.get('salary_min') || '',
+    salary_max: searchParams.get('salary_max') || '',
+  });
+
   useEffect(() => {
     if (categories.length === 0) {
       dispatch(getJobCategories());
@@ -55,6 +64,7 @@ const JobSearch = () => {
 
     // Update local state if URL params changed
     setLocalSearchParams(urlParams);
+    setActiveSearchParams(urlParams);
 
     // If we have search parameters in URL, perform search
     const hasSearchParams = Object.values(urlParams).some((value) => value);
@@ -105,6 +115,9 @@ const JobSearch = () => {
       page,
       limit: 20,
     };
+
+    // Update active search params when search is actually performed
+    setActiveSearchParams(localSearchParams);
 
     // Update URL with search parameters (only non-empty values)
     const newSearchParams = new URLSearchParams();
@@ -351,49 +364,78 @@ const JobSearch = () => {
           </div>
         )}
 
-        {/* Welcome State - Ready to Search */}
-        {!searchResults.length && !error && !searchLoading && (
-          <div className='bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center'>
-            <div className='mb-6'>
-              <div className='mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4'>
-                <HiSearch className='h-8 w-8 text-blue-600' />
+        {/* No Jobs Found - Show above welcome screen when there are search params but no results */}
+        {!searchResults.length &&
+          !error &&
+          !searchLoading &&
+          (searchParams.get('q') ||
+            searchParams.get('category') ||
+            searchParams.get('location') ||
+            searchParams.get('salary_min') ||
+            searchParams.get('salary_max')) && (
+            <div className='bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4'>
+              <div className='text-center'>
+                <p className='text-yellow-800 font-medium'>
+                  No jobs found for your search criteria
+                </p>
               </div>
-              <h3 className='text-xl font-bold text-blue-900 mb-2'>
-                Ready to Search NYC Jobs
-              </h3>
-              <p className='text-blue-700 max-w-md mx-auto'>
-                Search through thousands of current job listings from NYC
-                government agencies. Enter keywords, job titles, or browse by
-                category to get started.
-              </p>
             </div>
+          )}
 
-            <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
-              <div className='bg-white/60 rounded-lg p-4'>
-                <div className='text-blue-600 font-medium mb-1'>
-                  ⚡ Instant Search
+        {/* Welcome State - Ready to Search */}
+        {!searchResults.length &&
+          !error &&
+          !searchLoading &&
+          !(
+            searchParams.get('q') ||
+            searchParams.get('category') ||
+            searchParams.get('location') ||
+            searchParams.get('salary_min') ||
+            searchParams.get('salary_max')
+          ) && (
+            <div className='bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center'>
+              <div className='mb-6'>
+                <div className='mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4'>
+                  <HiSearch className='h-8 w-8 text-blue-600' />
                 </div>
-                <div className='text-blue-700'>
-                  No waiting - search immediately
-                </div>
+                <h3 className='text-xl font-bold text-blue-900 mb-2'>
+                  Ready to Search NYC Jobs
+                </h3>
+                <p className='text-blue-700 max-w-md mx-auto'>
+                  Search through thousands of current job listings from NYC
+                  government agencies. Enter keywords, job titles, or browse by
+                  category to get started.
+                </p>
               </div>
-              <div className='bg-white/60 rounded-lg p-4'>
-                <div className='text-blue-600 font-medium mb-1'>
-                  🔍 Smart Results
+
+              <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
+                <div className='bg-white/60 rounded-lg p-4'>
+                  <div className='text-blue-600 font-medium mb-1'>
+                    ⚡ Instant Search
+                  </div>
+                  <div className='text-blue-700'>
+                    No waiting - search immediately
+                  </div>
                 </div>
-                <div className='text-blue-700'>Comprehensive job matching</div>
-              </div>
-              <div className='bg-white/60 rounded-lg p-4'>
-                <div className='text-blue-600 font-medium mb-1'>
-                  💾 Save Favorites
+                <div className='bg-white/60 rounded-lg p-4'>
+                  <div className='text-blue-600 font-medium mb-1'>
+                    🔍 Smart Results
+                  </div>
+                  <div className='text-blue-700'>
+                    Comprehensive job matching
+                  </div>
                 </div>
-                <div className='text-blue-700'>
-                  Bookmark jobs you're interested in
+                <div className='bg-white/60 rounded-lg p-4'>
+                  <div className='text-blue-600 font-medium mb-1'>
+                    💾 Save Favorites
+                  </div>
+                  <div className='text-blue-700'>
+                    Bookmark jobs you're interested in
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
         {searchLoading ? (
           <div className='flex justify-center py-8'>
@@ -427,39 +469,39 @@ const JobSearch = () => {
               </div>
 
               {/* Current Search Parameters */}
-              {(localSearchParams.q ||
-                localSearchParams.category ||
-                localSearchParams.location ||
-                localSearchParams.salary_min ||
-                localSearchParams.salary_max) && (
+              {(activeSearchParams.q ||
+                activeSearchParams.category ||
+                activeSearchParams.location ||
+                activeSearchParams.salary_min ||
+                activeSearchParams.salary_max) && (
                 <div className='mt-3 pt-3 border-t border-gray-200'>
                   <div className='text-xs text-gray-500 mb-2'>
                     Current search:
                   </div>
                   <div className='flex flex-wrap gap-2'>
-                    {localSearchParams.q && (
+                    {activeSearchParams.q && (
                       <span className='px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs'>
-                        Keywords: {localSearchParams.q}
+                        Keywords: {activeSearchParams.q}
                       </span>
                     )}
-                    {localSearchParams.category && (
+                    {activeSearchParams.category && (
                       <span className='px-2 py-1 bg-green-100 text-green-700 rounded text-xs'>
-                        Category: {localSearchParams.category}
+                        Category: {activeSearchParams.category}
                       </span>
                     )}
-                    {localSearchParams.location && (
+                    {activeSearchParams.location && (
                       <span className='px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs'>
-                        Location: {localSearchParams.location}
+                        Location: {activeSearchParams.location}
                       </span>
                     )}
-                    {localSearchParams.salary_min && (
+                    {activeSearchParams.salary_min && (
                       <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
-                        Min Salary: ${localSearchParams.salary_min}
+                        Min Salary: ${activeSearchParams.salary_min}
                       </span>
                     )}
-                    {localSearchParams.salary_max && (
+                    {activeSearchParams.salary_max && (
                       <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
-                        Max Salary: ${localSearchParams.salary_max}
+                        Max Salary: ${activeSearchParams.salary_max}
                       </span>
                     )}
                   </div>
@@ -617,13 +659,7 @@ const JobSearch = () => {
               </div>
             )}
           </>
-        ) : (
-          <div className='text-center py-8'>
-            <p className='text-gray-500'>
-              No jobs found. Try adjusting your search criteria.
-            </p>
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

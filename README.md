@@ -202,13 +202,14 @@ The application will be available at:
 
 ### Jobs
 
-- `GET /api/jobs/search` - Search jobs with filtering and pagination
+- `GET /api/jobs/search` - Search jobs with filtering, pagination, and smart caching
 - `GET /api/jobs/:id` - Get detailed job information
 - `POST /api/jobs/:id/save` - Save job to user's list
 - `DELETE /api/jobs/:id/save` - Remove job from saved list
 - `GET /api/jobs/saved` - Get user's saved jobs with pagination
 - `GET /api/jobs/categories` - Get all available job categories
-- `GET /api/jobs/health` - API health check and cache status
+- `GET /api/jobs/health` - API health check, cache status, and search cache info
+- `GET /api/jobs/nyc-api-health` - NYC Jobs API health check
 
 ### Notes
 
@@ -233,14 +234,14 @@ The application will be available at:
 ```
 NYCJobs/
 ├── server/
-│   ├── index.js              # Server entry point
+│   ├── index.js              # Server entry point with rate limiting and health checks
 │   ├── models/               # Database models
 │   │   ├── User.js
 │   │   ├── Job.js
 │   │   └── Note.js
 │   ├── routes/               # API routes
 │   │   ├── auth.js
-│   │   ├── jobs.js
+│   │   ├── jobs.js           # Smart search with caching and deduplication
 │   │   ├── notes.js
 │   │   └── users.js
 │   └── middleware/           # Custom middleware
@@ -249,16 +250,19 @@ NYCJobs/
 │   ├── src/
 │   │   ├── components/       # React components
 │   │   │   ├── Auth/
-│   │   │   ├── Layout/
+│   │   │   ├── Layout/       # Clean header without notifications
 │   │   │   └── UI/
 │   │   ├── pages/           # Page components
+│   │   │   └── JobSearch.js  # URL persistence and mobile-optimized
 │   │   ├── store/           # Redux store
 │   │   │   └── slices/      # Redux slices
+│   │   ├── utils/           # Utility functions
+│   │   │   └── textUtils.js # UTF-8 text cleaning
 │   │   └── App.js
 │   ├── package.json
 │   └── tailwind.config.js
 ├── package.json
-├── env.example
+├── render.yaml               # Render deployment configuration
 └── README.md
 ```
 
@@ -306,39 +310,9 @@ NYCJobs/
 - **Role-based Access** - User, Admin, and Moderator roles
 - **Trust Proxy** - Secure proxy configuration for production
 
-## Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-### Development Guidelines
-
-- Follow the existing code style
-- Add comments for complex logic
-- Test your changes thoroughly
-- Update documentation if needed
-- Ensure all tests pass
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-- **Issues**: Please open an issue in the GitHub repository
-- **Discussions**: Use GitHub Discussions for questions and ideas
-- **Email**: Contact the development team for urgent matters
-
-## Acknowledgments
-
-- **NYC Open Data** - For providing the comprehensive jobs dataset
-- **MERN Stack Community** - For excellent documentation and examples
-- **Tailwind CSS** - For the beautiful utility-first CSS framework
 
 ## Deployment
 

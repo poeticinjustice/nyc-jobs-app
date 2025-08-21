@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { HiMenu, HiUser, HiLogout, HiCog, HiBell } from 'react-icons/hi';
+import { HiMenu, HiUser, HiLogout, HiCog } from 'react-icons/hi';
 
 const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -38,11 +38,6 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
 
           {/* Right side */}
           <div className='flex items-center space-x-4'>
-            {/* Notifications */}
-            <button className='p-2 text-gray-400 hover:text-gray-500 hover:bg-gray-100 rounded-md'>
-              <HiBell className='h-5 w-5' />
-            </button>
-
             {/* User menu */}
             {isAuthenticated ? (
               <div className='relative'>
