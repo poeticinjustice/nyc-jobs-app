@@ -112,8 +112,12 @@ router.get('/health', (req, res) => {
     status: 'ok',
     cacheStatus: jobsCache ? 'cached' : 'not cached',
     cacheSize: jobsCache ? jobsCache.length : 0,
-    cacheTimestamp: cacheTimestamp ? new Date(cacheTimestamp).toISOString() : null,
-    cacheAge: cacheTimestamp ? Math.round((Date.now() - cacheTimestamp) / 1000) : null,
+    cacheTimestamp: cacheTimestamp
+      ? new Date(cacheTimestamp).toISOString()
+      : null,
+    cacheAge: cacheTimestamp
+      ? Math.round((Date.now() - cacheTimestamp) / 1000)
+      : null,
   });
 });
 
@@ -121,17 +125,20 @@ router.get('/health', (req, res) => {
 router.get('/nyc-api-health', async (req, res) => {
   try {
     const startTime = Date.now();
-    const response = await axios.get(`${process.env.NYC_JOBS_API_URL}?$limit=1`, { 
-      timeout: 10000 
-    });
+    const response = await axios.get(
+      `${process.env.NYC_JOBS_API_URL}?$limit=1`,
+      {
+        timeout: 10000,
+      }
+    );
     const responseTime = Date.now() - startTime;
-    
+
     res.json({
       status: 'ok',
       responseTime: `${responseTime}ms`,
       nycApiStatus: response.status,
       nycApiWorking: true,
-      sampleData: response.data.length > 0 ? 'Available' : 'No data'
+      sampleData: response.data.length > 0 ? 'Available' : 'No data',
     });
   } catch (error) {
     res.json({
@@ -140,7 +147,7 @@ router.get('/nyc-api-health', async (req, res) => {
       error: error.message,
       errorCode: error.code,
       responseStatus: error.response?.status,
-      responseData: error.response?.data
+      responseData: error.response?.data,
     });
   }
 });
@@ -180,24 +187,30 @@ const fetchAllJobs = async () => {
         );
 
         batchJobs = response.data;
-        console.log(`Successfully fetched batch at offset ${offset} with ${batchJobs.length} jobs`);
+        console.log(
+          `Successfully fetched batch at offset ${offset} with ${batchJobs.length} jobs`
+        );
         break;
       } catch (error) {
         retryCount++;
-        console.log(`Attempt ${retryCount} failed for offset ${offset}: ${error.message}`);
-        
+        console.log(
+          `Attempt ${retryCount} failed for offset ${offset}: ${error.message}`
+        );
+
         if (error.response?.status === 500) {
           console.log('NYC API server error, will retry...');
         } else if (error.code === 'ECONNABORTED') {
           console.log('Request timeout, will retry...');
         }
-        
+
         if (retryCount < maxRetries) {
           const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
           console.log(`Waiting ${delay}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
-          console.error(`Failed to fetch batch at offset ${offset} after ${maxRetries} attempts`);
+          console.error(
+            `Failed to fetch batch at offset ${offset} after ${maxRetries} attempts`
+          );
           hasMoreData = false;
           break;
         }
@@ -275,11 +288,12 @@ router.get(
         limit = 20,
       } = req.query;
 
-      // Try to use NYC API's built-in search capabilities first
+      // Smart search strategy: Try NYC API first, fallback to cached data
       let jobs = [];
       let useApiSearch = false;
+      let searchStrategy = '';
 
-      // If we have search parameters, try to use NYC API's $where clause
+      // If we have search parameters, try to use NYC API's $where clause first
       if (q || category || location || salary_min || salary_max) {
         try {
           const apiParams = new URLSearchParams();
@@ -326,8 +340,21 @@ router.get(
               { timeout: 30000 } // 30 second timeout
             );
             jobs = response.data;
-            useApiSearch = true;
-            console.log(`API search returned ${jobs.length} results`);
+
+            // Smart strategy: If we hit 1000 limit, use fallback for comprehensive results
+            if (jobs.length === 1000) {
+              console.log(
+                `API search hit limit (${jobs.length} results), using fallback for comprehensive search`
+              );
+              // Don't set useApiSearch = true, let it fall through to fallback
+              useApiSearch = false;
+              searchStrategy = 'Fallback (hit API limit)';
+            } else {
+              useApiSearch = true;
+              searchStrategy = `NYC API (${jobs.length} results)`;
+              console.log(`API search returned ${jobs.length} results`);
+            }
+
             console.log(
               `Environment: ${process.env.NODE_ENV || 'development'}`
             );
@@ -353,11 +380,14 @@ router.get(
       // If API search didn't work or no search params, use full dataset
       if (!useApiSearch) {
         console.log('Using fallback search with full dataset');
+        searchStrategy = 'Full Database (comprehensive)';
         jobs = await fetchAllJobs();
 
         // Apply client-side filtering
         if (q) {
           const searchTerm = q.toLowerCase();
+          console.log(`Filtering ${jobs.length} jobs for search term: "${q}"`);
+
           jobs = jobs.filter(
             (job) =>
               job.business_title?.toLowerCase().includes(searchTerm) ||
@@ -369,6 +399,8 @@ router.get(
               job.work_location_1?.toLowerCase().includes(searchTerm) ||
               job.division_work_unit?.toLowerCase().includes(searchTerm)
           );
+
+          console.log(`Fallback search found ${jobs.length} jobs for "${q}"`);
         }
 
         if (category) {
@@ -438,6 +470,18 @@ router.get(
         career_level: cleanText(job.career_level),
         isSaved: savedJobIds.includes(job.job_id),
       }));
+
+      // Log search method summary
+      console.log(
+        `Search Summary: "${
+          q || 'no query'
+        }" | Strategy: ${searchStrategy} | Results: ${
+          jobs.length
+        } | Total Available: ${jobs.length}`
+      );
+      console.log(
+        `Pagination: Page ${page}, Limit ${limit}, Total ${jobs.length}`
+      );
 
       res.json({
         jobs: jobsWithSavedStatus,

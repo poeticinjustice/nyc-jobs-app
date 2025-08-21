@@ -41,9 +41,10 @@ const JobSearch = () => {
     }
   }, [dispatch, categories.length]);
 
-  useEffect(() => {
-    handleSearch();
-  }, []);
+  // Remove automatic search on page load - let users search when ready
+  // useEffect(() => {
+  //   handleSearch();
+  // }, []);
 
   const handleSearch = (page = 1) => {
     setCurrentPage(page);
@@ -241,12 +242,84 @@ const JobSearch = () => {
           </div>
         )}
 
+        {/* Welcome State - Ready to Search */}
+        {!searchResults.length && !error && !searchLoading && (
+          <div className='bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center'>
+            <div className='mb-6'>
+              <div className='mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4'>
+                <HiSearch className='h-8 w-8 text-blue-600' />
+              </div>
+              <h3 className='text-xl font-bold text-blue-900 mb-2'>
+                Ready to Search NYC Jobs
+              </h3>
+              <p className='text-blue-700 max-w-md mx-auto'>
+                Search through thousands of current job listings from NYC government agencies. 
+                Enter keywords, job titles, or browse by category to get started.
+              </p>
+            </div>
+            
+            <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
+              <div className='bg-white/60 rounded-lg p-4'>
+                <div className='text-blue-600 font-medium mb-1'>⚡ Instant Search</div>
+                <div className='text-blue-700'>No waiting - search immediately</div>
+              </div>
+              <div className='bg-white/60 rounded-lg p-4'>
+                <div className='text-blue-600 font-medium mb-1'>🔍 Smart Results</div>
+                <div className='text-blue-700'>Comprehensive job matching</div>
+              </div>
+              <div className='bg-white/60 rounded-lg p-4'>
+                <div className='text-blue-600 font-medium mb-1'>💾 Save Favorites</div>
+                <div className='text-blue-700'>Bookmark jobs you're interested in</div>
+              </div>
+            </div>
+            
+            <div className='mt-6'>
+              <p className='text-xs text-blue-600 mb-3'>Popular searches:</p>
+              <div className='flex flex-wrap justify-center gap-2'>
+                {['Engineer', 'Analyst', 'Manager', 'Coordinator', 'Assistant'].map((term) => (
+                  <button
+                    key={term}
+                    onClick={() => {
+                      setLocalSearchParams(prev => ({ ...prev, q: term }));
+                      handleSearch(1);
+                    }}
+                    className='px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full text-xs transition-colors'
+                  >
+                    {term}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {searchLoading ? (
           <div className='flex justify-center py-8'>
             <LoadingSpinner size='lg' />
           </div>
         ) : searchResults.length > 0 ? (
           <>
+            {/* Search Results Summary */}
+            <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
+              <div className='flex items-center justify-between'>
+                <div className='text-sm text-gray-600'>
+                  <span className='font-medium'>{searchResults.length}</span>{' '}
+                  jobs found
+                  {pagination && (
+                    <span className='ml-2'>
+                      (showing {searchResults.length} of {pagination.total}{' '}
+                      total)
+                    </span>
+                  )}
+                </div>
+                <div className='text-xs text-gray-500'>
+                  <span className='text-blue-600'>
+                    🔍 Smart Search (Auto-optimized)
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className='space-y-4'>
               {searchResults.map((job, index) => (
                 <div
