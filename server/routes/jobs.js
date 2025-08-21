@@ -261,6 +261,28 @@ const fetchAllJobs = async () => {
     }
   }
 
+  // Remove duplicates from the full dataset before caching
+  const uniqueAllJobs = [];
+  const seenAllJobIds = new Set();
+
+  for (const job of allJobs) {
+    if (job.job_id && !seenAllJobIds.has(job.job_id)) {
+      seenAllJobIds.add(job.job_id);
+      uniqueAllJobs.push(job);
+    }
+  }
+
+  if (uniqueAllJobs.length !== allJobs.length) {
+    console.log(
+      `Full dataset had ${
+        allJobs.length - uniqueAllJobs.length
+      } duplicate jobs. Original: ${allJobs.length}, Unique: ${
+        uniqueAllJobs.length
+      }`
+    );
+    allJobs = uniqueAllJobs;
+  }
+
   // Update cache
   jobsCache = allJobs;
   cacheTimestamp = now;
@@ -385,6 +407,28 @@ router.get(
               );
               jobs = response.data;
 
+              // Remove duplicates from NYC API response
+              const uniqueApiJobs = [];
+              const seenApiJobIds = new Set();
+
+              for (const job of jobs) {
+                if (job.job_id && !seenApiJobIds.has(job.job_id)) {
+                  seenApiJobIds.add(job.job_id);
+                  uniqueApiJobs.push(job);
+                }
+              }
+
+              if (uniqueApiJobs.length !== jobs.length) {
+                console.log(
+                  `NYC API returned ${
+                    jobs.length - uniqueApiJobs.length
+                  } duplicate jobs. Original: ${jobs.length}, Unique: ${
+                    uniqueApiJobs.length
+                  }`
+                );
+                jobs = uniqueApiJobs;
+              }
+
               // Smart strategy: If we hit 1000 limit, use fallback for comprehensive results
               if (jobs.length === 1000) {
                 console.log(
@@ -485,6 +529,28 @@ router.get(
             );
           }
         }
+      }
+
+      // Remove duplicate jobs based on job_id to prevent React key conflicts
+      const uniqueJobs = [];
+      const seenJobIds = new Set();
+
+      for (const job of jobs) {
+        if (job.job_id && !seenJobIds.has(job.job_id)) {
+          seenJobIds.add(job.job_id);
+          uniqueJobs.push(job);
+        }
+      }
+
+      if (uniqueJobs.length !== jobs.length) {
+        console.log(
+          `Removed ${
+            jobs.length - uniqueJobs.length
+          } duplicate jobs. Original: ${jobs.length}, Unique: ${
+            uniqueJobs.length
+          }`
+        );
+        jobs = uniqueJobs;
       }
 
       // Cache the search results for future pagination requests

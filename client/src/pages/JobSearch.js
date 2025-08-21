@@ -69,8 +69,34 @@ const JobSearch = () => {
       };
       dispatch(setReduxSearchParams(searchParamsWithPage));
       dispatch(searchJobs(searchParamsWithPage));
+    } else {
+      // Clear search results if no URL parameters
+      dispatch(setReduxSearchParams({}));
+      // Clear search results from Redux store
+      dispatch({ type: 'jobs/clearSearchResults' });
+      setCurrentPage(1);
     }
   }, [searchParams, dispatch, setSearchParams]);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      // When user navigates back/forward, check if we have search params
+      const currentParams = new URLSearchParams(window.location.search);
+      const hasParams = Array.from(currentParams.values()).some(
+        (value) => value
+      );
+
+      if (!hasParams) {
+        // Clear search results if no URL parameters
+        dispatch({ type: 'jobs/clearSearchResults' });
+        setCurrentPage(1);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [dispatch]);
 
   const handleSearch = (page = 1) => {
     setCurrentPage(page);
@@ -210,9 +236,22 @@ const JobSearch = () => {
                   setSearchParams(new URLSearchParams());
                   setCurrentPage(1);
                 }}
-                className='btn btn-outline text-sm'
+                className='p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors'
+                title='Clear all search filters'
               >
-                Clear Search
+                <svg
+                  className='w-4 h-4'
+                  fill='none'
+                  stroke='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    strokeWidth={2}
+                    d='M6 18L18 6M6 6l12 12'
+                  />
+                </svg>
               </button>
             )}
             <button
@@ -353,34 +392,6 @@ const JobSearch = () => {
                 </div>
               </div>
             </div>
-
-            <div className='mt-6'>
-              <p className='text-xs text-blue-600 mb-3'>Popular searches:</p>
-              <div className='flex flex-wrap justify-center gap-2'>
-                {[
-                  'Engineer',
-                  'Analyst',
-                  'Manager',
-                  'Coordinator',
-                  'Assistant',
-                ].map((term) => (
-                  <button
-                    key={term}
-                    onClick={() => {
-                      setLocalSearchParams((prev) => ({ ...prev, q: term }));
-                      // Update URL immediately for popular searches
-                      const newSearchParams = new URLSearchParams();
-                      newSearchParams.set('q', term);
-                      setSearchParams(newSearchParams);
-                      handleSearch(1);
-                    }}
-                    className='px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full text-xs transition-colors'
-                  >
-                    {term}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
@@ -388,7 +399,12 @@ const JobSearch = () => {
           <div className='flex justify-center py-8'>
             <LoadingSpinner size='lg' />
           </div>
-        ) : searchResults.length > 0 ? (
+        ) : searchResults.length > 0 &&
+          (searchParams.get('q') ||
+            searchParams.get('category') ||
+            searchParams.get('location') ||
+            searchParams.get('salary_min') ||
+            searchParams.get('salary_max')) ? (
           <>
             {/* Search Results Summary */}
             <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
