@@ -106,8 +106,25 @@ let jobsCache = null;
 let cacheTimestamp = null;
 const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
 
+// Search result cache to avoid re-filtering on pagination
+let searchResultCache = new Map();
+const SEARCH_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for search results
+
+// Clean up expired search cache entries
+const cleanupSearchCache = () => {
+  const now = Date.now();
+  for (const [key, value] of searchResultCache.entries()) {
+    if (now - value.timestamp > SEARCH_CACHE_DURATION) {
+      searchResultCache.delete(key);
+    }
+  }
+};
+
 // Health check endpoint
 router.get('/health', (req, res) => {
+  // Clean up expired search cache
+  cleanupSearchCache();
+
   res.json({
     status: 'ok',
     cacheStatus: jobsCache ? 'cached' : 'not cached',
@@ -118,6 +135,8 @@ router.get('/health', (req, res) => {
     cacheAge: cacheTimestamp
       ? Math.round((Date.now() - cacheTimestamp) / 1000)
       : null,
+    searchCacheSize: searchResultCache.size,
+    searchCacheKeys: Array.from(searchResultCache.keys()),
   });
 });
 
@@ -151,6 +170,14 @@ router.get('/nyc-api-health', async (req, res) => {
     });
   }
 });
+
+// Helper function to generate a cache key for search parameters
+const generateSearchCacheKey = (searchParams) => {
+  const { q, category, location, salary_min, salary_max } = searchParams;
+  return `${q || ''}|${category || ''}|${location || ''}|${salary_min || ''}|${
+    salary_max || ''
+  }`;
+};
 
 // Helper function to fetch all jobs from NYC API with caching
 const fetchAllJobs = async () => {
@@ -288,151 +315,187 @@ router.get(
         limit = 20,
       } = req.query;
 
-      // Smart search strategy: Try NYC API first, fallback to cached data
-      let jobs = [];
-      let useApiSearch = false;
-      let searchStrategy = '';
+      // Check if we have cached search results
+      const searchCacheKey = generateSearchCacheKey({
+        q,
+        category,
+        location,
+        salary_min,
+        salary_max,
+      });
+      const cachedSearch = searchResultCache.get(searchCacheKey);
 
-      // If we have search parameters, try to use NYC API's $where clause first
-      if (q || category || location || salary_min || salary_max) {
-        try {
-          const apiParams = new URLSearchParams();
-          apiParams.append('$limit', 1000); // Get a reasonable sample for search
+      if (
+        cachedSearch &&
+        Date.now() - cachedSearch.timestamp < SEARCH_CACHE_DURATION
+      ) {
+        console.log(`Using cached search results for: "${searchCacheKey}"`);
+        jobs = cachedSearch.results;
+        searchStrategy = 'Cached Results (fast)';
+      } else {
+        // Smart search strategy: Try NYC API first, fallback to cached data
+        let useApiSearch = false;
+        searchStrategy = '';
 
-          // Build a $where clause for the NYC API
-          const whereConditions = [];
+        // If we have search parameters, try to use NYC API's $where clause first
+        if (q || category || location || salary_min || salary_max) {
+          try {
+            const apiParams = new URLSearchParams();
+            apiParams.append('$limit', 1000); // Get a reasonable sample for search
 
-          if (q) {
-            whereConditions.push(
-              `(LOWER(business_title) LIKE '%${q.toLowerCase()}%' OR LOWER(job_description) LIKE '%${q.toLowerCase()}%' OR LOWER(civil_service_title) LIKE '%${q.toLowerCase()}%')`
+            // Build a $where clause for the NYC API
+            const whereConditions = [];
+
+            if (q) {
+              whereConditions.push(
+                `(LOWER(business_title) LIKE '%${q.toLowerCase()}%' OR LOWER(job_description) LIKE '%${q.toLowerCase()}%' OR LOWER(civil_service_title) LIKE '%${q.toLowerCase()}%')`
+              );
+            }
+
+            if (category) {
+              whereConditions.push(
+                `LOWER(job_category) = '${category.toLowerCase()}'`
+              );
+            }
+
+            if (location) {
+              whereConditions.push(
+                `(LOWER(work_location) LIKE '%${location.toLowerCase()}%' OR LOWER(work_location_1) LIKE '%${location.toLowerCase()}%')`
+              );
+            }
+
+            if (salary_min) {
+              whereConditions.push(
+                `CAST(salary_range_from AS INTEGER) >= ${parseInt(salary_min)}`
+              );
+            }
+
+            if (salary_max) {
+              whereConditions.push(
+                `CAST(salary_range_to AS INTEGER) <= ${parseInt(salary_max)}`
+              );
+            }
+
+            if (whereConditions.length > 0) {
+              apiParams.append('$where', whereConditions.join(' AND '));
+
+              const response = await axios.get(
+                `${process.env.NYC_JOBS_API_URL}?${apiParams.toString()}`,
+                { timeout: 30000 } // 30 second timeout
+              );
+              jobs = response.data;
+
+              // Smart strategy: If we hit 1000 limit, use fallback for comprehensive results
+              if (jobs.length === 1000) {
+                console.log(
+                  `API search hit limit (${jobs.length} results), using fallback for comprehensive search`
+                );
+                // Don't set useApiSearch = true, let it fall through to fallback
+                useApiSearch = false;
+                searchStrategy = 'Fallback (hit API limit)';
+              } else {
+                useApiSearch = true;
+                searchStrategy = `NYC API (${jobs.length} results)`;
+                console.log(`API search returned ${jobs.length} results`);
+              }
+
+              console.log(
+                `Environment: ${process.env.NODE_ENV || 'development'}`
+              );
+              console.log(
+                `Rate limit: ${
+                  process.env.RATE_LIMIT_MAX_REQUESTS || 'default'
+                }`
+              );
+            }
+          } catch (error) {
+            console.log(
+              'API search failed, falling back to full dataset search'
             );
+            console.log('API search error details:', error.message);
+            if (error.response) {
+              console.log('API response status:', error.response.status);
+              console.log('API response headers:', error.response.headers);
+              if (error.response.data) {
+                console.log('API error response:', error.response.data);
+              }
+            } else if (error.code === 'ECONNABORTED') {
+              console.log('API search timed out');
+            }
+          }
+        }
+
+        // If API search didn't work or no search params, use full dataset
+        if (!useApiSearch) {
+          console.log('Using fallback search with full dataset');
+          searchStrategy = 'Full Database (comprehensive)';
+          jobs = await fetchAllJobs();
+
+          // Apply client-side filtering
+          if (q) {
+            const searchTerm = q.toLowerCase();
+            console.log(
+              `Filtering ${jobs.length} jobs for search term: "${q}"`
+            );
+
+            jobs = jobs.filter(
+              (job) =>
+                job.business_title?.toLowerCase().includes(searchTerm) ||
+                job.job_description?.toLowerCase().includes(searchTerm) ||
+                job.civil_service_title?.toLowerCase().includes(searchTerm) ||
+                job.agency?.toLowerCase().includes(searchTerm) ||
+                job.job_category?.toLowerCase().includes(searchTerm) ||
+                job.work_location?.toLowerCase().includes(searchTerm) ||
+                job.work_location_1?.toLowerCase().includes(searchTerm) ||
+                job.division_work_unit?.toLowerCase().includes(searchTerm)
+            );
+
+            console.log(`Fallback search found ${jobs.length} jobs for "${q}"`);
           }
 
           if (category) {
-            whereConditions.push(
-              `LOWER(job_category) = '${category.toLowerCase()}'`
+            jobs = jobs.filter(
+              (job) =>
+                job.job_category?.toLowerCase() === category.toLowerCase()
             );
           }
 
           if (location) {
-            whereConditions.push(
-              `(LOWER(work_location) LIKE '%${location.toLowerCase()}%' OR LOWER(work_location_1) LIKE '%${location.toLowerCase()}%')`
+            const locationTerm = location.toLowerCase();
+            jobs = jobs.filter(
+              (job) =>
+                job.work_location?.toLowerCase().includes(locationTerm) ||
+                job.work_location_1?.toLowerCase().includes(locationTerm)
             );
           }
 
           if (salary_min) {
-            whereConditions.push(
-              `CAST(salary_range_from AS INTEGER) >= ${parseInt(salary_min)}`
+            jobs = jobs.filter(
+              (job) =>
+                job.salary_range_from &&
+                parseInt(job.salary_range_from) >= parseInt(salary_min)
             );
           }
 
           if (salary_max) {
-            whereConditions.push(
-              `CAST(salary_range_to AS INTEGER) <= ${parseInt(salary_max)}`
+            jobs = jobs.filter(
+              (job) =>
+                job.salary_range_to &&
+                parseInt(job.salary_range_to) <= parseInt(salary_max)
             );
-          }
-
-          if (whereConditions.length > 0) {
-            apiParams.append('$where', whereConditions.join(' AND '));
-
-            const response = await axios.get(
-              `${process.env.NYC_JOBS_API_URL}?${apiParams.toString()}`,
-              { timeout: 30000 } // 30 second timeout
-            );
-            jobs = response.data;
-
-            // Smart strategy: If we hit 1000 limit, use fallback for comprehensive results
-            if (jobs.length === 1000) {
-              console.log(
-                `API search hit limit (${jobs.length} results), using fallback for comprehensive search`
-              );
-              // Don't set useApiSearch = true, let it fall through to fallback
-              useApiSearch = false;
-              searchStrategy = 'Fallback (hit API limit)';
-            } else {
-              useApiSearch = true;
-              searchStrategy = `NYC API (${jobs.length} results)`;
-              console.log(`API search returned ${jobs.length} results`);
-            }
-
-            console.log(
-              `Environment: ${process.env.NODE_ENV || 'development'}`
-            );
-            console.log(
-              `Rate limit: ${process.env.RATE_LIMIT_MAX_REQUESTS || 'default'}`
-            );
-          }
-        } catch (error) {
-          console.log('API search failed, falling back to full dataset search');
-          console.log('API search error details:', error.message);
-          if (error.response) {
-            console.log('API response status:', error.response.status);
-            console.log('API response headers:', error.response.headers);
-            if (error.response.data) {
-              console.log('API error response:', error.response.data);
-            }
-          } else if (error.code === 'ECONNABORTED') {
-            console.log('API search timed out');
           }
         }
       }
 
-      // If API search didn't work or no search params, use full dataset
-      if (!useApiSearch) {
-        console.log('Using fallback search with full dataset');
-        searchStrategy = 'Full Database (comprehensive)';
-        jobs = await fetchAllJobs();
-
-        // Apply client-side filtering
-        if (q) {
-          const searchTerm = q.toLowerCase();
-          console.log(`Filtering ${jobs.length} jobs for search term: "${q}"`);
-
-          jobs = jobs.filter(
-            (job) =>
-              job.business_title?.toLowerCase().includes(searchTerm) ||
-              job.job_description?.toLowerCase().includes(searchTerm) ||
-              job.civil_service_title?.toLowerCase().includes(searchTerm) ||
-              job.agency?.toLowerCase().includes(searchTerm) ||
-              job.job_category?.toLowerCase().includes(searchTerm) ||
-              job.work_location?.toLowerCase().includes(searchTerm) ||
-              job.work_location_1?.toLowerCase().includes(searchTerm) ||
-              job.division_work_unit?.toLowerCase().includes(searchTerm)
-          );
-
-          console.log(`Fallback search found ${jobs.length} jobs for "${q}"`);
-        }
-
-        if (category) {
-          jobs = jobs.filter(
-            (job) => job.job_category?.toLowerCase() === category.toLowerCase()
-          );
-        }
-
-        if (location) {
-          const locationTerm = location.toLowerCase();
-          jobs = jobs.filter(
-            (job) =>
-              job.work_location?.toLowerCase().includes(locationTerm) ||
-              job.work_location_1?.toLowerCase().includes(locationTerm)
-          );
-        }
-
-        if (salary_min) {
-          jobs = jobs.filter(
-            (job) =>
-              job.salary_range_from &&
-              parseInt(job.salary_range_from) >= parseInt(salary_min)
-          );
-        }
-
-        if (salary_max) {
-          jobs = jobs.filter(
-            (job) =>
-              job.salary_range_to &&
-              parseInt(job.salary_range_to) <= parseInt(salary_max)
-          );
-        }
+      // Cache the search results for future pagination requests
+      if (!cachedSearch) {
+        searchResultCache.set(searchCacheKey, {
+          results: jobs,
+          timestamp: Date.now(),
+        });
+        console.log(
+          `Cached search results for: "${searchCacheKey}" (${jobs.length} results)`
+        );
       }
 
       // Apply pagination after filtering

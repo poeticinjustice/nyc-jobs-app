@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
   getJobCategories,
-  setSearchParams,
+  setSearchParams as setReduxSearchParams,
   saveJob,
 } from '../store/slices/jobsSlice';
 import {
@@ -15,7 +15,7 @@ import {
   HiChevronRight,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { cleanText } from '../utils/textUtils';
 
 const JobSearch = () => {
@@ -23,16 +23,18 @@ const JobSearch = () => {
   const { searchResults, categories, searchLoading, error, pagination } =
     useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Initialize search params from URL or defaults
   const [localSearchParams, setLocalSearchParams] = useState({
-    q: '',
-    category: '',
-    location: '',
-    salary_min: '',
-    salary_max: '',
+    q: searchParams.get('q') || '',
+    category: searchParams.get('category') || '',
+    location: searchParams.get('location') || '',
+    salary_min: searchParams.get('salary_min') || '',
+    salary_max: searchParams.get('salary_max') || '',
   });
 
   useEffect(() => {
@@ -41,10 +43,34 @@ const JobSearch = () => {
     }
   }, [dispatch, categories.length]);
 
-  // Remove automatic search on page load - let users search when ready
-  // useEffect(() => {
-  //   handleSearch();
-  // }, []);
+  // Sync URL parameters with local state and handle initial search
+  useEffect(() => {
+    const urlParams = {
+      q: searchParams.get('q') || '',
+      category: searchParams.get('category') || '',
+      location: searchParams.get('location') || '',
+      salary_min: searchParams.get('salary_min') || '',
+      salary_max: searchParams.get('salary_max') || '',
+    };
+
+    // Update local state if URL params changed
+    setLocalSearchParams(urlParams);
+
+    // If we have search parameters in URL, perform search
+    const hasSearchParams = Object.values(urlParams).some((value) => value);
+    if (hasSearchParams) {
+      const page = parseInt(searchParams.get('page')) || 1;
+      setCurrentPage(page);
+      // Use dispatch directly to avoid dependency issues
+      const searchParamsWithPage = {
+        ...urlParams,
+        page,
+        limit: 20,
+      };
+      dispatch(setReduxSearchParams(searchParamsWithPage));
+      dispatch(searchJobs(searchParamsWithPage));
+    }
+  }, [searchParams, dispatch, setSearchParams]);
 
   const handleSearch = (page = 1) => {
     setCurrentPage(page);
@@ -53,7 +79,19 @@ const JobSearch = () => {
       page,
       limit: 20,
     };
-    dispatch(setSearchParams(searchParamsWithPage));
+
+    // Update URL with search parameters (only non-empty values)
+    const newSearchParams = new URLSearchParams();
+    Object.entries(localSearchParams).forEach(([key, value]) => {
+      if (value && value.trim() !== '') {
+        newSearchParams.set(key, value.trim());
+      }
+    });
+    if (page > 1) newSearchParams.set('page', page.toString());
+
+    setSearchParams(newSearchParams);
+
+    dispatch(setReduxSearchParams(searchParamsWithPage));
     dispatch(searchJobs(searchParamsWithPage));
   };
 
@@ -72,6 +110,15 @@ const JobSearch = () => {
   };
 
   const handlePageChange = (newPage) => {
+    // Update URL with new page number
+    const newSearchParams = new URLSearchParams(searchParams);
+    if (newPage > 1) {
+      newSearchParams.set('page', newPage.toString());
+    } else {
+      newSearchParams.delete('page');
+    }
+    setSearchParams(newSearchParams);
+
     handleSearch(newPage);
   };
 
@@ -145,6 +192,29 @@ const JobSearch = () => {
               )}
               <span className='ml-2'>Search</span>
             </button>
+            {(localSearchParams.q ||
+              localSearchParams.category ||
+              localSearchParams.location ||
+              localSearchParams.salary_min ||
+              localSearchParams.salary_max) && (
+              <button
+                type='button'
+                onClick={() => {
+                  setLocalSearchParams({
+                    q: '',
+                    category: '',
+                    location: '',
+                    salary_min: '',
+                    salary_max: '',
+                  });
+                  setSearchParams(new URLSearchParams());
+                  setCurrentPage(1);
+                }}
+                className='btn btn-outline text-sm'
+              >
+                Clear Search
+              </button>
+            )}
             <button
               type='button'
               onClick={() => setShowFilters(!showFilters)}
@@ -253,34 +323,55 @@ const JobSearch = () => {
                 Ready to Search NYC Jobs
               </h3>
               <p className='text-blue-700 max-w-md mx-auto'>
-                Search through thousands of current job listings from NYC government agencies. 
-                Enter keywords, job titles, or browse by category to get started.
+                Search through thousands of current job listings from NYC
+                government agencies. Enter keywords, job titles, or browse by
+                category to get started.
               </p>
             </div>
-            
+
             <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
               <div className='bg-white/60 rounded-lg p-4'>
-                <div className='text-blue-600 font-medium mb-1'>⚡ Instant Search</div>
-                <div className='text-blue-700'>No waiting - search immediately</div>
+                <div className='text-blue-600 font-medium mb-1'>
+                  ⚡ Instant Search
+                </div>
+                <div className='text-blue-700'>
+                  No waiting - search immediately
+                </div>
               </div>
               <div className='bg-white/60 rounded-lg p-4'>
-                <div className='text-blue-600 font-medium mb-1'>🔍 Smart Results</div>
+                <div className='text-blue-600 font-medium mb-1'>
+                  🔍 Smart Results
+                </div>
                 <div className='text-blue-700'>Comprehensive job matching</div>
               </div>
               <div className='bg-white/60 rounded-lg p-4'>
-                <div className='text-blue-600 font-medium mb-1'>💾 Save Favorites</div>
-                <div className='text-blue-700'>Bookmark jobs you're interested in</div>
+                <div className='text-blue-600 font-medium mb-1'>
+                  💾 Save Favorites
+                </div>
+                <div className='text-blue-700'>
+                  Bookmark jobs you're interested in
+                </div>
               </div>
             </div>
-            
+
             <div className='mt-6'>
               <p className='text-xs text-blue-600 mb-3'>Popular searches:</p>
               <div className='flex flex-wrap justify-center gap-2'>
-                {['Engineer', 'Analyst', 'Manager', 'Coordinator', 'Assistant'].map((term) => (
+                {[
+                  'Engineer',
+                  'Analyst',
+                  'Manager',
+                  'Coordinator',
+                  'Assistant',
+                ].map((term) => (
                   <button
                     key={term}
                     onClick={() => {
-                      setLocalSearchParams(prev => ({ ...prev, q: term }));
+                      setLocalSearchParams((prev) => ({ ...prev, q: term }));
+                      // Update URL immediately for popular searches
+                      const newSearchParams = new URLSearchParams();
+                      newSearchParams.set('q', term);
+                      setSearchParams(newSearchParams);
                       handleSearch(1);
                     }}
                     className='px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full text-xs transition-colors'
@@ -318,6 +409,46 @@ const JobSearch = () => {
                   </span>
                 </div>
               </div>
+
+              {/* Current Search Parameters */}
+              {(localSearchParams.q ||
+                localSearchParams.category ||
+                localSearchParams.location ||
+                localSearchParams.salary_min ||
+                localSearchParams.salary_max) && (
+                <div className='mt-3 pt-3 border-t border-gray-200'>
+                  <div className='text-xs text-gray-500 mb-2'>
+                    Current search:
+                  </div>
+                  <div className='flex flex-wrap gap-2'>
+                    {localSearchParams.q && (
+                      <span className='px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs'>
+                        Keywords: {localSearchParams.q}
+                      </span>
+                    )}
+                    {localSearchParams.category && (
+                      <span className='px-2 py-1 bg-green-100 text-green-700 rounded text-xs'>
+                        Category: {localSearchParams.category}
+                      </span>
+                    )}
+                    {localSearchParams.location && (
+                      <span className='px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs'>
+                        Location: {localSearchParams.location}
+                      </span>
+                    )}
+                    {localSearchParams.salary_min && (
+                      <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
+                        Min Salary: ${localSearchParams.salary_min}
+                      </span>
+                    )}
+                    {localSearchParams.salary_max && (
+                      <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
+                        Max Salary: ${localSearchParams.salary_max}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className='space-y-4'>
