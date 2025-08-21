@@ -266,14 +266,26 @@ router.get(
             jobs = response.data;
             useApiSearch = true;
             console.log(`API search returned ${jobs.length} results`);
+            console.log(
+              `Environment: ${process.env.NODE_ENV || 'development'}`
+            );
+            console.log(
+              `Rate limit: ${process.env.RATE_LIMIT_MAX_REQUESTS || 'default'}`
+            );
           }
         } catch (error) {
           console.log('API search failed, falling back to full dataset search');
+          console.log('API search error details:', error.message);
+          if (error.response) {
+            console.log('API response status:', error.response.status);
+            console.log('API response headers:', error.response.headers);
+          }
         }
       }
 
       // If API search didn't work or no search params, use full dataset
       if (!useApiSearch) {
+        console.log('Using fallback search with full dataset');
         jobs = await fetchAllJobs();
 
         // Apply client-side filtering
