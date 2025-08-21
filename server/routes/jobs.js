@@ -112,7 +112,37 @@ router.get('/health', (req, res) => {
     status: 'ok',
     cacheStatus: jobsCache ? 'cached' : 'not cached',
     cacheSize: jobsCache ? jobsCache.length : 0,
+    cacheTimestamp: cacheTimestamp ? new Date(cacheTimestamp).toISOString() : null,
+    cacheAge: cacheTimestamp ? Math.round((Date.now() - cacheTimestamp) / 1000) : null,
   });
+});
+
+// NYC API health check endpoint
+router.get('/nyc-api-health', async (req, res) => {
+  try {
+    const startTime = Date.now();
+    const response = await axios.get(`${process.env.NYC_JOBS_API_URL}?$limit=1`, { 
+      timeout: 10000 
+    });
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      status: 'ok',
+      responseTime: `${responseTime}ms`,
+      nycApiStatus: response.status,
+      nycApiWorking: true,
+      sampleData: response.data.length > 0 ? 'Available' : 'No data'
+    });
+  } catch (error) {
+    res.json({
+      status: 'error',
+      nycApiWorking: false,
+      error: error.message,
+      errorCode: error.code,
+      responseStatus: error.response?.status,
+      responseData: error.response?.data
+    });
+  }
 });
 
 // Helper function to fetch all jobs from NYC API with caching
@@ -130,18 +160,51 @@ const fetchAllJobs = async () => {
   const batchSize = 1000;
   let hasMoreData = true;
 
+  // Retry configuration
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1 second
+
   while (hasMoreData) {
     const params = new URLSearchParams();
     params.append('$limit', batchSize);
     params.append('$offset', offset);
 
-    try {
-      const response = await axios.get(
-        `${process.env.NYC_JOBS_API_URL}?${params.toString()}`,
-        { timeout: 30000 } // 30 second timeout
-      );
+    let retryCount = 0;
+    let batchJobs = null;
 
-      const batchJobs = response.data;
+    while (retryCount < maxRetries && !batchJobs) {
+      try {
+        const response = await axios.get(
+          `${process.env.NYC_JOBS_API_URL}?${params.toString()}`,
+          { timeout: 30000 } // 30 second timeout
+        );
+
+        batchJobs = response.data;
+        console.log(`Successfully fetched batch at offset ${offset} with ${batchJobs.length} jobs`);
+        break;
+      } catch (error) {
+        retryCount++;
+        console.log(`Attempt ${retryCount} failed for offset ${offset}: ${error.message}`);
+        
+        if (error.response?.status === 500) {
+          console.log('NYC API server error, will retry...');
+        } else if (error.code === 'ECONNABORTED') {
+          console.log('Request timeout, will retry...');
+        }
+        
+        if (retryCount < maxRetries) {
+          const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
+          console.log(`Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.error(`Failed to fetch batch at offset ${offset} after ${maxRetries} attempts`);
+          hasMoreData = false;
+          break;
+        }
+      }
+    }
+
+    if (batchJobs) {
       if (batchJobs.length === 0) {
         hasMoreData = false;
       } else {
@@ -153,8 +216,7 @@ const fetchAllJobs = async () => {
           hasMoreData = false;
         }
       }
-    } catch (error) {
-      console.error('Error fetching jobs batch:', error);
+    } else {
       hasMoreData = false;
     }
   }
@@ -279,6 +341,11 @@ router.get(
           if (error.response) {
             console.log('API response status:', error.response.status);
             console.log('API response headers:', error.response.headers);
+            if (error.response.data) {
+              console.log('API error response:', error.response.data);
+            }
+          } else if (error.code === 'ECONNABORTED') {
+            console.log('API search timed out');
           }
         }
       }
