@@ -5,6 +5,7 @@ import {
   getJobCategories,
   setSearchParams as setReduxSearchParams,
   saveJob,
+  unsaveJob,
 } from '../store/slices/jobsSlice';
 import {
   HiSearch,
@@ -142,9 +143,17 @@ const JobSearch = () => {
     }));
   };
 
-  const handleSaveJob = (jobId) => {
-    if (isAuthenticated) {
-      dispatch(saveJob(jobId));
+  const handleSaveJob = (job) => {
+    if (!isAuthenticated) return;
+
+    if (job.isSaved) {
+      // Job is already saved, show confirmation dialog
+      if (window.confirm('Are you sure you want to remove this bookmark?')) {
+        dispatch(unsaveJob(job.job_id));
+      }
+    } else {
+      // Job is not saved, save it
+      dispatch(saveJob(job.job_id));
     }
   };
 
@@ -565,7 +574,7 @@ const JobSearch = () => {
                     <div className='flex flex-col items-end space-y-2 ml-4'>
                       {isAuthenticated && (
                         <button
-                          onClick={() => handleSaveJob(job.job_id)}
+                          onClick={() => handleSaveJob(job)}
                           className='p-2 text-gray-400 hover:text-primary-600 transition-colors'
                           title={job.isSaved ? 'Remove from saved' : 'Save job'}
                         >

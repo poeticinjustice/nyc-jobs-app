@@ -297,6 +297,7 @@ const fetchAllJobs = async () => {
 router.get(
   '/search',
   [
+    optionalAuth,
     query('q').optional().trim(),
     query('category').optional().trim(),
     query('location').optional().trim(),
@@ -346,6 +347,9 @@ router.get(
         salary_max,
       });
       const cachedSearch = searchResultCache.get(searchCacheKey);
+
+      let jobs;
+      let searchStrategy;
 
       if (
         cachedSearch &&
@@ -553,7 +557,7 @@ router.get(
         jobs = uniqueJobs;
       }
 
-      // Cache the search results for future pagination requests
+      // Cache the search results for future pagination requests (without saved status)
       if (!cachedSearch) {
         searchResultCache.set(searchCacheKey, {
           results: jobs,
@@ -580,25 +584,28 @@ router.get(
       }
 
       // Add saved status to each job and clean text fields
-      const jobsWithSavedStatus = paginatedJobs.map((job) => ({
-        ...job,
-        business_title: cleanText(job.business_title),
-        job_category: cleanText(job.job_category),
-        work_location: cleanText(job.work_location),
-        work_location_1: cleanText(job.work_location_1),
-        division_work_unit: cleanText(job.division_work_unit),
-        agency: cleanText(job.agency),
-        job_description: cleanText(job.job_description),
-        minimum_qual_requirements: cleanText(job.minimum_qual_requirements),
-        preferred_skills: cleanText(job.preferred_skills),
-        additional_information: cleanText(job.additional_information),
-        to_apply: cleanText(job.to_apply),
-        hours_shift: cleanText(job.hours_shift),
-        residency_requirement: cleanText(job.residency_requirement),
-        title_classification: cleanText(job.title_classification),
-        career_level: cleanText(job.career_level),
-        isSaved: savedJobIds.includes(job.job_id),
-      }));
+      const jobsWithSavedStatus = paginatedJobs.map((job) => {
+        const isSaved = savedJobIds.includes(job.job_id);
+        return {
+          ...job,
+          business_title: cleanText(job.business_title),
+          job_category: cleanText(job.job_category),
+          work_location: cleanText(job.work_location),
+          work_location_1: cleanText(job.work_location_1),
+          division_work_unit: cleanText(job.division_work_unit),
+          agency: cleanText(job.agency),
+          job_description: cleanText(job.job_description),
+          minimum_qual_requirements: cleanText(job.minimum_qual_requirements),
+          preferred_skills: cleanText(job.preferred_skills),
+          additional_information: cleanText(job.additional_information),
+          to_apply: cleanText(job.to_apply),
+          hours_shift: cleanText(job.hours_shift),
+          residency_requirement: cleanText(job.residency_requirement),
+          title_classification: cleanText(job.title_classification),
+          career_level: cleanText(job.career_level),
+          isSaved: isSaved,
+        };
+      });
 
       // Log search method summary
       console.log(
