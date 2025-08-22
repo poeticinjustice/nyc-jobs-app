@@ -1,25 +1,50 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { getSavedJobs, unsaveJob } from '../store/slices/jobsSlice';
-import { HiBookmarkAlt, HiTrash, HiEye, HiPlus } from 'react-icons/hi';
-import { Link, useNavigate } from 'react-router-dom';
+import {
+  HiBookmarkAlt,
+  HiLocationMarker,
+  HiCalendar,
+  HiCurrencyDollar,
+  HiPlus,
+  HiChevronLeft,
+  HiChevronRight,
+  HiEye,
+  HiTrash,
+} from 'react-icons/hi';
+import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import { cleanText } from '../utils/textUtils';
 
 const SavedJobs = () => {
   const dispatch = useDispatch();
-  const { savedJobs, loading, error } = useSelector((state) => state.jobs);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { savedJobs, loading, error, pagination } = useSelector(
+    (state) => state.jobs
+  );
   const { isAuthenticated } = useSelector((state) => state.auth);
-  const navigate = useNavigate();
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
 
+  // Get current page from URL params or default to 1
+  const currentPage = parseInt(searchParams.get('page') || '1');
+  const pageSize = 20; // Number of jobs per page
+
   useEffect(() => {
     if (isAuthenticated) {
-      dispatch(getSavedJobs());
+      dispatch(getSavedJobs({ page: currentPage, limit: pageSize }));
     }
-  }, [dispatch, isAuthenticated]);
+  }, [dispatch, isAuthenticated, currentPage, pageSize]);
+
+  // Update URL when page changes
+  const handlePageChange = (newPage) => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      newParams.set('page', newPage.toString());
+      return newParams;
+    });
+  };
 
   const handleUnsaveJob = (jobId) => {
     dispatch(unsaveJob(jobId));
@@ -70,7 +95,9 @@ const SavedJobs = () => {
           <div>
             <h1 className='text-2xl font-bold text-gray-900'>Saved Jobs</h1>
             <p className='text-gray-600 mt-1'>
-              {savedJobs.length} {savedJobs.length === 1 ? 'job' : 'jobs'} saved
+              {pagination?.total || savedJobs.length}{' '}
+              {(pagination?.total || savedJobs.length) === 1 ? 'job' : 'jobs'}{' '}
+              saved
             </p>
           </div>
           <div className='flex items-center space-x-2'>
@@ -200,6 +227,77 @@ const SavedJobs = () => {
         jobId={selectedJob?.jobId}
         jobTitle={selectedJob?.businessTitle}
       />
+
+      {/* Pagination */}
+      {savedJobs.length > 0 && pagination && pagination.pages > 1 && (
+        <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+          <div className='flex items-center justify-between'>
+            <div className='text-sm text-gray-700'>
+              Showing {(currentPage - 1) * pageSize + 1} to{' '}
+              {Math.min(currentPage * pageSize, pagination.total)} of{' '}
+              {pagination.total} saved jobs
+            </div>
+
+            <div className='flex items-center space-x-2'>
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className={`p-2 rounded-lg border transition-colors ${
+                  currentPage <= 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300'
+                }`}
+              >
+                <HiChevronLeft className='h-5 w-5' />
+              </button>
+
+              <div className='flex items-center space-x-1'>
+                {Array.from(
+                  { length: Math.min(5, pagination.pages) },
+                  (_, i) => {
+                    let pageNum;
+                    if (pagination.pages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= pagination.pages - 2) {
+                      pageNum = pagination.pages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`px-3 py-2 rounded-lg border transition-colors ${
+                          pageNum === currentPage
+                            ? 'bg-primary-600 text-white border-primary-600'
+                            : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= pagination.pages}
+                className={`p-2 rounded-lg border transition-colors ${
+                  currentPage >= pagination.pages
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300'
+                }`}
+              >
+                <HiChevronRight className='h-5 w-5' />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

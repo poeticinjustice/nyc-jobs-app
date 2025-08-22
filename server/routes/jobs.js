@@ -654,7 +654,12 @@ router.get('/saved', authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
 
-    const user = await User.findById(req.user._id).populate({
+    // First get the total count of saved jobs
+    const user = await User.findById(req.user._id);
+    const totalSavedJobs = user.savedJobs.length;
+
+    // Then get the paginated results
+    const paginatedUser = await User.findById(req.user._id).populate({
       path: 'savedJobs',
       options: {
         skip: (page - 1) * limit,
@@ -663,12 +668,15 @@ router.get('/saved', authenticateToken, async (req, res) => {
       },
     });
 
+    const totalPages = Math.ceil(totalSavedJobs / limit);
+
     res.json({
-      jobs: user.savedJobs,
+      jobs: paginatedUser.savedJobs,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total: user.savedJobs.length,
+        total: totalSavedJobs,
+        pages: totalPages,
       },
     });
   } catch (error) {
