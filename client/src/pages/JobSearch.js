@@ -217,7 +217,7 @@ const JobSearch = () => {
 
         {/* Search Form */}
         <form onSubmit={handleSearchSubmit} className='space-y-4'>
-          <div className='flex gap-4'>
+          <div className='flex flex-col sm:flex-row gap-4'>
             <div className='flex-1'>
               <input
                 type='text'
@@ -225,65 +225,67 @@ const JobSearch = () => {
                 placeholder='Search jobs by title or description...'
                 value={localSearchParams.q}
                 onChange={handleInputChange}
-                className='input'
+                className='input w-full'
               />
             </div>
-            <button
-              type='submit'
-              disabled={searchLoading}
-              className='btn btn-primary flex items-center'
-            >
-              {searchLoading ? (
-                <LoadingSpinner size='sm' />
-              ) : (
-                <HiSearch className='h-5 w-5' />
+            <div className='flex gap-2 sm:gap-4'>
+              <button
+                type='submit'
+                disabled={searchLoading}
+                className='btn btn-primary flex items-center'
+              >
+                {searchLoading ? (
+                  <LoadingSpinner size='sm' />
+                ) : (
+                  <HiSearch className='h-5 w-5' />
+                )}
+                <span className='ml-2 hidden sm:inline'>Search</span>
+              </button>
+              {(localSearchParams.q ||
+                localSearchParams.category ||
+                localSearchParams.location ||
+                localSearchParams.salary_min ||
+                localSearchParams.salary_max) && (
+                <button
+                  type='button'
+                  onClick={() => {
+                    setLocalSearchParams({
+                      q: '',
+                      category: '',
+                      location: '',
+                      salary_min: '',
+                      salary_max: '',
+                    });
+                    setSearchParams(new URLSearchParams());
+                    setCurrentPage(1);
+                  }}
+                  className='p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors'
+                  title='Clear all search filters'
+                >
+                  <svg
+                    className='w-4 h-4'
+                    fill='none'
+                    stroke='currentColor'
+                    viewBox='0 0 24 24'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      strokeWidth={2}
+                      d='M6 18L18 6M6 6l12 12'
+                    />
+                  </svg>
+                </button>
               )}
-              <span className='ml-2'>Search</span>
-            </button>
-            {(localSearchParams.q ||
-              localSearchParams.category ||
-              localSearchParams.location ||
-              localSearchParams.salary_min ||
-              localSearchParams.salary_max) && (
               <button
                 type='button'
-                onClick={() => {
-                  setLocalSearchParams({
-                    q: '',
-                    category: '',
-                    location: '',
-                    salary_min: '',
-                    salary_max: '',
-                  });
-                  setSearchParams(new URLSearchParams());
-                  setCurrentPage(1);
-                }}
-                className='p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors'
-                title='Clear all search filters'
+                onClick={() => setShowFilters(!showFilters)}
+                className='btn btn-outline flex items-center'
               >
-                <svg
-                  className='w-4 h-4'
-                  fill='none'
-                  stroke='currentColor'
-                  viewBox='0 0 24 24'
-                >
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M6 18L18 6M6 6l12 12'
-                  />
-                </svg>
+                <HiFilter className='h-5 w-5' />
+                <span className='ml-2 hidden sm:inline'>Filters</span>
               </button>
-            )}
-            <button
-              type='button'
-              onClick={() => setShowFilters(!showFilters)}
-              className='btn btn-outline flex items-center'
-            >
-              <HiFilter className='h-5 w-5' />
-              <span className='ml-2'>Filters</span>
-            </button>
+            </div>
           </div>
 
           {/* Advanced Filters */}
