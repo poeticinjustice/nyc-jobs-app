@@ -3,6 +3,7 @@ const { body, validationResult, query } = require('express-validator');
 const Note = require('../models/Note');
 const Job = require('../models/Job');
 const { authenticateToken, requireOwnership } = require('../middleware/auth');
+const axios = require('axios'); // Added axios for automatic job fetching
 
 const router = express.Router();
 
@@ -49,13 +50,67 @@ router.post(
         // First try to find in our database
         job = await Job.findOne({ jobId });
 
-        // If not found in database, the jobId might be from NYC API
-        // We'll allow the note to be created without a database job reference
-        // This allows notes for jobs that haven't been saved yet
+        // If not found in database, fetch from NYC API and save it automatically
         if (!job) {
           console.log(
-            `Note created for NYC API job (jobId: ${jobId}) - not in database yet`
+            `Job ${jobId} not found in database, automatically fetching and saving...`
           );
+          try {
+            // Fetch the specific job from NYC API
+            const response = await axios.get(
+              `${process.env.NYC_JOBS_API_URL}?job_id=${jobId}`,
+              { timeout: 10000 }
+            );
+
+            const nycJobs = response.data;
+            if (nycJobs && nycJobs.length > 0) {
+              const nycJob = nycJobs[0];
+              console.log(
+                `Found job ${jobId} in NYC API: ${nycJob.business_title}`
+              );
+
+              // Create and save the job automatically
+              job = new Job({
+                jobId: nycJob.job_id,
+                businessTitle: nycJob.business_title,
+                civilServiceTitle: nycJob.civil_service_title,
+                titleCodeNo: nycJob.title_code_no,
+                level: nycJob.level,
+                jobCategory: nycJob.job_category,
+                fullTimePartTimeIndicator: nycJob.full_time_part_time_indicator,
+                salaryRangeFrom: nycJob.salary_range_from,
+                salaryRangeTo: nycJob.salary_range_to,
+                salaryFrequency: nycJob.salary_frequency,
+                workLocation: nycJob.work_location,
+                divisionWorkUnit: nycJob.division_work_unit,
+                jobDescription: nycJob.job_description,
+                minimumQualRequirements: nycJob.minimum_qual_requirements,
+                preferredSkills: nycJob.preferred_skills,
+                additionalInformation: nycJob.additional_information,
+                toApply: nycJob.to_apply,
+                hoursShift: nycJob.hours_shift,
+                workLocation1: nycJob.work_location_1,
+                residencyRequirement: nycJob.residency_requirement,
+                postDate: nycJob.posting_date,
+                postingUpdated: nycJob.posting_updated,
+                processDate: nycJob.process_date,
+                postUntil: nycJob.post_until,
+                agency: nycJob.agency,
+                postingType: nycJob.posting_type,
+                numberOfPositions: nycJob.number_of_positions,
+                titleClassification: nycJob.title_classification,
+                careerLevel: nycJob.career_level,
+              });
+
+              await job.save();
+              console.log(`Automatically saved job ${jobId} to database`);
+            } else {
+              console.log(`Job ${jobId} not found in NYC API`);
+            }
+          } catch (error) {
+            console.error(`Error automatically saving job ${jobId}:`, error);
+            // Continue with note creation even if job saving fails
+          }
         }
       }
 
@@ -138,8 +193,59 @@ router.get(
 
       const total = await Note.countDocuments(query);
 
+      // Always look up job data by jobId for consistency
+      const notesWithJobInfo = await Promise.all(
+        notes.map(async (note) => {
+          let jobData = null;
+
+          try {
+            // First, try to use existing populated job data if available and valid
+            if (
+              note.job &&
+              typeof note.job === 'object' &&
+              note.job.businessTitle &&
+              note.job.jobId
+            ) {
+              jobData = note.job;
+            }
+            // If no populated job data, try to find by jobId
+            else if (note.jobId && typeof note.jobId === 'string') {
+              const actualJob = await Job.findOne({ jobId: note.jobId });
+              if (actualJob) {
+                jobData = actualJob;
+              } else {
+                // Create a virtual job object only if the job truly doesn't exist
+                jobData = {
+                  jobId: note.jobId,
+                  businessTitle: 'Job not saved in database',
+                  jobCategory: 'Unknown',
+                  workLocation: 'Unknown',
+                };
+              }
+            }
+          } catch (error) {
+            console.error(
+              `Error processing job data for note ${note._id}:`,
+              error
+            );
+            // If there's an error, try to create a basic job object from jobId if available
+            if (note.jobId) {
+              jobData = {
+                jobId: note.jobId,
+                businessTitle: 'Error loading job data',
+                jobCategory: 'Unknown',
+                workLocation: 'Unknown',
+              };
+            }
+          }
+
+          // Return note with consistent job structure
+          return { ...note.toObject(), job: jobData };
+        })
+      );
+
       res.json({
-        notes,
+        notes: notesWithJobInfo,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),

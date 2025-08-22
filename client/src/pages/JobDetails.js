@@ -21,6 +21,17 @@ const JobDetails = () => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
 
+  // Debug logging - only show when job data changes significantly
+  useEffect(() => {
+    if (currentJob && currentJob.jobId) {
+      console.log('Job loaded:', {
+        jobId: currentJob.jobId,
+        title: currentJob.businessTitle,
+        isSaved: currentJob.isSaved,
+      });
+    }
+  }, [currentJob?.jobId, currentJob?.isSaved]);
+
   useEffect(() => {
     if (jobId) {
       dispatch(getJobDetails(jobId));
@@ -29,8 +40,10 @@ const JobDetails = () => {
 
   const handleSaveToggle = () => {
     if (currentJob?.isSaved) {
+      console.log('Unsaving job:', currentJob.jobId);
       dispatch(unsaveJob(currentJob.jobId));
     } else {
+      console.log('Saving job:', currentJob.jobId);
       dispatch(saveJob(currentJob.jobId));
     }
   };

@@ -751,51 +751,70 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.post('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Saving job: ${id}`);
 
     // First check if job exists in our database
     let job = await Job.findOne({ jobId: id });
 
     if (!job) {
-      // If not in database, fetch from NYC API and create
-      const allJobs = await fetchAllJobs();
+      console.log(`Job ${id} not in database, fetching from NYC API...`);
+      // If not in database, fetch just this specific job from NYC API
 
-      const nycJob = allJobs.find((job) => job.job_id === id);
+      try {
+        // Fetch just this specific job instead of all jobs
+        const response = await axios.get(
+          `${process.env.NYC_JOBS_API_URL}?job_id=${id}`,
+          { timeout: 10000 } // 10 second timeout for single job
+        );
 
-      if (!nycJob) {
-        return res.status(404).json({ message: 'Job not found' });
+        const nycJobs = response.data;
+        if (!nycJobs || nycJobs.length === 0) {
+          console.log(`Job ${id} not found in NYC API`);
+          return res.status(404).json({ message: 'Job not found in NYC API' });
+        }
+
+        const nycJob = nycJobs[0];
+        console.log(`Found job: ${nycJob.business_title}`);
+
+        job = new Job({
+          jobId: nycJob.job_id,
+          businessTitle: cleanText(nycJob.business_title),
+          civilServiceTitle: cleanText(nycJob.civil_service_title),
+          titleCodeNo: nycJob.title_code_no,
+          level: nycJob.level,
+          jobCategory: cleanText(nycJob.job_category),
+          fullTimePartTimeIndicator: nycJob.full_time_part_time_indicator,
+          salaryRangeFrom: nycJob.salary_range_from,
+          salaryRangeTo: nycJob.salary_range_to,
+          salaryFrequency: nycJob.salary_frequency,
+          workLocation: cleanText(nycJob.work_location),
+          divisionWorkUnit: cleanText(nycJob.division_work_unit),
+          jobDescription: formatJobDescription(nycJob.job_description),
+          minimumQualRequirements: cleanText(nycJob.minimum_qual_requirements),
+          preferredSkills: cleanText(nycJob.preferred_skills),
+          additionalInformation: cleanText(nycJob.additional_information),
+          toApply: cleanText(nycJob.to_apply),
+          hoursShift: cleanText(nycJob.hours_shift),
+          workLocation1: cleanText(nycJob.work_location_1),
+          residencyRequirement: cleanText(nycJob.residency_requirement),
+          postDate: nycJob.posting_date,
+          postingUpdated: nycJob.posting_updated,
+          processDate: nycJob.process_date,
+          postUntil: nycJob.post_until,
+          agency: cleanText(nycJob.agency),
+          postingType: nycJob.posting_type,
+          numberOfPositions: nycJob.number_of_positions,
+          titleClassification: cleanText(nycJob.title_classification),
+          careerLevel: cleanText(nycJob.career_level),
+        });
+
+        console.log(`Created job document for ${id}`);
+      } catch (fetchError) {
+        console.error(`Error fetching job ${id}:`, fetchError.message);
+        return res.status(500).json({
+          message: 'Failed to fetch job data from NYC API. Please try again.',
+        });
       }
-
-      job = new Job({
-        jobId: nycJob.job_id,
-        businessTitle: cleanText(nycJob.business_title),
-        civilServiceTitle: cleanText(nycJob.civil_service_title),
-        titleCodeNo: nycJob.title_code_no,
-        level: nycJob.level,
-        jobCategory: cleanText(nycJob.job_category),
-        fullTimePartTimeIndicator: nycJob.full_time_part_time_indicator,
-        salaryRangeFrom: nycJob.salary_range_from,
-        salaryRangeTo: nycJob.salary_range_to,
-        salaryFrequency: nycJob.salary_frequency,
-        workLocation: cleanText(nycJob.work_location),
-        divisionWorkUnit: cleanText(nycJob.division_work_unit),
-        jobDescription: formatJobDescription(nycJob.job_description),
-        minimumQualRequirements: cleanText(nycJob.minimum_qual_requirements),
-        preferredSkills: cleanText(nycJob.preferred_skills),
-        additionalInformation: cleanText(nycJob.additional_information),
-        toApply: cleanText(nycJob.to_apply),
-        hoursShift: cleanText(nycJob.hours_shift),
-        workLocation1: cleanText(nycJob.work_location_1),
-        residencyRequirement: cleanText(nycJob.residency_requirement),
-        postDate: nycJob.posting_date,
-        postingUpdated: nycJob.posting_updated,
-        processDate: nycJob.process_date,
-        postUntil: nycJob.post_until,
-        agency: cleanText(nycJob.agency),
-        postingType: nycJob.posting_type,
-        numberOfPositions: nycJob.number_of_positions,
-        titleClassification: cleanText(nycJob.title_classification),
-        careerLevel: cleanText(nycJob.career_level),
-      });
     }
 
     // Check if already saved by this user
@@ -813,6 +832,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
     });
 
     await job.save();
+    console.log(`Job ${id} saved successfully`);
 
     // Update user's savedJobs array
     await User.findByIdAndUpdate(req.user._id, {
@@ -821,7 +841,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 
     res.json({ message: 'Job saved successfully' });
   } catch (error) {
-    console.error('Save job error:', error);
+    console.error('Save job error:', error.message);
     res.status(500).json({ message: 'Error saving job' });
   }
 });
