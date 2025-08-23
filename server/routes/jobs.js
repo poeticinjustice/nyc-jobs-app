@@ -482,58 +482,79 @@ router.get(
           searchStrategy = 'Full Database (comprehensive)';
           jobs = await fetchAllJobs();
 
-          // Apply client-side filtering
-          if (q) {
-            const searchTerm = q.toLowerCase();
+          // If no search parameters provided, show all jobs sorted by most recently posted
+          if (!q && !category && !location && !salary_min && !salary_max) {
             console.log(
-              `Filtering ${jobs.length} jobs for search term: "${q}"`
+              'No search parameters provided, showing all jobs sorted by most recently posted'
             );
+            searchStrategy = 'All Jobs (sorted by date)';
 
-            jobs = jobs.filter(
-              (job) =>
-                job.business_title?.toLowerCase().includes(searchTerm) ||
-                job.job_description?.toLowerCase().includes(searchTerm) ||
-                job.civil_service_title?.toLowerCase().includes(searchTerm) ||
-                job.agency?.toLowerCase().includes(searchTerm) ||
-                job.job_category?.toLowerCase().includes(searchTerm) ||
-                job.work_location?.toLowerCase().includes(searchTerm) ||
-                job.work_location_1?.toLowerCase().includes(searchTerm) ||
-                job.division_work_unit?.toLowerCase().includes(searchTerm)
-            );
+            // Sort jobs by posting date (most recent first)
+            jobs.sort((a, b) => {
+              const dateA = a.posting_date
+                ? new Date(a.posting_date)
+                : new Date(0);
+              const dateB = b.posting_date
+                ? new Date(b.posting_date)
+                : new Date(0);
+              return dateB - dateA; // Most recent first
+            });
+          } else {
+            // Apply client-side filtering for specific search terms
+            if (q) {
+              const searchTerm = q.toLowerCase();
+              console.log(
+                `Filtering ${jobs.length} jobs for search term: "${q}"`
+              );
 
-            console.log(`Fallback search found ${jobs.length} jobs for "${q}"`);
-          }
+              jobs = jobs.filter(
+                (job) =>
+                  job.business_title?.toLowerCase().includes(searchTerm) ||
+                  job.job_description?.toLowerCase().includes(searchTerm) ||
+                  job.civil_service_title?.toLowerCase().includes(searchTerm) ||
+                  job.agency?.toLowerCase().includes(searchTerm) ||
+                  job.job_category?.toLowerCase().includes(searchTerm) ||
+                  job.work_location?.toLowerCase().includes(searchTerm) ||
+                  job.work_location_1?.toLowerCase().includes(searchTerm) ||
+                  job.division_work_unit?.toLowerCase().includes(searchTerm)
+              );
 
-          if (category) {
-            jobs = jobs.filter(
-              (job) =>
-                job.job_category?.toLowerCase() === category.toLowerCase()
-            );
-          }
+              console.log(
+                `Fallback search found ${jobs.length} jobs for "${q}"`
+              );
+            }
 
-          if (location) {
-            const locationTerm = location.toLowerCase();
-            jobs = jobs.filter(
-              (job) =>
-                job.work_location?.toLowerCase().includes(locationTerm) ||
-                job.work_location_1?.toLowerCase().includes(locationTerm)
-            );
-          }
+            if (category) {
+              jobs = jobs.filter(
+                (job) =>
+                  job.job_category?.toLowerCase() === category.toLowerCase()
+              );
+            }
 
-          if (salary_min) {
-            jobs = jobs.filter(
-              (job) =>
-                job.salary_range_from &&
-                parseInt(job.salary_range_from) >= parseInt(salary_min)
-            );
-          }
+            if (location) {
+              const locationTerm = location.toLowerCase();
+              jobs = jobs.filter(
+                (job) =>
+                  job.work_location?.toLowerCase().includes(locationTerm) ||
+                  job.work_location_1?.toLowerCase().includes(locationTerm)
+              );
+            }
 
-          if (salary_max) {
-            jobs = jobs.filter(
-              (job) =>
-                job.salary_range_to &&
-                parseInt(job.salary_range_to) <= parseInt(salary_max)
-            );
+            if (salary_min) {
+              jobs = jobs.filter(
+                (job) =>
+                  job.salary_range_from &&
+                  parseInt(job.salary_range_from) >= parseInt(salary_min)
+              );
+            }
+
+            if (salary_max) {
+              jobs = jobs.filter(
+                (job) =>
+                  job.salary_range_to &&
+                  parseInt(job.salary_range_to) <= parseInt(salary_max)
+              );
+            }
           }
         }
       }

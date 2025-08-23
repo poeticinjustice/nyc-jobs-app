@@ -47,47 +47,56 @@ const JobSearch = () => {
     salary_max: searchParams.get('salary_max') || '',
   });
 
+  // Load categories on component mount
   useEffect(() => {
     if (categories.length === 0) {
       dispatch(getJobCategories());
     }
   }, [dispatch, categories.length]);
 
-  // Sync URL parameters with local state and handle initial search
+  // Handle URL parameter changes and initial load
   useEffect(() => {
-    const urlParams = {
-      q: searchParams.get('q') || '',
-      category: searchParams.get('category') || '',
-      location: searchParams.get('location') || '',
-      salary_min: searchParams.get('salary_min') || '',
-      salary_max: searchParams.get('salary_max') || '',
-    };
+    const hasParams = Array.from(searchParams.values()).some((value) => value);
 
-    // Update local state if URL params changed
-    setLocalSearchParams(urlParams);
-    setActiveSearchParams(urlParams);
+    if (hasParams) {
+      // Extract search parameters from URL
+      const urlParams = {};
+      searchParams.forEach((value, key) => {
+        if (value) urlParams[key] = value;
+      });
 
-    // If we have search parameters in URL, perform search
-    const hasSearchParams = Object.values(urlParams).some((value) => value);
-    if (hasSearchParams) {
-      const page = parseInt(searchParams.get('page')) || 1;
-      setCurrentPage(page);
-      // Use dispatch directly to avoid dependency issues
+      // Update local search params with URL values
+      setLocalSearchParams((prev) => ({
+        ...prev,
+        ...urlParams,
+      }));
+
+      // Perform search with URL parameters
       const searchParamsWithPage = {
         ...urlParams,
-        page,
+        page: currentPage,
         limit: 20,
       };
       dispatch(setReduxSearchParams(searchParamsWithPage));
       dispatch(searchJobs(searchParamsWithPage));
     } else {
-      // Clear search results if no URL parameters
+      // No search parameters - clear results and don't auto-load
+      console.log('No search parameters, clearing results');
       dispatch(setReduxSearchParams({}));
-      // Clear search results from Redux store
       dispatch({ type: 'jobs/clearSearchResults' });
       setCurrentPage(1);
     }
-  }, [searchParams, dispatch, setSearchParams]);
+  }, [searchParams, dispatch, setSearchParams, currentPage]);
+
+  // Debug effect to log when search results change
+  useEffect(() => {
+    console.log('=== Search Results Updated ===');
+    console.log('searchResults length:', searchResults.length);
+    console.log('currentPage:', currentPage);
+    console.log('pagination:', pagination);
+    console.log('activeSearchParams:', activeSearchParams);
+    console.log('=== End Search Results Updated ===');
+  }, [searchResults, currentPage, pagination, activeSearchParams]);
 
   // Handle browser back/forward navigation
   useEffect(() => {
@@ -99,7 +108,8 @@ const JobSearch = () => {
       );
 
       if (!hasParams) {
-        // Clear search results if no URL parameters
+        // No search parameters - clear results
+        console.log('Browser navigation: No parameters, clearing results');
         dispatch({ type: 'jobs/clearSearchResults' });
         setCurrentPage(1);
       }
@@ -111,6 +121,27 @@ const JobSearch = () => {
 
   const handleSearch = (page = 1) => {
     setCurrentPage(page);
+
+    // Check if this is an "empty search" (user wants to see all jobs)
+    const hasSearchTerms = Object.values(localSearchParams).some(
+      (value) => value && value.trim() !== ''
+    );
+
+    if (!hasSearchTerms) {
+      // Empty search - load all jobs sorted by most recent
+      console.log(
+        'Empty search clicked - loading all jobs sorted by most recent'
+      );
+      dispatch(setReduxSearchParams({}));
+      setActiveSearchParams({}); // Set empty search params for pagination logic
+      dispatch(searchJobs({ page, limit: 20 }));
+
+      // Clear URL parameters since we're showing all jobs
+      setSearchParams(new URLSearchParams());
+      return;
+    }
+
+    // Regular search with terms
     const searchParamsWithPage = {
       ...localSearchParams,
       page,
@@ -158,6 +189,14 @@ const JobSearch = () => {
   };
 
   const handlePageChange = (newPage) => {
+    console.log(`=== handlePageChange Debug ===`);
+    console.log(`Requested page: ${newPage}`);
+    console.log(`Current currentPage state: ${currentPage}`);
+    console.log('Current activeSearchParams:', activeSearchParams);
+    console.log('Current searchParams:', searchParams);
+    console.log('Current searchResults length:', searchResults.length);
+    console.log('Current pagination:', pagination);
+
     // Update URL with new page number
     const newSearchParams = new URLSearchParams(searchParams);
     if (newPage > 1) {
@@ -167,7 +206,25 @@ const JobSearch = () => {
     }
     setSearchParams(newSearchParams);
 
-    handleSearch(newPage);
+    // Check if we're currently showing all jobs or filtered results
+    const hasSearchTerms = Object.values(activeSearchParams).some(
+      (value) => value && value.trim() !== ''
+    );
+
+    console.log('Has search terms:', hasSearchTerms);
+
+    if (!hasSearchTerms) {
+      // We're showing all jobs - just change page without full search
+      console.log(`Changing to page ${newPage} for all jobs`);
+      console.log(`Dispatching searchJobs with page ${newPage}`);
+      setCurrentPage(newPage);
+      dispatch(searchJobs({ page: newPage, limit: 20 }));
+    } else {
+      // We have search terms - use the regular search logic
+      console.log(`Changing to page ${newPage} for filtered results`);
+      handleSearch(newPage);
+    }
+    console.log(`=== End handlePageChange Debug ===`);
   };
 
   const handleSearchSubmit = (e) => {
@@ -415,7 +472,8 @@ const JobSearch = () => {
                 <p className='text-blue-700 max-w-md mx-auto'>
                   Search through thousands of current job listings from NYC
                   government agencies. Enter keywords, job titles, or browse by
-                  category to get started.
+                  category to get started. Or click Search to see all available
+                  jobs.
                 </p>
               </div>
 
@@ -452,18 +510,15 @@ const JobSearch = () => {
           <div className='flex justify-center py-8'>
             <LoadingSpinner size='lg' />
           </div>
-        ) : searchResults.length > 0 &&
-          (searchParams.get('q') ||
-            searchParams.get('category') ||
-            searchParams.get('location') ||
-            searchParams.get('salary_min') ||
-            searchParams.get('salary_max')) ? (
+        ) : searchResults.length > 0 ? (
           <>
             {/* Search Results Summary */}
             <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
               <div className='flex items-center justify-between'>
                 <div className='text-sm text-gray-600'>
-                  <span className='font-medium'>{searchResults.length}</span>{' '}
+                  <span className='font-medium'>
+                    {pagination ? pagination.total : searchResults.length}
+                  </span>{' '}
                   jobs found
                   {pagination && (
                     <span className='ml-2'>
@@ -472,14 +527,9 @@ const JobSearch = () => {
                     </span>
                   )}
                 </div>
-                <div className='text-xs text-gray-500'>
-                  <span className='text-blue-600'>
-                    🔍 Smart Search (Auto-optimized)
-                  </span>
-                </div>
               </div>
 
-              {/* Current Search Parameters */}
+              {/* Current Search Parameters - Only show if there are actual search parameters */}
               {(activeSearchParams.q ||
                 activeSearchParams.category ||
                 activeSearchParams.location ||
