@@ -29,6 +29,7 @@ const JobSearch = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [resultsPerPage, setResultsPerPage] = useState(20);
 
   // Initialize search params from URL or defaults
   const [localSearchParams, setLocalSearchParams] = useState({
@@ -38,6 +39,7 @@ const JobSearch = () => {
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
+    limit: parseInt(searchParams.get('limit')) || 20,
   });
 
   // Track the active search (what's actually being searched for in results)
@@ -48,6 +50,7 @@ const JobSearch = () => {
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
+    limit: parseInt(searchParams.get('limit')) || 20,
   });
 
   // Load categories on component mount
@@ -76,21 +79,24 @@ const JobSearch = () => {
         urlParams.sort = 'date_desc';
       }
 
-      // Extract page parameter and update currentPage state
+      // Extract page and limit parameters
       const pageFromUrl = parseInt(urlParams.page) || 1;
+      const limitFromUrl = parseInt(urlParams.limit) || 20;
       setCurrentPage(pageFromUrl);
+      setResultsPerPage(limitFromUrl);
 
       // Update local search params with URL values
       setLocalSearchParams((prev) => ({
         ...prev,
         ...urlParams,
+        limit: limitFromUrl,
       }));
 
       // Perform search with URL parameters
       const searchParamsWithPage = {
         ...urlParams,
         page: pageFromUrl,
-        limit: 20,
+        limit: limitFromUrl,
       };
 
       dispatch(setReduxSearchParams(searchParamsWithPage));
@@ -174,14 +180,20 @@ const JobSearch = () => {
 
     // Check if this is an "empty search" (user wants to see all jobs)
     const hasSearchTerms = Object.values(localSearchParams).some(
-      (value) => value && value.trim() !== ''
+      (value) => value && String(value).trim() !== ''
     );
 
     if (!hasSearchTerms) {
       // Empty search - load all jobs sorted by most recent
       dispatch(setReduxSearchParams({}));
       setActiveSearchParams({}); // Set empty search params for pagination logic
-      dispatch(searchJobs({ page, limit: 20, sort: localSearchParams.sort }));
+      dispatch(
+        searchJobs({
+          page,
+          limit: resultsPerPage,
+          sort: localSearchParams.sort,
+        })
+      );
 
       // Clear URL parameters since we're showing all jobs
       setSearchParams(new URLSearchParams());
@@ -192,21 +204,30 @@ const JobSearch = () => {
     const searchParamsWithPage = {
       ...localSearchParams,
       page,
-      limit: 20,
+      limit: resultsPerPage,
     };
 
     // Update active search params when search is actually performed
-    setActiveSearchParams(localSearchParams);
+    setActiveSearchParams({
+      ...localSearchParams,
+      limit: resultsPerPage,
+    });
 
-    // Update URL with search parameters (only non-empty values, but always include sort and page)
+    // Update URL with search parameters (only non-empty values, but always include sort, page, and limit)
     const newSearchParams = new URLSearchParams();
     Object.entries(localSearchParams).forEach(([key, value]) => {
-      if (key === 'sort' || (value && value.trim() !== '')) {
-        newSearchParams.set(key, value.trim() || value);
+      if (
+        key === 'sort' ||
+        key === 'limit' ||
+        (value && String(value).trim() !== '')
+      ) {
+        newSearchParams.set(key, String(value).trim() || value);
       }
     });
     // Always include the page parameter
     newSearchParams.set('page', page.toString());
+    // Always include the limit parameter
+    newSearchParams.set('limit', resultsPerPage.toString());
 
     setSearchParams(newSearchParams);
 
@@ -248,18 +269,49 @@ const JobSearch = () => {
 
     // Check if we're currently showing all jobs or filtered results
     const hasSearchTerms = Object.values(activeSearchParams).some(
-      (value) => value && value.trim() !== ''
+      (value) => value && String(value).trim() !== ''
     );
 
     if (!hasSearchTerms) {
       // We're showing all jobs - just change page without full search
       dispatch(
-        searchJobs({ page: newPage, limit: 20, sort: localSearchParams.sort })
+        searchJobs({
+          page: newPage,
+          limit: resultsPerPage,
+          sort: localSearchParams.sort,
+        })
       );
     } else {
       // We have search terms - use the regular search logic
       handleSearch(newPage);
     }
+  };
+
+  const handleResultsPerPageChange = (newLimit) => {
+    setResultsPerPage(newLimit);
+    setCurrentPage(1); // Reset to page 1 when changing results per page
+
+    // Update URL with new limit
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set('limit', newLimit.toString());
+    newSearchParams.set('page', '1'); // Reset to page 1
+    setSearchParams(newSearchParams);
+
+    // Update local search params
+    setLocalSearchParams((prev) => ({
+      ...prev,
+      limit: newLimit,
+    }));
+
+    // Perform search with new limit
+    const searchParamsWithPage = {
+      ...localSearchParams,
+      page: 1,
+      limit: newLimit,
+    };
+
+    dispatch(setReduxSearchParams(searchParamsWithPage));
+    dispatch(searchJobs(searchParamsWithPage));
   };
 
   const handleSearchSubmit = (e) => {
@@ -652,7 +704,7 @@ const JobSearch = () => {
                                 (localSearchParams.sort || 'date_desc') ===
                                 option.value
                                   ? 'bg-primary-50 text-primary-700'
-                                  : 'text-gray-700'
+                                  : 'text-primary-700'
                               }`}
                             >
                               {option.label}
@@ -856,6 +908,27 @@ const JobSearch = () => {
                     >
                       <HiChevronRight className='h-5 w-5' />
                     </button>
+                  </div>
+                </div>
+
+                {/* Results Per Page Selector - Desktop Only */}
+                <div className='hidden md:block mt-4 pt-4 border-t border-gray-200'>
+                  <div className='flex justify-end'>
+                    <div className='flex items-center gap-2'>
+                      <label className='text-sm text-gray-600'>Show:</label>
+                      <select
+                        value={resultsPerPage}
+                        onChange={(e) =>
+                          handleResultsPerPageChange(parseInt(e.target.value))
+                        }
+                        className='px-3 py-2 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500'
+                      >
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                      <span className='text-sm text-gray-600'>per page</span>
+                    </div>
                   </div>
                 </div>
               </div>
