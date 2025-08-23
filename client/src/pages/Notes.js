@@ -33,15 +33,25 @@ const Notes = () => {
   const currentPage = parseInt(searchParams.get('page') || '1');
   const pageSize = 20; // Number of notes per page
 
+  // Initial load of notes
   useEffect(() => {
-    // Update filters with current page
     const updatedFilters = {
       ...filters,
       page: currentPage,
       limit: pageSize,
     };
     dispatch(getNotes(updatedFilters));
-  }, [dispatch, currentPage, pageSize]);
+  }, []); // Only run on mount
+
+  useEffect(() => {
+    // Fetch notes with current filters and pagination
+    const updatedFilters = {
+      ...filters,
+      page: currentPage,
+      limit: pageSize,
+    };
+    dispatch(getNotes(updatedFilters));
+  }, [dispatch, filters, currentPage, pageSize]);
 
   // Update URL when page changes
   const handlePageChange = (newPage) => {
@@ -61,9 +71,25 @@ const Notes = () => {
   };
 
   const handleApplyFilters = () => {
+    // Update Redux filters
     dispatch(setFilters(localFilters));
-    // Reset to page 1 when filters change
-    handlePageChange(1);
+
+    // Reset to page 1 and fetch notes with new filters
+    const updatedFilters = {
+      ...localFilters,
+      page: 1,
+      limit: pageSize,
+    };
+
+    // Update URL to page 1
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      newParams.set('page', '1');
+      return newParams;
+    });
+
+    // Fetch notes immediately
+    dispatch(getNotes(updatedFilters));
   };
 
   const handleDeleteNote = (noteId) => {
