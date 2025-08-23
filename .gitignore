@@ -109,3 +109,6 @@ coverage/
 # Misc
 *.tgz
 *.tar.gz 
+
+kpav-sd4t_complete_20250823.json
+kpav-sd4t_no_duplicates_20250823.json
