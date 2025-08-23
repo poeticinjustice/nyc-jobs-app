@@ -28,6 +28,7 @@ const JobSearch = () => {
 
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
 
   // Initialize search params from URL or defaults
   const [localSearchParams, setLocalSearchParams] = useState({
@@ -36,6 +37,7 @@ const JobSearch = () => {
     location: searchParams.get('location') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
+    sort: searchParams.get('sort') || 'date_desc',
   });
 
   // Track the active search (what's actually being searched for in results)
@@ -45,6 +47,7 @@ const JobSearch = () => {
     location: searchParams.get('location') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
+    sort: searchParams.get('sort') || 'date_desc',
   });
 
   // Load categories on component mount
@@ -98,6 +101,24 @@ const JobSearch = () => {
     console.log('=== End Search Results Updated ===');
   }, [searchResults, currentPage, pagination, activeSearchParams]);
 
+  // Handle clicking outside sort dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        showSortDropdown &&
+        !event.target.closest('.sort-dropdown-container')
+      ) {
+        setShowSortDropdown(false);
+      }
+      if (showFilters && !event.target.closest('.filters-container')) {
+        setShowFilters(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSortDropdown, showFilters]);
+
   // Handle browser back/forward navigation
   useEffect(() => {
     const handlePopState = () => {
@@ -134,7 +155,7 @@ const JobSearch = () => {
       );
       dispatch(setReduxSearchParams({}));
       setActiveSearchParams({}); // Set empty search params for pagination logic
-      dispatch(searchJobs({ page, limit: 20 }));
+      dispatch(searchJobs({ page, limit: 20, sort: localSearchParams.sort }));
 
       // Clear URL parameters since we're showing all jobs
       setSearchParams(new URLSearchParams());
@@ -151,11 +172,11 @@ const JobSearch = () => {
     // Update active search params when search is actually performed
     setActiveSearchParams(localSearchParams);
 
-    // Update URL with search parameters (only non-empty values)
+    // Update URL with search parameters (only non-empty values, but always include sort)
     const newSearchParams = new URLSearchParams();
     Object.entries(localSearchParams).forEach(([key, value]) => {
-      if (value && value.trim() !== '') {
-        newSearchParams.set(key, value.trim());
+      if (key === 'sort' || (value && value.trim() !== '')) {
+        newSearchParams.set(key, value.trim() || value);
       }
     });
     if (page > 1) newSearchParams.set('page', page.toString());
@@ -218,7 +239,9 @@ const JobSearch = () => {
       console.log(`Changing to page ${newPage} for all jobs`);
       console.log(`Dispatching searchJobs with page ${newPage}`);
       setCurrentPage(newPage);
-      dispatch(searchJobs({ page: newPage, limit: 20 }));
+      dispatch(
+        searchJobs({ page: newPage, limit: 20, sort: localSearchParams.sort })
+      );
     } else {
       // We have search terms - use the regular search logic
       console.log(`Changing to page ${newPage} for filtered results`);
@@ -263,6 +286,25 @@ const JobSearch = () => {
   const totalPages = pagination
     ? Math.ceil(pagination.total / pagination.limit)
     : 0;
+
+  const getSortDisplayName = (sortValue) => {
+    switch (sortValue) {
+      case 'date_desc':
+        return 'Most Recent First';
+      case 'date_asc':
+        return 'Oldest First';
+      case 'title_asc':
+        return 'Title A-Z';
+      case 'title_desc':
+        return 'Title Z-A';
+      case 'salary_desc':
+        return 'Highest Salary First';
+      case 'salary_asc':
+        return 'Lowest Salary First';
+      default:
+        return 'Most Recent First';
+    }
+  };
 
   return (
     <div className='space-y-6'>
@@ -312,6 +354,7 @@ const JobSearch = () => {
                       location: '',
                       salary_min: '',
                       salary_max: '',
+                      sort: 'date_desc',
                     });
                     setSearchParams(new URLSearchParams());
                     setCurrentPage(1);
@@ -347,7 +390,7 @@ const JobSearch = () => {
 
           {/* Advanced Filters */}
           {showFilters && (
-            <div className='grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg'>
+            <div className='grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg filters-container'>
               <div>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>
                   Category
@@ -514,7 +557,7 @@ const JobSearch = () => {
           <>
             {/* Search Results Summary */}
             <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
-              <div className='flex items-center justify-between'>
+              <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
                 <div className='text-sm text-gray-600'>
                   <span className='font-medium'>
                     {pagination ? pagination.total : searchResults.length}
@@ -526,6 +569,87 @@ const JobSearch = () => {
                       total)
                     </span>
                   )}
+                </div>
+
+                {/* Sort Button */}
+                <div className='flex-shrink-0 sort-dropdown-container'>
+                  <div className='relative'>
+                    <button
+                      type='button'
+                      onClick={() => setShowSortDropdown(!showSortDropdown)}
+                      className='flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500'
+                    >
+                      <span>
+                        Sort:{' '}
+                        {getSortDisplayName(
+                          localSearchParams.sort || 'date_desc'
+                        )}
+                      </span>
+                      <svg
+                        className='w-4 h-4 text-gray-400'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M19 9l-7 7-7-7'
+                        />
+                      </svg>
+                    </button>
+
+                    {/* Sort Dropdown */}
+                    {showSortDropdown && (
+                      <div className='absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10'>
+                        <div className='py-1'>
+                          {[
+                            { value: 'date_desc', label: 'Most Recent First' },
+                            { value: 'date_asc', label: 'Oldest First' },
+                            { value: 'title_asc', label: 'Title A-Z' },
+                            { value: 'title_desc', label: 'Title Z-A' },
+                            {
+                              value: 'salary_desc',
+                              label: 'Highest Salary First',
+                            },
+                            {
+                              value: 'salary_asc',
+                              label: 'Lowest Salary First',
+                            },
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              onClick={() => {
+                                setLocalSearchParams((prev) => ({
+                                  ...prev,
+                                  sort: option.value,
+                                }));
+                                setShowSortDropdown(false);
+                                // Trigger search with new sort
+                                const updatedParams = {
+                                  ...localSearchParams,
+                                  sort: option.value,
+                                  page: 1,
+                                };
+                                dispatch(setReduxSearchParams(updatedParams));
+                                dispatch(searchJobs(updatedParams));
+                                setCurrentPage(1);
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                                (localSearchParams.sort || 'date_desc') ===
+                                option.value
+                                  ? 'bg-primary-50 text-primary-700'
+                                  : 'text-gray-700'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

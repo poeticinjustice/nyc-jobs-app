@@ -176,10 +176,10 @@ router.get('/nyc-api-health', async (req, res) => {
 
 // Helper function to generate a cache key for search parameters
 const generateSearchCacheKey = (searchParams) => {
-  const { q, category, location, salary_min, salary_max } = searchParams;
+  const { q, category, location, salary_min, salary_max, sort } = searchParams;
   return `${q || ''}|${category || ''}|${location || ''}|${salary_min || ''}|${
     salary_max || ''
-  }`;
+  }}|${sort || ''}`;
 };
 
 // Helper function to fetch all jobs from NYC API with caching
@@ -320,6 +320,16 @@ router.get(
       .withMessage('salary_max must be a number'),
     query('page').optional().isNumeric(),
     query('limit').optional().isNumeric(),
+    query('sort')
+      .optional()
+      .isIn([
+        'date_desc',
+        'date_asc',
+        'title_asc',
+        'title_desc',
+        'salary_desc',
+        'salary_asc',
+      ]),
   ],
   async (req, res) => {
     try {
@@ -339,6 +349,7 @@ router.get(
         salary_max,
         page = 1,
         limit = 20,
+        sort = 'date_desc',
       } = req.query;
 
       // Check if we have cached search results
@@ -348,6 +359,7 @@ router.get(
         location,
         salary_min,
         salary_max,
+        sort,
       });
       const cachedSearch = searchResultCache.get(searchCacheKey);
 
@@ -581,6 +593,78 @@ router.get(
         jobs = uniqueJobs;
       }
 
+      // Apply sorting based on sort parameter
+      console.log(`Applying sort: ${sort}`);
+      switch (sort) {
+        case 'date_desc':
+          // Most recent first (default)
+          jobs.sort((a, b) => {
+            const dateA = a.posting_date
+              ? new Date(a.posting_date)
+              : new Date(0);
+            const dateB = b.posting_date
+              ? new Date(b.posting_date)
+              : new Date(0);
+            return dateB - dateA;
+          });
+          break;
+        case 'date_asc':
+          // Oldest first
+          jobs.sort((a, b) => {
+            const dateA = a.posting_date
+              ? new Date(a.posting_date)
+              : new Date(0);
+            const dateB = b.posting_date
+              ? new Date(b.posting_date)
+              : new Date(0);
+            return dateA - dateB;
+          });
+          break;
+        case 'title_asc':
+          // Title A-Z
+          jobs.sort((a, b) => {
+            const titleA = (a.business_title || '').toLowerCase();
+            const titleB = (b.business_title || '').toLowerCase();
+            return titleA.localeCompare(titleB);
+          });
+          break;
+        case 'title_desc':
+          // Title Z-A
+          jobs.sort((a, b) => {
+            const titleA = (a.business_title || '').toLowerCase();
+            const titleB = (b.business_title || '').toLowerCase();
+            return titleB.localeCompare(titleA);
+          });
+          break;
+        case 'salary_desc':
+          // Highest salary first
+          jobs.sort((a, b) => {
+            const salaryA = parseInt(a.salary_range_from) || 0;
+            const salaryB = parseInt(b.salary_range_from) || 0;
+            return salaryB - salaryA;
+          });
+          break;
+        case 'salary_asc':
+          // Lowest salary first
+          jobs.sort((a, b) => {
+            const salaryA = parseInt(a.salary_range_from) || 0;
+            const salaryB = parseInt(b.salary_range_from) || 0;
+            return salaryA - salaryB;
+          });
+          break;
+        default:
+          // Default to date_desc (most recent first)
+          jobs.sort((a, b) => {
+            const dateA = a.posting_date
+              ? new Date(a.posting_date)
+              : new Date(0);
+            const dateB = b.posting_date
+              ? new Date(b.posting_date)
+              : new Date(0);
+            return dateB - dateA;
+          });
+      }
+
       // Cache the search results for future pagination requests (without saved status)
       if (!cachedSearch) {
         searchResultCache.set(searchCacheKey, {
@@ -635,7 +719,7 @@ router.get(
       console.log(
         `Search Summary: "${
           q || 'no query'
-        }" | Strategy: ${searchStrategy} | Results: ${
+        }" | Strategy: ${searchStrategy} | Sort: ${sort} | Results: ${
           jobs.length
         } | Total Available: ${jobs.length}`
       );
