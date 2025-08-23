@@ -68,7 +68,10 @@ const cleanText = (text) => {
     .replace(/â€"|â€"/g, '—')
 
     // Fix ellipsis
-    .replace(/â€¦/g, '…');
+    .replace(/â€¦/g, '…')
+
+    // Convert 2+ consecutive spaces to paragraph breaks, but preserve list formatting
+    .replace(/(?<!^|\n|\r|\t|\s*[•\-\*\+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
 
   return cleaned;
 };

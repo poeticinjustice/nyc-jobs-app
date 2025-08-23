@@ -17,7 +17,7 @@ import {
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { Link, useSearchParams } from 'react-router-dom';
-import { cleanText } from '../utils/textUtils';
+import { cleanText, renderHtmlContent } from '../utils/textUtils';
 
 const JobSearch = () => {
   const dispatch = useDispatch();

@@ -38,7 +38,7 @@ export const cleanText = (text) => {
   // Apply targeted fixes for common patterns
   cleaned = cleaned
     // Fix bullet points (most common issue)
-    .replace(/â¢|â€¢|â¢/g, '•')
+    .replace(/â¢|â€¢|â€¢/g, '•')
 
     // Fix smart quotes and apostrophes
     .replace(/â€™|â€™|â€™/g, "'")
@@ -51,7 +51,41 @@ export const cleanText = (text) => {
     .replace(/â€"|â€"/g, '—')
 
     // Fix ellipsis
-    .replace(/â€¦/g, '…');
+    .replace(/â€¦/g, '…')
+
+    // Convert 2+ consecutive spaces to paragraph breaks, but preserve list formatting
+    .replace(/(?<!^|\n|\r|\t|\s*[•\-\*\+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
+
+  return cleaned;
+};
+
+// Clean text and convert 2+ spaces to line breaks for display
+export const cleanTextForDisplay = (text) => {
+  if (!text) return text;
+
+  // First decode HTML entities
+  let cleaned = decodeHtmlEntities(text);
+
+  // Apply targeted fixes for common patterns
+  cleaned = cleaned
+    // Fix bullet points (most common issue)
+    .replace(/â¢|â€¢|â€¢/g, '•')
+
+    // Fix smart quotes and apostrophes
+    .replace(/â€™|â€™|â€™/g, "'")
+    .replace(/â€œ|â€œ|â€œ/g, '"')
+    .replace(/â€|â€|â€/g, '"')
+    .replace(/â€˜|â€˜|â€˜/g, "'")
+
+    // Fix dashes
+    .replace(/â€"|â€"/g, '–')
+    .replace(/â€"|â€"/g, '—')
+
+    // Fix ellipsis
+    .replace(/â€¦/g, '…')
+
+    // Convert 2+ consecutive spaces to line breaks for display, but preserve list formatting
+    .replace(/(?<!^|\n|\r|\t|\s*[•\-\*\+]\s*|\s*\d+\.\s*)\s{2,}/g, '\n\n');
 
   return cleaned;
 };
@@ -82,4 +116,35 @@ export const formatJobDescription = (text) => {
     .trim();
 
   return formatted;
+};
+
+// Safely render HTML content by converting HTML tags to React elements
+export const renderHtmlContent = (htmlString) => {
+  if (!htmlString) return null;
+
+  // Split by <br><br> to create paragraphs
+  const paragraphs = htmlString.split(/<br\s*\/?><br\s*\/?>/);
+
+  return paragraphs
+    .map((paragraph, index) => {
+      if (!paragraph.trim()) {
+        return null; // Skip empty paragraphs
+      }
+
+      // Convert any remaining <br> tags to line breaks within paragraphs
+      const parts = paragraph.split(/(<br\s*\/?>)/);
+      const paragraphContent = parts.map((part, partIndex) => {
+        if (part.match(/<br\s*\/?>/i)) {
+          return <br key={`br-${index}-${partIndex}`} />;
+        }
+        return part;
+      });
+
+      return (
+        <p key={index} className='mb-4 last:mb-0'>
+          {paragraphContent}
+        </p>
+      );
+    })
+    .filter(Boolean); // Remove null entries
 };

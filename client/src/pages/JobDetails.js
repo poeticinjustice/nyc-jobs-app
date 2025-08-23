@@ -12,7 +12,7 @@ import {
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
-import { cleanText } from '../utils/textUtils';
+import { cleanText, renderHtmlContent } from '../utils/textUtils';
 
 const JobDetails = () => {
   const { jobId } = useParams();
@@ -165,8 +165,8 @@ const JobDetails = () => {
             </h2>
             <div className='prose max-w-none'>
               {currentJob.jobDescription ? (
-                <div className='whitespace-pre-wrap text-gray-700'>
-                  {currentJob.jobDescription}
+                <div className='text-gray-700'>
+                  {renderHtmlContent(cleanText(currentJob.jobDescription))}
                 </div>
               ) : (
                 <p className='text-gray-500'>No description available.</p>
@@ -181,8 +181,10 @@ const JobDetails = () => {
                 Minimum Qualifications
               </h2>
               <div className='prose max-w-none'>
-                <div className='whitespace-pre-wrap text-gray-700'>
-                  {currentJob.minimumQualRequirements}
+                <div className='text-gray-700'>
+                  {renderHtmlContent(
+                    cleanText(currentJob.minimumQualRequirements)
+                  )}
                 </div>
               </div>
             </div>
@@ -195,8 +197,8 @@ const JobDetails = () => {
                 Preferred Skills
               </h2>
               <div className='prose max-w-none'>
-                <div className='whitespace-pre-wrap text-gray-700'>
-                  {currentJob.preferredSkills}
+                <div className='text-gray-700'>
+                  {renderHtmlContent(cleanText(currentJob.preferredSkills))}
                 </div>
               </div>
             </div>
@@ -209,8 +211,10 @@ const JobDetails = () => {
                 Additional Information
               </h2>
               <div className='prose max-w-none'>
-                <div className='whitespace-pre-wrap text-gray-700'>
-                  {currentJob.additionalInformation}
+                <div className='text-gray-700'>
+                  {renderHtmlContent(
+                    cleanText(currentJob.additionalInformation)
+                  )}
                 </div>
               </div>
             </div>
