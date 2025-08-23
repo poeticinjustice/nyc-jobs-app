@@ -17,7 +17,7 @@ import {
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { Link, useSearchParams } from 'react-router-dom';
-import { cleanText, renderHtmlContent } from '../utils/textUtils';
+import { cleanText, cleanTextForDisplay } from '../utils/textUtils';
 
 const JobSearch = () => {
   const dispatch = useDispatch();
@@ -579,17 +579,19 @@ const JobSearch = () => {
                   <div className='flex justify-between items-start'>
                     <div className='flex-1'>
                       <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                        {cleanText(job.business_title)}
+                        {cleanTextForDisplay(job.business_title)}
                       </h3>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>
                           <p>
                             <strong>Category:</strong>{' '}
-                            {cleanText(job.job_category) || 'Not specified'}
+                            {cleanTextForDisplay(job.job_category) ||
+                              'Not specified'}
                           </p>
                           <p>
                             <strong>Location:</strong>{' '}
-                            {cleanText(job.work_location) || 'Not specified'}
+                            {cleanTextForDisplay(job.work_location) ||
+                              'Not specified'}
                           </p>
                           <p>
                             <strong>Salary:</strong>{' '}
@@ -618,7 +620,11 @@ const JobSearch = () => {
                       </div>
                       {job.job_description && (
                         <p className='mt-3 text-gray-700 line-clamp-2'>
-                          {cleanText(job.job_description).substring(0, 200)}...
+                          {cleanTextForDisplay(job.job_description).substring(
+                            0,
+                            200
+                          )}
+                          ...
                         </p>
                       )}
                     </div>

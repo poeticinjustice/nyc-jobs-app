@@ -84,6 +84,12 @@ export const cleanTextForDisplay = (text) => {
     // Fix ellipsis
     .replace(/â€¦/g, '…')
 
+    // Convert <br><br> tags back to spaces for text display
+    .replace(/<br\s*\/?><br\s*\/?>/gi, '  ')
+
+    // Remove any remaining HTML tags for clean text display
+    .replace(/<[^>]*>/g, '')
+
     // Convert 2+ consecutive spaces to line breaks for display, but preserve list formatting
     .replace(/(?<!^|\n|\r|\t|\s*[•\-\*\+]\s*|\s*\d+\.\s*)\s{2,}/g, '\n\n');
 
