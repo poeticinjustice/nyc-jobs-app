@@ -13,8 +13,10 @@ export const searchJobs = createAsyncThunk(
         params: searchParams,
         headers,
       });
+
       return response.data;
     } catch (error) {
+      console.error('Error in searchJobs thunk:', error);
       return rejectWithValue(
         error.response?.data?.message || 'Failed to search jobs'
       );

@@ -65,8 +65,20 @@ const JobSearch = () => {
       // Extract search parameters from URL
       const urlParams = {};
       searchParams.forEach((value, key) => {
-        if (value) urlParams[key] = value;
+        // Always include sort parameter, even if it's the default
+        if (key === 'sort' || value) {
+          urlParams[key] = value;
+        }
       });
+
+      // Ensure sort parameter has a default value if not present
+      if (!urlParams.sort) {
+        urlParams.sort = 'date_desc';
+      }
+
+      // Extract page parameter and update currentPage state
+      const pageFromUrl = parseInt(urlParams.page) || 1;
+      setCurrentPage(pageFromUrl);
 
       // Update local search params with URL values
       setLocalSearchParams((prev) => ({
@@ -77,29 +89,19 @@ const JobSearch = () => {
       // Perform search with URL parameters
       const searchParamsWithPage = {
         ...urlParams,
-        page: currentPage,
+        page: pageFromUrl,
         limit: 20,
       };
+
       dispatch(setReduxSearchParams(searchParamsWithPage));
       dispatch(searchJobs(searchParamsWithPage));
     } else {
       // No search parameters - clear results and don't auto-load
-      console.log('No search parameters, clearing results');
       dispatch(setReduxSearchParams({}));
       dispatch({ type: 'jobs/clearSearchResults' });
       setCurrentPage(1);
     }
   }, [searchParams, dispatch, setSearchParams, currentPage]);
-
-  // Debug effect to log when search results change
-  useEffect(() => {
-    console.log('=== Search Results Updated ===');
-    console.log('searchResults length:', searchResults.length);
-    console.log('currentPage:', currentPage);
-    console.log('pagination:', pagination);
-    console.log('activeSearchParams:', activeSearchParams);
-    console.log('=== End Search Results Updated ===');
-  }, [searchResults, currentPage, pagination, activeSearchParams]);
 
   // Handle clicking outside sort dropdown to close it
   useEffect(() => {
@@ -128,9 +130,36 @@ const JobSearch = () => {
         (value) => value
       );
 
-      if (!hasParams) {
+      if (hasParams) {
+        // Extract parameters and perform search
+        const urlParams = {};
+        currentParams.forEach((value, key) => {
+          if (key === 'sort' || value) {
+            urlParams[key] = value;
+          }
+        });
+
+        // Ensure sort parameter has a default value
+        if (!urlParams.sort) {
+          urlParams.sort = 'date_desc';
+        }
+
+        // Update local search params and perform search
+        setLocalSearchParams((prev) => ({
+          ...prev,
+          ...urlParams,
+        }));
+
+        const searchParamsWithPage = {
+          ...urlParams,
+          page: 1,
+          limit: 20,
+        };
+        dispatch(setReduxSearchParams(searchParamsWithPage));
+        dispatch(searchJobs(searchParamsWithPage));
+        setCurrentPage(1);
+      } else {
         // No search parameters - clear results
-        console.log('Browser navigation: No parameters, clearing results');
         dispatch({ type: 'jobs/clearSearchResults' });
         setCurrentPage(1);
       }
@@ -150,9 +179,6 @@ const JobSearch = () => {
 
     if (!hasSearchTerms) {
       // Empty search - load all jobs sorted by most recent
-      console.log(
-        'Empty search clicked - loading all jobs sorted by most recent'
-      );
       dispatch(setReduxSearchParams({}));
       setActiveSearchParams({}); // Set empty search params for pagination logic
       dispatch(searchJobs({ page, limit: 20, sort: localSearchParams.sort }));
@@ -172,14 +198,15 @@ const JobSearch = () => {
     // Update active search params when search is actually performed
     setActiveSearchParams(localSearchParams);
 
-    // Update URL with search parameters (only non-empty values, but always include sort)
+    // Update URL with search parameters (only non-empty values, but always include sort and page)
     const newSearchParams = new URLSearchParams();
     Object.entries(localSearchParams).forEach(([key, value]) => {
       if (key === 'sort' || (value && value.trim() !== '')) {
         newSearchParams.set(key, value.trim() || value);
       }
     });
-    if (page > 1) newSearchParams.set('page', page.toString());
+    // Always include the page parameter
+    newSearchParams.set('page', page.toString());
 
     setSearchParams(newSearchParams);
 
@@ -210,44 +237,29 @@ const JobSearch = () => {
   };
 
   const handlePageChange = (newPage) => {
-    console.log(`=== handlePageChange Debug ===`);
-    console.log(`Requested page: ${newPage}`);
-    console.log(`Current currentPage state: ${currentPage}`);
-    console.log('Current activeSearchParams:', activeSearchParams);
-    console.log('Current searchParams:', searchParams);
-    console.log('Current searchResults length:', searchResults.length);
-    console.log('Current pagination:', pagination);
-
     // Update URL with new page number
     const newSearchParams = new URLSearchParams(searchParams);
-    if (newPage > 1) {
-      newSearchParams.set('page', newPage.toString());
-    } else {
-      newSearchParams.delete('page');
-    }
+    // Always include the page parameter, even for page 1
+    newSearchParams.set('page', newPage.toString());
     setSearchParams(newSearchParams);
+
+    // Update current page state immediately
+    setCurrentPage(newPage);
 
     // Check if we're currently showing all jobs or filtered results
     const hasSearchTerms = Object.values(activeSearchParams).some(
       (value) => value && value.trim() !== ''
     );
 
-    console.log('Has search terms:', hasSearchTerms);
-
     if (!hasSearchTerms) {
       // We're showing all jobs - just change page without full search
-      console.log(`Changing to page ${newPage} for all jobs`);
-      console.log(`Dispatching searchJobs with page ${newPage}`);
-      setCurrentPage(newPage);
       dispatch(
         searchJobs({ page: newPage, limit: 20, sort: localSearchParams.sort })
       );
     } else {
       // We have search terms - use the regular search logic
-      console.log(`Changing to page ${newPage} for filtered results`);
       handleSearch(newPage);
     }
-    console.log(`=== End handlePageChange Debug ===`);
   };
 
   const handleSearchSubmit = (e) => {

@@ -13,6 +13,7 @@ import {
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import { cleanText, renderHtmlContent } from '../utils/textUtils';
+import { useNavigate } from 'react-router-dom';
 
 const JobDetails = () => {
   const { jobId } = useParams();
@@ -20,17 +21,13 @@ const JobDetails = () => {
   const { currentJob, loading, error } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const navigate = useNavigate();
 
-  // Debug logging - only show when job data changes significantly
   useEffect(() => {
-    if (currentJob && currentJob.jobId) {
-      console.log('Job loaded:', {
-        jobId: currentJob.jobId,
-        title: currentJob.businessTitle,
-        isSaved: currentJob.isSaved,
-      });
+    if (currentJob) {
+      // Job loaded successfully
     }
-  }, [currentJob?.jobId, currentJob?.isSaved]);
+  }, [currentJob]);
 
   useEffect(() => {
     if (jobId) {
@@ -38,13 +35,20 @@ const JobDetails = () => {
     }
   }, [dispatch, jobId]);
 
-  const handleSaveToggle = () => {
-    if (currentJob?.isSaved) {
-      console.log('Unsaving job:', currentJob.jobId);
-      dispatch(unsaveJob(currentJob.jobId));
-    } else {
-      console.log('Saving job:', currentJob.jobId);
-      dispatch(saveJob(currentJob.jobId));
+  const handleSaveJob = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      if (currentJob.isSaved) {
+        await dispatch(unsaveJob(currentJob.jobId)).unwrap();
+      } else {
+        await dispatch(saveJob(currentJob.jobId)).unwrap();
+      }
+    } catch (error) {
+      console.error('Error saving/unsaving job:', error);
     }
   };
 
@@ -136,7 +140,7 @@ const JobDetails = () => {
                 <HiPlus className='h-6 w-6' />
               </button>
               <button
-                onClick={handleSaveToggle}
+                onClick={handleSaveJob}
                 className={`p-3 rounded-lg border transition-colors ${
                   currentJob.isSaved
                     ? 'bg-primary-50 border-primary-200 text-primary-700'

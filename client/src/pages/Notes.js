@@ -104,8 +104,6 @@ const Notes = () => {
   };
 
   const handleEditNote = (note) => {
-    console.log('Editing note:', note);
-    console.log('Note _id:', note._id);
     setEditingNote(note);
     setShowNoteModal(true);
   };

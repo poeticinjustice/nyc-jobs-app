@@ -41,15 +41,13 @@ const cleanText = (text) => {
   // First decode HTML entities
   let cleaned = decodeHtmlEntities(text);
 
-  // Fix UTF-8 encoding issues using a more systematic approach
-  // The issue is often that text is being treated as Latin-1 when it should be UTF-8
-  try {
-    // Try to fix common UTF-8 encoding issues by re-encoding
-    const buffer = Buffer.from(cleaned, 'latin1');
-    cleaned = iconv.decode(buffer, 'utf8');
-  } catch (error) {
-    // If re-encoding fails, fall back to regex replacements
-    console.log('UTF-8 re-encoding failed, using fallback method');
+  // Try to re-encode as UTF-8 if it's not already
+  if (typeof text === 'string' && !Buffer.isEncoding('utf8')) {
+    try {
+      text = Buffer.from(text, 'latin1').toString('utf8');
+    } catch (error) {
+      // UTF-8 re-encoding failed, using fallback method
+    }
   }
 
   // Apply targeted fixes for common patterns that might still persist
@@ -85,7 +83,7 @@ const formatJobDescription = (text) => {
 
   // Replace bullet points with proper formatting (all variations)
   formatted = formatted
-    .replace(/[â¢•â€¢â€¢â¢â€¢â€¢â€¢]/g, '\n- ')
+    .replace(/[â¢•â€¢â€¢â€¢â€¢â€¢â€¢]/g, '\n- ')
 
     // Add line breaks for common patterns
     .replace(/(\d+ Hours\/)/g, '\n$1')
@@ -191,7 +189,6 @@ const fetchAllJobs = async () => {
     return jobsCache;
   }
 
-  console.log('Fetching fresh jobs data from NYC API...');
   let allJobs = [];
   let offset = 0;
   const batchSize = 1000;
@@ -217,30 +214,20 @@ const fetchAllJobs = async () => {
         );
 
         batchJobs = response.data;
-        console.log(
-          `Successfully fetched batch at offset ${offset} with ${batchJobs.length} jobs`
-        );
         break;
       } catch (error) {
         retryCount++;
-        console.log(
-          `Attempt ${retryCount} failed for offset ${offset}: ${error.message}`
-        );
 
         if (error.response?.status === 500) {
-          console.log('NYC API server error, will retry...');
+          // NYC API server error, will retry
         } else if (error.code === 'ECONNABORTED') {
-          console.log('Request timeout, will retry...');
+          // Request timeout, will retry
         }
 
         if (retryCount < maxRetries) {
           const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
-          console.log(`Waiting ${delay}ms before retry...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
-          console.error(
-            `Failed to fetch batch at offset ${offset} after ${maxRetries} attempts`
-          );
           hasMoreData = false;
           break;
         }
@@ -276,22 +263,27 @@ const fetchAllJobs = async () => {
   }
 
   if (uniqueAllJobs.length !== allJobs.length) {
-    console.log(
-      `Full dataset had ${
-        allJobs.length - uniqueAllJobs.length
-      } duplicate jobs. Original: ${allJobs.length}, Unique: ${
-        uniqueAllJobs.length
-      }`
-    );
     allJobs = uniqueAllJobs;
   }
 
   // Update cache
   jobsCache = allJobs;
   cacheTimestamp = now;
-  console.log(`Cached ${allJobs.length} jobs for 60 minutes`);
 
   return allJobs;
+};
+
+// Helper function to get salary value for sorting
+const getSalaryValue = (job) => {
+  const from = parseInt(job.salary_range_from);
+  const to = parseInt(job.salary_range_to);
+
+  if (!from || !to || isNaN(from) || isNaN(to)) {
+    return 0;
+  }
+
+  const midpoint = Math.round((from + to) / 2);
+  return midpoint;
 };
 
 // @route   GET /api/jobs/search
@@ -370,7 +362,6 @@ router.get(
         cachedSearch &&
         Date.now() - cachedSearch.timestamp < SEARCH_CACHE_DURATION
       ) {
-        console.log(`Using cached search results for: "${searchCacheKey}"`);
         jobs = cachedSearch.results;
         searchStrategy = 'Cached Results (fast)';
       } else {
@@ -438,69 +429,98 @@ router.get(
               }
 
               if (uniqueApiJobs.length !== jobs.length) {
-                console.log(
-                  `NYC API returned ${
-                    jobs.length - uniqueApiJobs.length
-                  } duplicate jobs. Original: ${jobs.length}, Unique: ${
-                    uniqueApiJobs.length
-                  }`
-                );
                 jobs = uniqueApiJobs;
               }
 
               // Smart strategy: If we hit 1000 limit, use fallback for comprehensive results
               if (jobs.length === 1000) {
-                console.log(
-                  `API search hit limit (${jobs.length} results), using fallback for comprehensive search`
-                );
                 // Don't set useApiSearch = true, let it fall through to fallback
                 useApiSearch = false;
                 searchStrategy = 'Fallback (hit API limit)';
               } else {
                 useApiSearch = true;
                 searchStrategy = `NYC API (${jobs.length} results)`;
-                console.log(`API search returned ${jobs.length} results`);
               }
-
-              console.log(
-                `Environment: ${process.env.NODE_ENV || 'development'}`
-              );
-              console.log(
-                `Rate limit: ${
-                  process.env.RATE_LIMIT_MAX_REQUESTS || 'default'
-                }`
-              );
             }
           } catch (error) {
-            console.log(
-              'API search failed, falling back to full dataset search'
-            );
-            console.log('API search error details:', error.message);
-            if (error.response) {
-              console.log('API response status:', error.response.status);
-              console.log('API response headers:', error.response.headers);
-              if (error.response.data) {
-                console.log('API error response:', error.response.data);
+            // API search failed, falling back to full dataset search
+            searchStrategy = 'Full Database (comprehensive)';
+            jobs = await fetchAllJobs();
+
+            // If no search parameters provided, show all jobs sorted by most recently posted
+            if (!q && !category && !location && !salary_min && !salary_max) {
+              // Sort jobs by posting date (most recent first)
+              jobs.sort((a, b) => {
+                const dateA = a.posting_date
+                  ? new Date(a.posting_date)
+                  : new Date(0);
+                const dateB = b.posting_date
+                  ? new Date(b.posting_date)
+                  : new Date(0);
+                return dateB - dateA; // Most recent first
+              });
+            } else {
+              // Apply client-side filtering for specific search terms
+              if (q) {
+                const searchTerm = q.toLowerCase();
+
+                jobs = jobs.filter(
+                  (job) =>
+                    job.business_title?.toLowerCase().includes(searchTerm) ||
+                    job.job_description?.toLowerCase().includes(searchTerm) ||
+                    job.civil_service_title
+                      ?.toLowerCase()
+                      .includes(searchTerm) ||
+                    job.agency?.toLowerCase().includes(searchTerm) ||
+                    job.job_category?.toLowerCase().includes(searchTerm) ||
+                    job.work_location?.toLowerCase().includes(searchTerm) ||
+                    job.work_location_1?.toLowerCase().includes(searchTerm) ||
+                    job.division_work_unit?.toLowerCase().includes(searchTerm)
+                );
               }
-            } else if (error.code === 'ECONNABORTED') {
-              console.log('API search timed out');
+
+              if (category) {
+                jobs = jobs.filter(
+                  (job) =>
+                    job.job_category?.toLowerCase() === category.toLowerCase()
+                );
+              }
+
+              if (location) {
+                const locationTerm = location.toLowerCase();
+                jobs = jobs.filter(
+                  (job) =>
+                    job.work_location?.toLowerCase().includes(locationTerm) ||
+                    job.work_location_1?.toLowerCase().includes(locationTerm)
+                );
+              }
+
+              if (salary_min) {
+                jobs = jobs.filter(
+                  (job) =>
+                    job.salary_range_from &&
+                    parseInt(job.salary_range_from) >= parseInt(salary_min)
+                );
+              }
+
+              if (salary_max) {
+                jobs = jobs.filter(
+                  (job) =>
+                    job.salary_range_to &&
+                    parseInt(job.salary_range_to) <= parseInt(salary_max)
+                );
+              }
             }
           }
         }
 
         // If API search didn't work or no search params, use full dataset
         if (!useApiSearch) {
-          console.log('Using fallback search with full dataset');
           searchStrategy = 'Full Database (comprehensive)';
           jobs = await fetchAllJobs();
 
           // If no search parameters provided, show all jobs sorted by most recently posted
           if (!q && !category && !location && !salary_min && !salary_max) {
-            console.log(
-              'No search parameters provided, showing all jobs sorted by most recently posted'
-            );
-            searchStrategy = 'All Jobs (sorted by date)';
-
             // Sort jobs by posting date (most recent first)
             jobs.sort((a, b) => {
               const dateA = a.posting_date
@@ -515,9 +535,6 @@ router.get(
             // Apply client-side filtering for specific search terms
             if (q) {
               const searchTerm = q.toLowerCase();
-              console.log(
-                `Filtering ${jobs.length} jobs for search term: "${q}"`
-              );
 
               jobs = jobs.filter(
                 (job) =>
@@ -529,10 +546,6 @@ router.get(
                   job.work_location?.toLowerCase().includes(searchTerm) ||
                   job.work_location_1?.toLowerCase().includes(searchTerm) ||
                   job.division_work_unit?.toLowerCase().includes(searchTerm)
-              );
-
-              console.log(
-                `Fallback search found ${jobs.length} jobs for "${q}"`
               );
             }
 
@@ -583,18 +596,11 @@ router.get(
       }
 
       if (uniqueJobs.length !== jobs.length) {
-        console.log(
-          `Removed ${
-            jobs.length - uniqueJobs.length
-          } duplicate jobs. Original: ${jobs.length}, Unique: ${
-            uniqueJobs.length
-          }`
-        );
         jobs = uniqueJobs;
       }
 
       // Apply sorting based on sort parameter
-      console.log(`Applying sort: ${sort}`);
+
       switch (sort) {
         case 'date_desc':
           // Most recent first (default)
@@ -637,18 +643,18 @@ router.get(
           });
           break;
         case 'salary_desc':
-          // Highest salary first
+          // Highest salary first - use midpoint of salary range for better sorting
           jobs.sort((a, b) => {
-            const salaryA = parseInt(a.salary_range_from) || 0;
-            const salaryB = parseInt(b.salary_range_from) || 0;
+            const salaryA = getSalaryValue(a);
+            const salaryB = getSalaryValue(b);
             return salaryB - salaryA;
           });
           break;
         case 'salary_asc':
-          // Lowest salary first
+          // Lowest salary first - use midpoint of salary range for better sorting
           jobs.sort((a, b) => {
-            const salaryA = parseInt(a.salary_range_from) || 0;
-            const salaryB = parseInt(b.salary_range_from) || 0;
+            const salaryA = getSalaryValue(a);
+            const salaryB = getSalaryValue(b);
             return salaryA - salaryB;
           });
           break;
@@ -671,9 +677,6 @@ router.get(
           results: jobs,
           timestamp: Date.now(),
         });
-        console.log(
-          `Cached search results for: "${searchCacheKey}" (${jobs.length} results)`
-        );
       }
 
       // Apply pagination after filtering
@@ -714,18 +717,6 @@ router.get(
           isSaved: isSaved,
         };
       });
-
-      // Log search method summary
-      console.log(
-        `Search Summary: "${
-          q || 'no query'
-        }" | Strategy: ${searchStrategy} | Sort: ${sort} | Results: ${
-          jobs.length
-        } | Total Available: ${jobs.length}`
-      );
-      console.log(
-        `Pagination: Page ${page}, Limit ${limit}, Total ${jobs.length}`
-      );
 
       res.json({
         jobs: jobsWithSavedStatus,
@@ -874,13 +865,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.post('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`Saving job: ${id}`);
 
     // First check if job exists in our database
     let job = await Job.findOne({ jobId: id });
 
     if (!job) {
-      console.log(`Job ${id} not in database, fetching from NYC API...`);
       // If not in database, fetch just this specific job from NYC API
 
       try {
@@ -892,12 +881,10 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 
         const nycJobs = response.data;
         if (!nycJobs || nycJobs.length === 0) {
-          console.log(`Job ${id} not found in NYC API`);
           return res.status(404).json({ message: 'Job not found in NYC API' });
         }
 
         const nycJob = nycJobs[0];
-        console.log(`Found job: ${nycJob.business_title}`);
 
         job = new Job({
           jobId: nycJob.job_id,
@@ -930,42 +917,40 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
           titleClassification: cleanText(nycJob.title_classification),
           careerLevel: cleanText(nycJob.career_level),
         });
-
-        console.log(`Created job document for ${id}`);
       } catch (fetchError) {
-        console.error(`Error fetching job ${id}:`, fetchError.message);
         return res.status(500).json({
-          message: 'Failed to fetch job data from NYC API. Please try again.',
+          message: 'Failed to fetch job from NYC API',
+          error: fetchError.message,
         });
       }
     }
 
-    // Check if already saved by this user
-    const alreadySaved = job.savedBy.some(
-      (save) => save.user.toString() === req.user._id.toString()
-    );
-    if (alreadySaved) {
+    // Check if user already has this job saved
+    if (
+      job.savedBy.some(
+        (save) => save.user.toString() === req.user._id.toString()
+      )
+    ) {
       return res.status(400).json({ message: 'Job already saved' });
     }
 
-    // Add user to savedBy array
+    // Add job to user's savedJobs array
     job.savedBy.push({
       user: req.user._id,
       savedAt: new Date(),
     });
 
     await job.save();
-    console.log(`Job ${id} saved successfully`);
 
     // Update user's savedJobs array
     await User.findByIdAndUpdate(req.user._id, {
       $addToSet: { savedJobs: job._id },
     });
 
-    res.json({ message: 'Job saved successfully' });
+    res.json({ message: 'Job saved successfully', job });
   } catch (error) {
-    console.error('Save job error:', error.message);
-    res.status(500).json({ message: 'Error saving job' });
+    console.error('Error saving job:', error);
+    res.status(500).json({ message: 'Failed to save job' });
   }
 });
 

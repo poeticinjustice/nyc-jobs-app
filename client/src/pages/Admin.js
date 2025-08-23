@@ -5,6 +5,9 @@ import {
   HiBriefcase,
   HiDocumentText,
   HiChartBar,
+  HiCog,
+  HiUserGroup,
+  HiClipboardList,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 
@@ -22,7 +25,6 @@ const Admin = () => {
   useEffect(() => {
     // Fetch admin statistics
     // This would dispatch actions to get admin data
-    console.log('Admin page loaded');
   }, [dispatch]);
 
   const formatDate = (dateString) => {
