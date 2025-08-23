@@ -608,13 +608,12 @@ const JobSearch = () => {
                             {formatDate(job.posting_date)}
                           </p>
                           <p>
-                            <strong>Type:</strong>{' '}
-                            {job.full_time_part_time_indicator ||
-                              'Not specified'}
+                            <strong>Post Until:</strong>{' '}
+                            {formatDate(job.post_until) || 'Not specified'}
                           </p>
                           <p>
-                            <strong>Level:</strong>{' '}
-                            {job.level || 'Not specified'}
+                            <strong>Process Date:</strong>{' '}
+                            {formatDate(job.process_date) || 'Not specified'}
                           </p>
                         </div>
                       </div>
