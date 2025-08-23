@@ -41,32 +41,31 @@ const cleanText = (text) => {
   // First decode HTML entities
   let cleaned = decodeHtmlEntities(text);
 
-  // Try to re-encode as UTF-8 if it's not already
-  if (typeof text === 'string' && !Buffer.isEncoding('utf8')) {
-    try {
-      text = Buffer.from(text, 'latin1').toString('utf8');
-    } catch (error) {
-      // UTF-8 re-encoding failed, using fallback method
-    }
-  }
-
-  // Apply targeted fixes for common patterns that might still persist
+  // Fix double-encoded UTF-8 characters (the main issue)
+  // The NYC API is returning text with sequences like c3 a2 c2 80 c2 99
+  // which should decode to a single apostrophe
   cleaned = cleaned
-    // Fix bullet points (most common issue)
-    .replace(/â¢|â€¢|â¢/g, '•')
+    // Fix the specific double-encoded apostrophe sequence
+    .replace(/\u00e2\u0080\u0099/g, "'") // â€™ -> '
+    .replace(/\u00e2\u0080\u009c/g, '"') // â€œ -> "
+    .replace(/\u00e2\u0080\u009d/g, '"') // â€ -> "
+    .replace(/\u00e2\u0080\u0098/g, "'") // â€˜ -> '
+    .replace(/\u00e2\u0080\u0093/g, '-') // â€" -> -
+    .replace(/\u00e2\u0080\u0094/g, '-') // â€" -> -
+    .replace(/\u00e2\u0080\u00a6/g, '...') // â€¦ -> ...
+    .replace(/\u00e2\u0080\u00a2/g, '•') // â€¢ -> •
 
-    // Fix smart quotes and apostrophes
-    .replace(/â€™|â€™|â€™/g, "'")
-    .replace(/â€œ|â€œ|â€œ/g, '"')
-    .replace(/â€|â€|â€/g, '"')
-    .replace(/â€˜|â€˜|â€˜/g, "'")
-
-    // Fix dashes
-    .replace(/â€"|â€"/g, '–')
-    .replace(/â€"|â€"/g, '—')
-
-    // Fix ellipsis
-    .replace(/â€¦/g, '…')
+    // Fix other common double-encoded sequences
+    .replace(/\u00c2\u00a0/g, ' ') // Â -> space
+    .replace(/\u00c2\u00a9/g, '©') // Â© -> ©
+    .replace(/\u00c2\u00ae/g, '®') // Â® -> ®
+    .replace(/\u00c2\u00b0/g, '°') // Â° -> °
+    .replace(/\u00c2\u00b1/g, '±') // Â± -> ±
+    .replace(/\u00c2\u00b2/g, '²') // Â² -> ²
+    .replace(/\u00c2\u00b3/g, '³') // Â³ -> ³
+    .replace(/\u00c2\u00bc/g, '¼') // Â¼ -> ¼
+    .replace(/\u00c2\u00bd/g, '½') // Â½ -> ½
+    .replace(/\u00c2\u00be/g, '¾') // Â¾ -> ¾
 
     // Convert 2+ consecutive spaces to paragraph breaks, but preserve list formatting
     .replace(/(?<!^|\n|\r|\t|\s*[•\-\*\+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
@@ -78,14 +77,11 @@ const cleanText = (text) => {
 const formatJobDescription = (text) => {
   if (!text) return text;
 
-  // First clean the text
+  // First clean the text using the comprehensive cleanText function
   let formatted = cleanText(text);
 
-  // Replace bullet points with proper formatting (all variations)
+  // Add line breaks for common patterns
   formatted = formatted
-    .replace(/[â¢•â€¢â€¢â€¢â€¢â€¢â€¢]/g, '\n- ')
-
-    // Add line breaks for common patterns
     .replace(/(\d+ Hours\/)/g, '\n$1')
     .replace(/(Work Location:)/g, '\n\n$1')
     .replace(/(Additional Information:)/g, '\n\n$1')
