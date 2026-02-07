@@ -125,32 +125,6 @@ const Login = () => {
               </div>
             </div>
 
-            <div className='flex items-center justify-between'>
-              <div className='flex items-center'>
-                <input
-                  id='remember-me'
-                  name='remember-me'
-                  type='checkbox'
-                  className='h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded'
-                />
-                <label
-                  htmlFor='remember-me'
-                  className='ml-2 block text-sm text-gray-900'
-                >
-                  Remember me
-                </label>
-              </div>
-
-              <div className='text-sm'>
-                <a
-                  href='#'
-                  className='font-medium text-primary-600 hover:text-primary-500'
-                >
-                  Forgot your password?
-                </a>
-              </div>
-            </div>
-
             <div>
               <button
                 type='submit'
@@ -162,31 +136,16 @@ const Login = () => {
             </div>
           </form>
 
-          <div className='mt-6'>
-            <div className='relative'>
-              <div className='absolute inset-0 flex items-center'>
-                <div className='w-full border-t border-gray-300' />
-              </div>
-              <div className='relative flex justify-center text-sm'>
-                <span className='px-2 bg-white text-gray-500'>
-                  Or continue with
-                </span>
-              </div>
-            </div>
-
-            <div className='mt-6'>
-              <div className='text-center'>
-                <p className='text-sm text-gray-600'>
-                  Don't have an account?{' '}
-                  <Link
-                    to='/register'
-                    className='font-medium text-primary-600 hover:text-primary-500'
-                  >
-                    Sign up
-                  </Link>
-                </p>
-              </div>
-            </div>
+          <div className='mt-6 text-center'>
+            <p className='text-sm text-gray-600'>
+              Don't have an account?{' '}
+              <Link
+                to='/register'
+                className='font-medium text-primary-600 hover:text-primary-500'
+              >
+                Sign up
+              </Link>
+            </p>
           </div>
         </div>
       </div>

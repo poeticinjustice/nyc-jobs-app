@@ -7,12 +7,12 @@ import {
   HiTrash,
   HiEye,
   HiExternalLink,
-  HiChevronLeft,
-  HiChevronRight,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
+import Pagination from '../components/UI/Pagination';
+import { formatDate } from '../utils/formatUtils';
 
 const Notes = () => {
   const dispatch = useDispatch();
@@ -32,16 +32,6 @@ const Notes = () => {
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
   const pageSize = 20; // Number of notes per page
-
-  // Initial load of notes
-  useEffect(() => {
-    const updatedFilters = {
-      ...filters,
-      page: currentPage,
-      limit: pageSize,
-    };
-    dispatch(getNotes(updatedFilters));
-  }, []); // Only run on mount
 
   useEffect(() => {
     // Fetch notes with current filters and pagination
@@ -147,11 +137,6 @@ const Notes = () => {
       default:
         return 'bg-gray-100 text-gray-800';
     }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date not specified';
-    return new Date(dateString).toLocaleDateString();
   };
 
   if (loading) {
@@ -383,74 +368,15 @@ const Notes = () => {
       />
 
       {/* Pagination */}
-      {notes.length > 0 && pagination && pagination.pages > 1 && (
-        <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
-          <div className='flex items-center justify-between'>
-            <div className='text-sm text-gray-700'>
-              Showing {(currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, pagination.total)} of{' '}
-              {pagination.total} notes
-            </div>
-
-            <div className='flex items-center space-x-2'>
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage <= 1}
-                className={`p-2 rounded-lg border transition-colors ${
-                  currentPage <= 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300'
-                }`}
-              >
-                <HiChevronLeft className='h-5 w-5' />
-              </button>
-
-              <div className='flex items-center space-x-1'>
-                {Array.from(
-                  { length: Math.min(5, pagination.pages) },
-                  (_, i) => {
-                    let pageNum;
-                    if (pagination.pages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= pagination.pages - 2) {
-                      pageNum = pagination.pages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`px-3 py-2 rounded-lg border transition-colors ${
-                          pageNum === currentPage
-                            ? 'bg-primary-600 text-white border-primary-600'
-                            : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage >= pagination.pages}
-                className={`p-2 rounded-lg border transition-colors ${
-                  currentPage >= pagination.pages
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300'
-                }`}
-              >
-                <HiChevronRight className='h-5 w-5' />
-              </button>
-            </div>
-          </div>
-        </div>
+      {notes.length > 0 && pagination && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={pagination.pages}
+          total={pagination.total}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          label='notes'
+        />
       )}
     </div>
   );

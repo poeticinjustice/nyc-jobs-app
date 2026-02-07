@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { createNote, updateNote } from '../../store/slices/notesSlice';
 import { HiX, HiSave, HiPencil } from 'react-icons/hi';
-import axios from 'axios'; // Added axios import
 
 const NoteModal = ({
   isOpen,
@@ -11,7 +10,6 @@ const NoteModal = ({
   jobId = null,
   jobTitle = null,
   isViewMode = false,
-  onNoteSaved, // Added onNoteSaved prop
 }) => {
   const dispatch = useDispatch();
   const [formData, setFormData] = useState({
@@ -22,7 +20,6 @@ const NoteModal = ({
     isPrivate: false,
     tags: '',
   });
-  const [error, setError] = useState(null); // Added error state
 
   useEffect(() => {
     if (note) {
@@ -279,8 +276,6 @@ const NoteModal = ({
                 Private note (only visible to you)
               </label>
             </div>
-
-            {error && <div className='text-red-500 text-sm mt-2'>{error}</div>}
 
             <div className='flex justify-end space-x-3 pt-4 border-t border-gray-200'>
               <button

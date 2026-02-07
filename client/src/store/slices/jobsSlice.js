@@ -1,19 +1,14 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import api from '../../utils/api';
 
 // Async thunks
 export const searchJobs = createAsyncThunk(
   'jobs/searchJobs',
-  async (searchParams, { rejectWithValue, getState }) => {
+  async (searchParams, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-      const response = await axios.get('/api/jobs/search', {
+      const response = await api.get('/api/jobs/search', {
         params: searchParams,
-        headers,
       });
-
       return response.data;
     } catch (error) {
       console.error('Error in searchJobs thunk:', error);
@@ -28,10 +23,7 @@ export const getJobDetails = createAsyncThunk(
   'jobs/getJobDetails',
   async (jobId, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-      const response = await axios.get(`/api/jobs/${jobId}`, { headers });
+      const response = await api.get(`/api/jobs/${jobId}`);
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -45,15 +37,7 @@ export const saveJob = createAsyncThunk(
   'jobs/saveJob',
   async (jobId, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const response = await axios.post(
-        `/api/jobs/${jobId}/save`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const response = await api.post(`/api/jobs/${jobId}/save`);
       return { jobId, message: response.data.message };
     } catch (error) {
       return rejectWithValue(
@@ -67,10 +51,7 @@ export const unsaveJob = createAsyncThunk(
   'jobs/unsaveJob',
   async (jobId, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.delete(`/api/jobs/${jobId}/save`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.delete(`/api/jobs/${jobId}/save`);
       return { jobId, message: response.data.message };
     } catch (error) {
       return rejectWithValue(
@@ -84,11 +65,7 @@ export const getSavedJobs = createAsyncThunk(
   'jobs/getSavedJobs',
   async (params = {}, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/jobs/saved', {
-        params,
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get('/api/jobs/saved', { params });
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -102,11 +79,25 @@ export const getJobCategories = createAsyncThunk(
   'jobs/getJobCategories',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get('/api/jobs/categories');
+      const response = await api.get('/api/jobs/categories');
       return response.data;
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to get job categories'
+      );
+    }
+  }
+);
+
+export const getJobAgencies = createAsyncThunk(
+  'jobs/getJobAgencies',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get('/api/jobs/agencies');
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to get agencies'
       );
     }
   }
@@ -117,10 +108,12 @@ const initialState = {
   currentJob: null,
   savedJobs: [],
   categories: [],
+  agencies: [],
   searchParams: {
     q: '',
     category: '',
     location: '',
+    agency: '',
     salary_min: '',
     salary_max: '',
     page: 1,
@@ -162,13 +155,11 @@ const jobsSlice = createSlice({
     updateJobSavedStatus: (state, action) => {
       const { jobId, isSaved } = action.payload;
 
-      // Update in search results
       const searchJob = state.searchResults.find((job) => job.job_id === jobId);
       if (searchJob) {
         searchJob.isSaved = isSaved;
       }
 
-      // Update current job
       if (state.currentJob && state.currentJob.jobId === jobId) {
         state.currentJob.isSaved = isSaved;
       }
@@ -199,7 +190,7 @@ const jobsSlice = createSlice({
       })
       .addCase(getJobDetails.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentJob = action.payload; // Remove .job
+        state.currentJob = action.payload;
         state.error = null;
       })
       .addCase(getJobDetails.rejected, (state, action) => {
@@ -215,7 +206,6 @@ const jobsSlice = createSlice({
       .addCase(saveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
         state.error = null;
-        // Update saved status in current job and search results
         const { jobId } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId) {
           state.currentJob.isSaved = true;
@@ -225,13 +215,6 @@ const jobsSlice = createSlice({
         );
         if (searchJob) {
           searchJob.isSaved = true;
-        }
-        // Update saved jobs list
-        const savedJob = state.searchResults.find(
-          (job) => job.job_id === jobId
-        );
-        if (savedJob && !state.savedJobs.find((job) => job.job_id === jobId)) {
-          state.savedJobs.push(savedJob);
         }
       })
       .addCase(saveJob.rejected, (state, action) => {
@@ -247,7 +230,6 @@ const jobsSlice = createSlice({
       .addCase(unsaveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
         state.error = null;
-        // Update saved status in current job and search results
         const { jobId } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId) {
           state.currentJob.isSaved = false;
@@ -258,7 +240,6 @@ const jobsSlice = createSlice({
         if (searchJob) {
           searchJob.isSaved = false;
         }
-        // Remove from saved jobs list - try both jobId and job_id
         state.savedJobs = state.savedJobs.filter((job) => {
           const jobIdentifier = job.jobId || job.job_id;
           return jobIdentifier !== jobId;
@@ -286,18 +267,13 @@ const jobsSlice = createSlice({
       })
 
       // Get Job Categories
-      .addCase(getJobCategories.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
       .addCase(getJobCategories.fulfilled, (state, action) => {
-        state.loading = false;
         state.categories = action.payload.categories;
-        state.error = null;
       })
-      .addCase(getJobCategories.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
+
+      // Get Job Agencies
+      .addCase(getJobAgencies.fulfilled, (state, action) => {
+        state.agencies = action.payload.agencies;
       });
   },
 });

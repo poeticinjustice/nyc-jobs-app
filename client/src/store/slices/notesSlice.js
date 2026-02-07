@@ -1,15 +1,12 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import api from '../../utils/api';
 
 // Async thunks
 export const createNote = createAsyncThunk(
   'notes/createNote',
   async (noteData, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post('/api/notes', noteData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.post('/api/notes', noteData);
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -23,11 +20,7 @@ export const getNotes = createAsyncThunk(
   'notes/getNotes',
   async (params = {}, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/notes', {
-        params,
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get('/api/notes', { params });
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -41,10 +34,7 @@ export const getNoteById = createAsyncThunk(
   'notes/getNoteById',
   async (noteId, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/notes/${noteId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get(`/api/notes/${noteId}`);
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -58,10 +48,7 @@ export const updateNote = createAsyncThunk(
   'notes/updateNote',
   async ({ noteId, noteData }, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.put(`/api/notes/${noteId}`, noteData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.put(`/api/notes/${noteId}`, noteData);
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -75,10 +62,7 @@ export const deleteNote = createAsyncThunk(
   'notes/deleteNote',
   async (noteId, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.delete(`/api/notes/${noteId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.delete(`/api/notes/${noteId}`);
       return { noteId, message: response.data.message };
     } catch (error) {
       return rejectWithValue(
@@ -92,11 +76,7 @@ export const getJobNotes = createAsyncThunk(
   'notes/getJobNotes',
   async ({ jobId, params = {} }, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/notes/job/${jobId}`, {
-        params,
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get(`/api/notes/job/${jobId}`, { params });
       return { jobId, ...response.data };
     } catch (error) {
       return rejectWithValue(
@@ -110,10 +90,7 @@ export const getNoteStats = createAsyncThunk(
   'notes/getNoteStats',
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/notes/stats', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await api.get('/api/notes/stats');
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -164,20 +141,6 @@ const notesSlice = createSlice({
     },
     clearError: (state) => {
       state.error = null;
-    },
-    addNote: (state, action) => {
-      state.notes.unshift(action.payload);
-    },
-    updateNoteInList: (state, action) => {
-      const { noteId, noteData } = action.payload;
-      const index = state.notes.findIndex((note) => note._id === noteId);
-      if (index !== -1) {
-        state.notes[index] = { ...state.notes[index], ...noteData };
-      }
-    },
-    removeNoteFromList: (state, action) => {
-      const noteId = action.payload;
-      state.notes = state.notes.filter((note) => note._id !== noteId);
     },
   },
   extraReducers: (builder) => {
@@ -236,7 +199,6 @@ const notesSlice = createSlice({
       .addCase(updateNote.fulfilled, (state, action) => {
         state.updateLoading = false;
         state.currentNote = action.payload.note;
-        // Update in notes list
         const index = state.notes.findIndex(
           (note) => note._id === action.payload.note._id
         );
@@ -307,9 +269,6 @@ export const {
   clearNotes,
   clearCurrentNote,
   clearError,
-  addNote,
-  updateNoteInList,
-  removeNoteFromList,
 } = notesSlice.actions;
 
 export default notesSlice.reducer;

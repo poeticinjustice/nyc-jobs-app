@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
   getJobCategories,
+  getJobAgencies,
   setSearchParams as setReduxSearchParams,
   saveJob,
   unsaveJob,
@@ -12,16 +13,16 @@ import {
   HiFilter,
   HiBookmark,
   HiBookmarkAlt,
-  HiChevronLeft,
-  HiChevronRight,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
-import { cleanText, cleanTextForDisplay } from '../utils/textUtils';
+import { cleanTextForDisplay } from '../utils/textUtils';
+import { formatSalary, formatDate } from '../utils/formatUtils';
 
 const JobSearch = () => {
   const dispatch = useDispatch();
-  const { searchResults, categories, searchLoading, error, pagination } =
+  const { searchResults, categories, agencies, searchLoading, error, pagination } =
     useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -36,6 +37,7 @@ const JobSearch = () => {
     q: searchParams.get('q') || '',
     category: searchParams.get('category') || '',
     location: searchParams.get('location') || '',
+    agency: searchParams.get('agency') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
@@ -47,18 +49,22 @@ const JobSearch = () => {
     q: searchParams.get('q') || '',
     category: searchParams.get('category') || '',
     location: searchParams.get('location') || '',
+    agency: searchParams.get('agency') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
     limit: parseInt(searchParams.get('limit')) || 20,
   });
 
-  // Load categories on component mount
+  // Load categories and agencies on component mount
   useEffect(() => {
     if (categories.length === 0) {
       dispatch(getJobCategories());
     }
-  }, [dispatch, categories.length]);
+    if (agencies.length === 0) {
+      dispatch(getJobAgencies());
+    }
+  }, [dispatch, categories.length, agencies.length]);
 
   // Handle URL parameter changes and initial load
   useEffect(() => {
@@ -319,32 +325,8 @@ const JobSearch = () => {
     handleSearch(1);
   };
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setLocalSearchParams((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
   const handleFilterSearch = () => {
     handleSearch(1);
-  };
-
-  const formatSalary = (from, to, frequency) => {
-    if (from && to) {
-      return `$${from.toLocaleString()} - $${to.toLocaleString()} ${
-        frequency || ''
-      }`;
-    } else if (from) {
-      return `$${from.toLocaleString()} ${frequency || ''}`;
-    }
-    return 'Salary not specified';
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date not specified';
-    return new Date(dateString).toLocaleDateString();
   };
 
   const totalPages = pagination
@@ -407,6 +389,7 @@ const JobSearch = () => {
               {(localSearchParams.q ||
                 localSearchParams.category ||
                 localSearchParams.location ||
+                localSearchParams.agency ||
                 localSearchParams.salary_min ||
                 localSearchParams.salary_max) && (
                 <button
@@ -416,6 +399,7 @@ const JobSearch = () => {
                       q: '',
                       category: '',
                       location: '',
+                      agency: '',
                       salary_min: '',
                       salary_max: '',
                       sort: 'date_desc',
@@ -454,7 +438,7 @@ const JobSearch = () => {
 
           {/* Advanced Filters */}
           {showFilters && (
-            <div className='grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg filters-container'>
+            <div className='grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg filters-container'>
               <div>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>
                   Category
@@ -462,13 +446,32 @@ const JobSearch = () => {
                 <select
                   name='category'
                   value={localSearchParams.category}
-                  onChange={handleFilterChange}
+                  onChange={handleInputChange}
                   className='input'
                 >
                   <option value=''>All Categories</option>
                   {categories.map((category) => (
                     <option key={category} value={category}>
                       {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                  Agency
+                </label>
+                <select
+                  name='agency'
+                  value={localSearchParams.agency}
+                  onChange={handleInputChange}
+                  className='input'
+                >
+                  <option value=''>All Agencies</option>
+                  {agencies.map((agency) => (
+                    <option key={agency} value={agency}>
+                      {agency}
                     </option>
                   ))}
                 </select>
@@ -483,7 +486,7 @@ const JobSearch = () => {
                   name='location'
                   placeholder='Work location...'
                   value={localSearchParams.location}
-                  onChange={handleFilterChange}
+                  onChange={handleInputChange}
                   className='input'
                 />
               </div>
@@ -497,7 +500,7 @@ const JobSearch = () => {
                   name='salary_min'
                   placeholder='Min salary...'
                   value={localSearchParams.salary_min}
-                  onChange={handleFilterChange}
+                  onChange={handleInputChange}
                   className='input'
                 />
               </div>
@@ -511,7 +514,7 @@ const JobSearch = () => {
                   name='salary_max'
                   placeholder='Max salary...'
                   value={localSearchParams.salary_max}
-                  onChange={handleFilterChange}
+                  onChange={handleInputChange}
                   className='input'
                 />
               </div>
@@ -546,6 +549,7 @@ const JobSearch = () => {
           (searchParams.get('q') ||
             searchParams.get('category') ||
             searchParams.get('location') ||
+            searchParams.get('agency') ||
             searchParams.get('salary_min') ||
             searchParams.get('salary_max')) && (
             <div className='bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4'>
@@ -565,6 +569,7 @@ const JobSearch = () => {
             searchParams.get('q') ||
             searchParams.get('category') ||
             searchParams.get('location') ||
+            searchParams.get('agency') ||
             searchParams.get('salary_min') ||
             searchParams.get('salary_max')
           ) && (
@@ -721,6 +726,7 @@ const JobSearch = () => {
               {(activeSearchParams.q ||
                 activeSearchParams.category ||
                 activeSearchParams.location ||
+                activeSearchParams.agency ||
                 activeSearchParams.salary_min ||
                 activeSearchParams.salary_max) && (
                 <div className='mt-3 pt-3 border-t border-gray-200'>
@@ -736,6 +742,11 @@ const JobSearch = () => {
                     {activeSearchParams.category && (
                       <span className='px-2 py-1 bg-green-100 text-green-700 rounded text-xs'>
                         Category: {activeSearchParams.category}
+                      </span>
+                    )}
+                    {activeSearchParams.agency && (
+                      <span className='px-2 py-1 bg-teal-100 text-teal-700 rounded text-xs'>
+                        Agency: {activeSearchParams.agency}
                       </span>
                     )}
                     {activeSearchParams.location && (
@@ -847,72 +858,18 @@ const JobSearch = () => {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4'>
-                <div className='flex items-center justify-between'>
-                  <div className='text-sm text-gray-600'>
-                    Showing page {currentPage} of {totalPages}
-                    {pagination && (
-                      <span className='ml-2'>
-                        ({pagination.total} total jobs)
-                      </span>
-                    )}
-                  </div>
-
-                  <div className='flex items-center space-x-2'>
-                    <button
-                      onClick={() => handlePageChange(currentPage - 1)}
-                      disabled={currentPage <= 1}
-                      className='p-2 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-                      title='Previous page'
-                    >
-                      <HiChevronLeft className='h-5 w-5' />
-                    </button>
-
-                    <div className='flex items-center space-x-1'>
-                      {Array.from(
-                        { length: Math.min(5, totalPages) },
-                        (_, i) => {
-                          let pageNum;
-                          if (totalPages <= 5) {
-                            pageNum = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i;
-                          } else {
-                            pageNum = currentPage - 2 + i;
-                          }
-
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => handlePageChange(pageNum)}
-                              className={`px-3 py-1 text-sm rounded ${
-                                currentPage === pageNum
-                                  ? 'bg-primary-600 text-white'
-                                  : 'text-gray-600 hover:text-primary-600'
-                              }`}
-                            >
-                              {pageNum}
-                            </button>
-                          );
-                        }
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      disabled={currentPage >= totalPages}
-                      className='p-2 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-                      title='Next page'
-                    >
-                      <HiChevronRight className='h-5 w-5' />
-                    </button>
-                  </div>
-                </div>
+              <div className='space-y-0'>
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  total={pagination?.total || 0}
+                  pageSize={resultsPerPage}
+                  onPageChange={handlePageChange}
+                  label='jobs'
+                />
 
                 {/* Results Per Page Selector - Desktop Only */}
-                <div className='hidden md:block mt-4 pt-4 border-t border-gray-200'>
+                <div className='hidden md:block bg-white rounded-b-lg border border-t-0 border-gray-200 px-4 pb-4'>
                   <div className='flex justify-end'>
                     <div className='flex items-center gap-2'>
                       <label className='text-sm text-gray-600'>Show:</label>

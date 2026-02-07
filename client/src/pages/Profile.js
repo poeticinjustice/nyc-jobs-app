@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateProfile, changePassword } from '../store/slices/authSlice';
-import { HiUser, HiLockClosed, HiMail, HiPhone } from 'react-icons/hi';
+import { HiUser, HiLockClosed } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 
 const Profile = () => {

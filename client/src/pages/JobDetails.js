@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getJobDetails, saveJob, unsaveJob } from '../store/slices/jobsSlice';
 import {
@@ -13,7 +13,7 @@ import {
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import { cleanText, renderHtmlContent } from '../utils/textUtils';
-import { useNavigate } from 'react-router-dom';
+import { formatSalary, formatDate } from '../utils/formatUtils';
 
 const JobDetails = () => {
   const { jobId } = useParams();
@@ -22,12 +22,6 @@ const JobDetails = () => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (currentJob) {
-      // Job loaded successfully
-    }
-  }, [currentJob]);
 
   useEffect(() => {
     if (jobId) {
@@ -50,22 +44,6 @@ const JobDetails = () => {
     } catch (error) {
       console.error('Error saving/unsaving job:', error);
     }
-  };
-
-  const formatSalary = (from, to, frequency) => {
-    if (from && to) {
-      return `$${from.toLocaleString()} - $${to.toLocaleString()} ${
-        frequency || ''
-      }`;
-    } else if (from) {
-      return `$${from.toLocaleString()} ${frequency || ''}`;
-    }
-    return 'Salary not specified';
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date not specified';
-    return new Date(dateString).toLocaleDateString();
   };
 
   if (loading) {

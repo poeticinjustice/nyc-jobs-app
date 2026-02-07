@@ -23,8 +23,6 @@ const initialState = {
   // Loading states
   loading: {
     global: false,
-    search: false,
-    save: false,
   },
 
   // Theme and preferences
@@ -99,14 +97,6 @@ const uiSlice = createSlice({
       state.loading.global = action.payload;
     },
 
-    setSearchLoading: (state, action) => {
-      state.loading.search = action.payload;
-    },
-
-    setSaveLoading: (state, action) => {
-      state.loading.save = action.payload;
-    },
-
     // Theme actions
     toggleTheme: (state) => {
       state.theme.mode = state.theme.mode === 'light' ? 'dark' : 'light';
@@ -165,8 +155,6 @@ export const {
   removeNotification,
   clearNotifications,
   setGlobalLoading,
-  setSearchLoading,
-  setSaveLoading,
   toggleTheme,
   setTheme,
   toggleSidebarCollapsed,

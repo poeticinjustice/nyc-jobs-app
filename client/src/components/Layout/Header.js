@@ -1,10 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { HiMenu, HiUser, HiLogout, HiCog } from 'react-icons/hi';
+import { HiMenu, HiUser, HiLogout, HiCog, HiBookmark } from 'react-icons/hi';
 
 const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [userMenuOpen]);
 
   const toggleUserMenu = () => {
     setUserMenuOpen(!userMenuOpen);
@@ -40,7 +52,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
           <div className='flex items-center space-x-4'>
             {/* User menu */}
             {isAuthenticated ? (
-              <div className='relative'>
+              <div className='relative' ref={menuRef}>
                 <button
                   type='button'
                   className='flex items-center space-x-2 p-2 text-gray-400 hover:text-gray-500 hover:bg-gray-100 rounded-md'
@@ -71,7 +83,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                       className='flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
                       onClick={() => setUserMenuOpen(false)}
                     >
-                      <HiCog className='mr-3 h-4 w-4' />
+                      <HiBookmark className='mr-3 h-4 w-4' />
                       Saved Jobs
                     </Link>
                     {user?.role === 'admin' && (
