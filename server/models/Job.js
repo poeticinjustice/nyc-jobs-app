@@ -79,10 +79,6 @@ const jobSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    recruitmentContact: {
-      type: String,
-      trim: true,
-    },
     residencyRequirement: {
       type: String,
       trim: true,
@@ -91,9 +87,6 @@ const jobSchema = new mongoose.Schema(
       type: Date,
     },
     postUntil: {
-      type: Date,
-    },
-    postUntilDate: {
       type: Date,
     },
     processDate: {
@@ -113,26 +106,6 @@ const jobSchema = new mongoose.Schema(
         },
       },
     ],
-
-    // Search and categorization
-    tags: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
-
-    // Analytics
-    viewCount: {
-      type: Number,
-      default: 0,
-    },
-
-    // Status
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
   },
   {
     timestamps: true,

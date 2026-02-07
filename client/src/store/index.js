@@ -11,14 +11,4 @@ export const store = configureStore({
     notes: notesReducer,
     ui: uiReducer,
   },
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware({
-      serializableCheck: {
-        ignoredActions: ['persist/PERSIST'],
-      },
-    }),
 });
-
-// For TypeScript support, uncomment these lines when using TypeScript:
-// export type RootState = ReturnType<typeof store.getState>;
-// export type AppDispatch = typeof store.dispatch;

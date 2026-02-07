@@ -113,7 +113,7 @@ const JobSearch = () => {
       dispatch({ type: 'jobs/clearSearchResults' });
       setCurrentPage(1);
     }
-  }, [searchParams, dispatch, setSearchParams, currentPage]);
+  }, [searchParams, dispatch, setSearchParams]);
 
   // Handle clicking outside sort dropdown to close it
   useEffect(() => {
@@ -132,54 +132,6 @@ const JobSearch = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSortDropdown, showFilters]);
-
-  // Handle browser back/forward navigation
-  useEffect(() => {
-    const handlePopState = () => {
-      // When user navigates back/forward, check if we have search params
-      const currentParams = new URLSearchParams(window.location.search);
-      const hasParams = Array.from(currentParams.values()).some(
-        (value) => value
-      );
-
-      if (hasParams) {
-        // Extract parameters and perform search
-        const urlParams = {};
-        currentParams.forEach((value, key) => {
-          if (key === 'sort' || value) {
-            urlParams[key] = value;
-          }
-        });
-
-        // Ensure sort parameter has a default value
-        if (!urlParams.sort) {
-          urlParams.sort = 'date_desc';
-        }
-
-        // Update local search params and perform search
-        setLocalSearchParams((prev) => ({
-          ...prev,
-          ...urlParams,
-        }));
-
-        const searchParamsWithPage = {
-          ...urlParams,
-          page: 1,
-          limit: 20,
-        };
-        dispatch(setReduxSearchParams(searchParamsWithPage));
-        dispatch(searchJobs(searchParamsWithPage));
-        setCurrentPage(1);
-      } else {
-        // No search parameters - clear results
-        dispatch({ type: 'jobs/clearSearchResults' });
-        setCurrentPage(1);
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [dispatch]);
 
   const handleSearch = (page = 1) => {
     setCurrentPage(page);
@@ -519,7 +471,7 @@ const JobSearch = () => {
                 />
               </div>
 
-              <div className='md:col-span-4'>
+              <div className='md:col-span-3'>
                 <button
                   type='button'
                   onClick={handleFilterSearch}

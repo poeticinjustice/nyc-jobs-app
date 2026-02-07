@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Link, useLocation } from 'react-router-dom';
 import { logout } from '../../store/slices/authSlice';
 import { toggleSidebar, setSidebarTab } from '../../store/slices/uiSlice';
 import Header from './Header';
 import Sidebar from './Sidebar';
-import { HiMenu, HiX } from 'react-icons/hi';
+import { HiX } from 'react-icons/hi';
 
 const Layout = ({ children }) => {
   const dispatch = useDispatch();
-  const location = useLocation();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const { sidebar } = useSelector((state) => state.ui);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

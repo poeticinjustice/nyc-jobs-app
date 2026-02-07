@@ -1,18 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import React, { useState } from 'react';
+import { useSelector } from 'react-redux';
 import {
   HiUsers,
   HiBriefcase,
   HiDocumentText,
   HiChartBar,
-  HiCog,
-  HiUserGroup,
-  HiClipboardList,
 } from 'react-icons/hi';
-import LoadingSpinner from '../components/UI/LoadingSpinner';
+import { formatDate } from '../utils/formatUtils';
 
 const Admin = () => {
-  const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState({
@@ -21,16 +17,6 @@ const Admin = () => {
     totalNotes: 0,
     activeUsers: 0,
   });
-
-  useEffect(() => {
-    // Fetch admin statistics
-    // This would dispatch actions to get admin data
-  }, [dispatch]);
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString();
-  };
 
   return (
     <div className='space-y-6'>

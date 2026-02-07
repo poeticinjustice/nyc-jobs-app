@@ -50,25 +50,6 @@ const noteSchema = new mongoose.Schema(
         maxlength: 50,
       },
     ],
-    attachments: [
-      {
-        filename: {
-          type: String,
-          required: true,
-        },
-        url: {
-          type: String,
-          required: true,
-        },
-        size: {
-          type: Number,
-        },
-        uploadedAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
     status: {
       type: String,
       enum: ['active', 'archived', 'deleted'],

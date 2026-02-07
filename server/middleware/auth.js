@@ -55,36 +55,6 @@ const requireRole = (roles) => {
   };
 };
 
-// Middleware to check if user owns the resource or is admin
-const requireOwnership = (modelName) => {
-  return async (req, res, next) => {
-    try {
-      const Model = require(`../models/${modelName}`);
-      const resourceId = req.params.id;
-      const resource = await Model.findById(resourceId);
-
-      if (!resource) {
-        return res.status(404).json({ message: 'Resource not found' });
-      }
-
-      // Check if user owns the resource or is admin/moderator
-      const isOwner =
-        resource.user && resource.user.toString() === req.user._id.toString();
-      const isAdmin = ['admin', 'moderator'].includes(req.user.role);
-
-      if (!isOwner && !isAdmin) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-
-      req.resource = resource;
-      next();
-    } catch (error) {
-      console.error('Ownership check error:', error);
-      res.status(500).json({ message: 'Authorization error' });
-    }
-  };
-};
-
 // Optional authentication middleware (doesn't fail if no token)
 const optionalAuth = async (req, res, next) => {
   try {
@@ -110,6 +80,5 @@ const optionalAuth = async (req, res, next) => {
 module.exports = {
   authenticateToken,
   requireRole,
-  requireOwnership,
   optionalAuth,
 };
