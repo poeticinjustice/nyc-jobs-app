@@ -37,7 +37,7 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === 'production'
-        ? ['https://your-production-domain.com']
+        ? (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim())
         : ['http://localhost:3000'],
     credentials: true,
   })
@@ -55,10 +55,7 @@ app.use('/api', (req, res, next) => {
 
 // MongoDB connection
 mongoose
-  .connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+  .connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
@@ -84,16 +81,7 @@ app.get('/api/rate-limit-status', (req, res) => {
   res.json(rateLimitInfo);
 });
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, '../client/build')));
-
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build/index.html'));
-});
-
-// Error handling middleware
+// Error handling middleware (must be before SPA catch-all)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -105,9 +93,13 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ message: 'Route not found' });
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, '../client/build')));
+
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
 app.listen(PORT, () => {

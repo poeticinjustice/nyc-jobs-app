@@ -5,6 +5,54 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+// IMPORTANT: /stats must be defined BEFORE /:id
+
+// @route   GET /api/users/stats
+// @desc    Get user statistics (admin only)
+// @access  Private (Admin)
+router.get(
+  '/stats',
+  [authenticateToken, requireRole(['admin'])],
+  async (req, res) => {
+    try {
+      const stats = await User.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalUsers: { $sum: 1 },
+            activeUsers: { $sum: { $cond: ['$isActive', 1, 0] } },
+          },
+        },
+      ]);
+
+      const roleStats = await User.aggregate([
+        {
+          $group: {
+            _id: '$role',
+            count: { $sum: 1 },
+            activeCount: { $sum: { $cond: ['$isActive', 1, 0] } },
+          },
+        },
+      ]);
+
+      const recentUsers = await User.find()
+        .select('firstName lastName email role isActive createdAt')
+        .sort({ createdAt: -1 })
+        .limit(10);
+
+      res.json({
+        totalUsers: stats[0]?.totalUsers || 0,
+        activeUsers: stats[0]?.activeUsers || 0,
+        byRole: roleStats,
+        recentUsers,
+      });
+    } catch (error) {
+      console.error('Get user stats error:', error);
+      res.status(500).json({ message: 'Error fetching user statistics' });
+    }
+  }
+);
+
 // @route   GET /api/users
 // @desc    Get all users (admin only)
 // @access  Private (Admin)
@@ -22,26 +70,22 @@ router.get(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          message: 'Validation failed',
-          errors: errors.array(),
-        });
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
       }
 
       const { page = 1, limit = 20, role, isActive } = req.query;
 
-      // Build query
-      const query = {};
-      if (role) query.role = role;
-      if (isActive !== undefined) query.isActive = isActive;
+      const queryFilter = {};
+      if (role) queryFilter.role = role;
+      if (isActive !== undefined) queryFilter.isActive = isActive;
 
-      const users = await User.find(query)
+      const users = await User.find(queryFilter)
         .select('-password')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      const total = await User.countDocuments(query);
+      const total = await User.countDocuments(queryFilter);
 
       res.json({
         users,
@@ -66,7 +110,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if user can access this profile
     if (id !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -100,16 +143,12 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          message: 'Validation failed',
-          errors: errors.array(),
-        });
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
       }
 
       const { id } = req.params;
       const { firstName, lastName, email, role, isActive } = req.body;
 
-      // Check permissions
       const isSelf = id === req.user._id.toString();
       const isAdmin = req.user.role === 'admin';
 
@@ -117,7 +156,6 @@ router.put(
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Only admins can change roles and active status
       if ((role !== undefined || isActive !== undefined) && !isAdmin) {
         return res.status(403).json({ message: 'Insufficient permissions' });
       }
@@ -127,12 +165,10 @@ router.put(
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Build updates
       const updates = {};
       if (firstName !== undefined) updates.firstName = firstName;
       if (lastName !== undefined) updates.lastName = lastName;
       if (email !== undefined) {
-        // Check if email is already taken
         const existingUser = await User.findOne({ email, _id: { $ne: id } });
         if (existingUser) {
           return res.status(400).json({ message: 'Email already in use' });
@@ -147,10 +183,7 @@ router.put(
         runValidators: true,
       }).select('-password');
 
-      res.json({
-        message: 'User updated successfully',
-        user: updatedUser,
-      });
+      res.json({ message: 'User updated successfully', user: updatedUser });
     } catch (error) {
       console.error('Update user error:', error);
       res.status(500).json({ message: 'Error updating user' });
@@ -168,11 +201,8 @@ router.delete(
     try {
       const { id } = req.params;
 
-      // Prevent admin from deleting themselves
       if (id === req.user._id.toString()) {
-        return res
-          .status(400)
-          .json({ message: 'Cannot delete your own account' });
+        return res.status(400).json({ message: 'Cannot delete your own account' });
       }
 
       const user = await User.findById(id);
@@ -180,7 +210,6 @@ router.delete(
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Soft delete - set isActive to false
       user.isActive = false;
       await user.save();
 
@@ -188,59 +217,6 @@ router.delete(
     } catch (error) {
       console.error('Delete user error:', error);
       res.status(500).json({ message: 'Error deleting user' });
-    }
-  }
-);
-
-// @route   GET /api/users/stats
-// @desc    Get user statistics (admin only)
-// @access  Private (Admin)
-router.get(
-  '/stats',
-  [authenticateToken, requireRole(['admin'])],
-  async (req, res) => {
-    try {
-      const stats = await User.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalUsers: { $sum: 1 },
-            activeUsers: {
-              $sum: { $cond: ['$isActive', 1, 0] },
-            },
-            byRole: {
-              $push: '$role',
-            },
-          },
-        },
-      ]);
-
-      const roleStats = await User.aggregate([
-        {
-          $group: {
-            _id: '$role',
-            count: { $sum: 1 },
-            activeCount: {
-              $sum: { $cond: ['$isActive', 1, 0] },
-            },
-          },
-        },
-      ]);
-
-      const recentUsers = await User.find()
-        .select('firstName lastName email role isActive createdAt')
-        .sort({ createdAt: -1 })
-        .limit(10);
-
-      res.json({
-        totalUsers: stats[0]?.totalUsers || 0,
-        activeUsers: stats[0]?.activeUsers || 0,
-        byRole: roleStats,
-        recentUsers,
-      });
-    } catch (error) {
-      console.error('Get user stats error:', error);
-      res.status(500).json({ message: 'Error fetching user statistics' });
     }
   }
 );
