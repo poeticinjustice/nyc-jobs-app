@@ -14,8 +14,8 @@ const Admin = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState({
     totalUsers: 0,
-    totalJobs: 0,
     totalNotes: 0,
+    totalSavedJobs: 0,
     activeUsers: 0,
   });
   const [recentUsers, setRecentUsers] = useState([]);
@@ -24,11 +24,12 @@ const Admin = () => {
     const fetchStats = async () => {
       try {
         const response = await api.get('/api/users/stats');
-        setStats((prev) => ({
-          ...prev,
+        setStats({
           totalUsers: response.data.totalUsers || 0,
           activeUsers: response.data.activeUsers || 0,
-        }));
+          totalNotes: response.data.totalNotes || 0,
+          totalSavedJobs: response.data.totalSavedJobs || 0,
+        });
         setRecentUsers(response.data.recentUsers || []);
       } catch (error) {
         // Stats are non-critical; silently fail
@@ -130,10 +131,10 @@ const Admin = () => {
                     </div>
                     <div className='ml-4'>
                       <p className='text-sm font-medium text-gray-500'>
-                        Total Jobs
+                        Saved Jobs
                       </p>
                       <p className='text-2xl font-semibold text-gray-900'>
-                        {stats.totalJobs}
+                        {stats.totalSavedJobs}
                       </p>
                     </div>
                   </div>

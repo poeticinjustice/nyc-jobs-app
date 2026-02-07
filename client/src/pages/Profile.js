@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { updateProfile, changePassword } from '../store/slices/authSlice';
 import { HiUser, HiLockClosed } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import { formatDate } from '../utils/formatUtils';
 
 const Profile = () => {
   const dispatch = useDispatch();
@@ -19,8 +20,6 @@ const Profile = () => {
     newPassword: '',
     confirmPassword: '',
   });
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-
   const handleProfileSubmit = (e) => {
     e.preventDefault();
     dispatch(updateProfile(profileForm));
@@ -43,7 +42,6 @@ const Profile = () => {
       newPassword: '',
       confirmPassword: '',
     });
-    setShowPasswordForm(false);
   };
 
   const handleInputChange = (e) => {
@@ -294,9 +292,7 @@ const Profile = () => {
               Member Since
             </span>
             <p className='text-gray-900'>
-              {user?.createdAt
-                ? new Date(user.createdAt).toLocaleDateString()
-                : 'N/A'}
+              {formatDate(user?.createdAt)}
             </p>
           </div>
           <div>
@@ -304,9 +300,7 @@ const Profile = () => {
               Last Login
             </span>
             <p className='text-gray-900'>
-              {user?.lastLogin
-                ? new Date(user.lastLogin).toLocaleDateString()
-                : 'N/A'}
+              {formatDate(user?.lastLogin)}
             </p>
           </div>
         </div>

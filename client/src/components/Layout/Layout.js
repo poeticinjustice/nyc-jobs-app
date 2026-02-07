@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout } from '../../store/slices/authSlice';
-import { toggleSidebar, setSidebarTab } from '../../store/slices/uiSlice';
+import { setSidebarTab } from '../../store/slices/uiSlice';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import { HiX } from 'react-icons/hi';
@@ -14,10 +14,6 @@ const Layout = ({ children }) => {
 
   const handleLogout = () => {
     dispatch(logout());
-  };
-
-  const handleSidebarToggle = () => {
-    dispatch(toggleSidebar());
   };
 
   const handleMobileMenuToggle = () => {

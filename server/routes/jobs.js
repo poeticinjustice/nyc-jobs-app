@@ -279,26 +279,32 @@ router.get('/agencies', async (req, res) => {
 router.get('/saved', authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
 
-    const user = await User.findById(req.user._id);
-    const totalSavedJobs = user.savedJobs.length;
+    const total = await Job.countDocuments({ 'savedBy.user': req.user._id });
 
-    const paginatedUser = await User.findById(req.user._id).populate({
-      path: 'savedJobs',
-      options: {
-        skip: (page - 1) * limit,
-        limit: parseInt(limit),
-        sort: { 'savedBy.savedAt': -1 },
-      },
+    const jobs = await Job.find({ 'savedBy.user': req.user._id })
+      .sort({ updatedAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
+
+    // Add the current user's savedAt to each job as a top-level field
+    const jobsWithSavedAt = jobs.map((job) => {
+      const entry = job.savedBy?.find(
+        (s) => s.user.toString() === req.user._id.toString()
+      );
+      return { ...job, savedAt: entry?.savedAt };
     });
 
     res.json({
-      jobs: paginatedUser.savedJobs,
+      jobs: jobsWithSavedAt,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalSavedJobs,
-        pages: Math.ceil(totalSavedJobs / limit),
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
       },
     });
   } catch (error) {

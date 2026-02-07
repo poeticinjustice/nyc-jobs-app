@@ -167,7 +167,7 @@ const SavedJobs = () => {
                     </button>
                   </div>
                   <div className='text-xs text-gray-500'>
-                    Saved {formatDate(job.savedBy?.[0]?.savedAt)}
+                    Saved {formatDate(job.savedAt)}
                   </div>
                 </div>
               </div>

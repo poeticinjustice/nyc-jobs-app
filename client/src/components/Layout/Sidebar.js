@@ -7,7 +7,6 @@ import {
   HiDocumentText,
   HiUser,
   HiCog,
-  HiChartBar,
 } from 'react-icons/hi';
 
 const Sidebar = ({

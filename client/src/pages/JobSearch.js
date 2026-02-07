@@ -5,6 +5,7 @@ import {
   getJobCategories,
   getJobAgencies,
   setSearchParams as setReduxSearchParams,
+  clearSearchResults,
   saveJob,
   unsaveJob,
 } from '../store/slices/jobsSlice';
@@ -66,39 +67,42 @@ const JobSearch = () => {
     }
   }, [dispatch, categories.length, agencies.length]);
 
-  // Handle URL parameter changes and initial load
+  // Single source of truth: URL drives all searches
   useEffect(() => {
     const hasParams = Array.from(searchParams.values()).some((value) => value);
 
     if (hasParams) {
-      // Extract search parameters from URL
       const urlParams = {};
       searchParams.forEach((value, key) => {
-        // Always include sort parameter, even if it's the default
         if (key === 'sort' || value) {
           urlParams[key] = value;
         }
       });
 
-      // Ensure sort parameter has a default value if not present
-      if (!urlParams.sort) {
-        urlParams.sort = 'date_desc';
-      }
+      if (!urlParams.sort) urlParams.sort = 'date_desc';
 
-      // Extract page and limit parameters
       const pageFromUrl = parseInt(urlParams.page) || 1;
       const limitFromUrl = parseInt(urlParams.limit) || 20;
       setCurrentPage(pageFromUrl);
       setResultsPerPage(limitFromUrl);
 
-      // Update local search params with URL values
       setLocalSearchParams((prev) => ({
         ...prev,
         ...urlParams,
         limit: limitFromUrl,
       }));
 
-      // Perform search with URL parameters
+      setActiveSearchParams({
+        q: urlParams.q || '',
+        category: urlParams.category || '',
+        location: urlParams.location || '',
+        agency: urlParams.agency || '',
+        salary_min: urlParams.salary_min || '',
+        salary_max: urlParams.salary_max || '',
+        sort: urlParams.sort,
+        limit: limitFromUrl,
+      });
+
       const searchParamsWithPage = {
         ...urlParams,
         page: pageFromUrl,
@@ -108,12 +112,12 @@ const JobSearch = () => {
       dispatch(setReduxSearchParams(searchParamsWithPage));
       dispatch(searchJobs(searchParamsWithPage));
     } else {
-      // No search parameters - clear results and don't auto-load
       dispatch(setReduxSearchParams({}));
-      dispatch({ type: 'jobs/clearSearchResults' });
+      dispatch(clearSearchResults());
+      setActiveSearchParams({});
       setCurrentPage(1);
     }
-  }, [searchParams, dispatch, setSearchParams]);
+  }, [searchParams, dispatch]);
 
   // Handle clicking outside sort dropdown to close it
   useEffect(() => {
@@ -134,44 +138,7 @@ const JobSearch = () => {
   }, [showSortDropdown, showFilters]);
 
   const handleSearch = (page = 1) => {
-    setCurrentPage(page);
-
-    // Check if this is an "empty search" (user wants to see all jobs)
-    const hasSearchTerms = Object.values(localSearchParams).some(
-      (value) => value && String(value).trim() !== ''
-    );
-
-    if (!hasSearchTerms) {
-      // Empty search - load all jobs sorted by most recent
-      dispatch(setReduxSearchParams({}));
-      setActiveSearchParams({}); // Set empty search params for pagination logic
-      dispatch(
-        searchJobs({
-          page,
-          limit: resultsPerPage,
-          sort: localSearchParams.sort,
-        })
-      );
-
-      // Clear URL parameters since we're showing all jobs
-      setSearchParams(new URLSearchParams());
-      return;
-    }
-
-    // Regular search with terms
-    const searchParamsWithPage = {
-      ...localSearchParams,
-      page,
-      limit: resultsPerPage,
-    };
-
-    // Update active search params when search is actually performed
-    setActiveSearchParams({
-      ...localSearchParams,
-      limit: resultsPerPage,
-    });
-
-    // Update URL with search parameters (only non-empty values, but always include sort, page, and limit)
+    // Build URL params - the useEffect will handle dispatching the search
     const newSearchParams = new URLSearchParams();
     Object.entries(localSearchParams).forEach(([key, value]) => {
       if (
@@ -182,15 +149,11 @@ const JobSearch = () => {
         newSearchParams.set(key, String(value).trim() || value);
       }
     });
-    // Always include the page parameter
+    newSearchParams.set('sort', localSearchParams.sort || 'date_desc');
     newSearchParams.set('page', page.toString());
-    // Always include the limit parameter
     newSearchParams.set('limit', resultsPerPage.toString());
 
     setSearchParams(newSearchParams);
-
-    dispatch(setReduxSearchParams(searchParamsWithPage));
-    dispatch(searchJobs(searchParamsWithPage));
   };
 
   const handleInputChange = (e) => {
@@ -216,60 +179,19 @@ const JobSearch = () => {
   };
 
   const handlePageChange = (newPage) => {
-    // Update URL with new page number
-    const newSearchParams = new URLSearchParams(searchParams);
-    // Always include the page parameter, even for page 1
-    newSearchParams.set('page', newPage.toString());
-    setSearchParams(newSearchParams);
-
-    // Update current page state immediately
     setCurrentPage(newPage);
-
-    // Check if we're currently showing all jobs or filtered results
-    const hasSearchTerms = Object.values(activeSearchParams).some(
-      (value) => value && String(value).trim() !== ''
-    );
-
-    if (!hasSearchTerms) {
-      // We're showing all jobs - just change page without full search
-      dispatch(
-        searchJobs({
-          page: newPage,
-          limit: resultsPerPage,
-          sort: localSearchParams.sort,
-        })
-      );
-    } else {
-      // We have search terms - use the regular search logic
-      handleSearch(newPage);
-    }
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('page', newPage.toString());
+    setSearchParams(newParams);
   };
 
   const handleResultsPerPageChange = (newLimit) => {
     setResultsPerPage(newLimit);
-    setCurrentPage(1); // Reset to page 1 when changing results per page
-
-    // Update URL with new limit
-    const newSearchParams = new URLSearchParams(searchParams);
-    newSearchParams.set('limit', newLimit.toString());
-    newSearchParams.set('page', '1'); // Reset to page 1
-    setSearchParams(newSearchParams);
-
-    // Update local search params
-    setLocalSearchParams((prev) => ({
-      ...prev,
-      limit: newLimit,
-    }));
-
-    // Perform search with new limit
-    const searchParamsWithPage = {
-      ...localSearchParams,
-      page: 1,
-      limit: newLimit,
-    };
-
-    dispatch(setReduxSearchParams(searchParamsWithPage));
-    dispatch(searchJobs(searchParamsWithPage));
+    setCurrentPage(1);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('limit', newLimit.toString());
+    newParams.set('page', '1');
+    setSearchParams(newParams);
   };
 
   const handleSearchSubmit = (e) => {
@@ -355,7 +277,9 @@ const JobSearch = () => {
                       salary_min: '',
                       salary_max: '',
                       sort: 'date_desc',
+                      limit: 20,
                     });
+                    setResultsPerPage(20);
                     setSearchParams(new URLSearchParams());
                     setCurrentPage(1);
                   }}
@@ -647,21 +571,18 @@ const JobSearch = () => {
                                   sort: option.value,
                                 }));
                                 setShowSortDropdown(false);
-                                // Trigger search with new sort
-                                const updatedParams = {
-                                  ...localSearchParams,
-                                  sort: option.value,
-                                  page: 1,
-                                };
-                                dispatch(setReduxSearchParams(updatedParams));
-                                dispatch(searchJobs(updatedParams));
-                                setCurrentPage(1);
+                                const newParams = new URLSearchParams(
+                                  searchParams
+                                );
+                                newParams.set('sort', option.value);
+                                newParams.set('page', '1');
+                                setSearchParams(newParams);
                               }}
                               className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
                                 (localSearchParams.sort || 'date_desc') ===
                                 option.value
                                   ? 'bg-primary-50 text-primary-700'
-                                  : 'text-primary-700'
+                                  : 'text-gray-700'
                               }`}
                             >
                               {option.label}

@@ -1,6 +1,8 @@
 const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const User = require('../models/User');
+const Note = require('../models/Note');
+const Job = require('../models/Job');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -35,14 +37,20 @@ router.get(
         },
       ]);
 
-      const recentUsers = await User.find()
-        .select('firstName lastName email role isActive createdAt')
-        .sort({ createdAt: -1 })
-        .limit(10);
+      const [recentUsers, totalNotes, totalSavedJobs] = await Promise.all([
+        User.find()
+          .select('firstName lastName email role isActive createdAt')
+          .sort({ createdAt: -1 })
+          .limit(10),
+        Note.countDocuments({ status: 'active' }),
+        Job.countDocuments(),
+      ]);
 
       res.json({
         totalUsers: stats[0]?.totalUsers || 0,
         activeUsers: stats[0]?.activeUsers || 0,
+        totalNotes,
+        totalSavedJobs,
         byRole: roleStats,
         recentUsers,
       });

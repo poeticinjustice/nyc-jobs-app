@@ -22,6 +22,7 @@ const NoteModal = ({
   });
 
   useEffect(() => {
+    if (!isOpen) return;
     if (note) {
       setFormData({
         title: note.title || '',
@@ -41,7 +42,7 @@ const NoteModal = ({
         tags: '',
       });
     }
-  }, [note]);
+  }, [note, isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
