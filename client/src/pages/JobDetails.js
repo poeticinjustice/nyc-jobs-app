@@ -12,7 +12,7 @@ import {
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
-import { cleanText, renderHtmlContent } from '../utils/textUtils';
+import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate } from '../utils/formatUtils';
 
 const JobDetails = () => {
@@ -77,18 +77,17 @@ const JobDetails = () => {
         <div className='flex justify-between items-start'>
           <div className='flex-1'>
             <h1 className='text-3xl font-bold text-gray-900 mb-2'>
-              {cleanText(currentJob.businessTitle)}
+              {currentJob.businessTitle}
             </h1>
             <p className='text-lg text-gray-600 mb-4'>
-              {cleanText(currentJob.civilServiceTitle)}
+              {currentJob.civilServiceTitle}
             </p>
 
             <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-6'>
               <div className='flex items-center text-gray-600'>
                 <HiLocationMarker className='h-5 w-5 mr-2' />
                 <span>
-                  {cleanText(currentJob.workLocation) ||
-                    'Location not specified'}
+                  {currentJob.workLocation || 'Location not specified'}
                 </span>
               </div>
               <div className='flex items-center text-gray-600'>
@@ -148,7 +147,7 @@ const JobDetails = () => {
             <div className='prose max-w-none'>
               {currentJob.jobDescription ? (
                 <div className='text-gray-700'>
-                  {renderHtmlContent(cleanText(currentJob.jobDescription))}
+                  {renderHtmlContent(currentJob.jobDescription)}
                 </div>
               ) : (
                 <p className='text-gray-500'>No description available.</p>
@@ -164,9 +163,7 @@ const JobDetails = () => {
               </h2>
               <div className='prose max-w-none'>
                 <div className='text-gray-700'>
-                  {renderHtmlContent(
-                    cleanText(currentJob.minimumQualRequirements)
-                  )}
+                  {renderHtmlContent(currentJob.minimumQualRequirements)}
                 </div>
               </div>
             </div>
@@ -180,7 +177,7 @@ const JobDetails = () => {
               </h2>
               <div className='prose max-w-none'>
                 <div className='text-gray-700'>
-                  {renderHtmlContent(cleanText(currentJob.preferredSkills))}
+                  {renderHtmlContent(currentJob.preferredSkills)}
                 </div>
               </div>
             </div>
@@ -194,9 +191,7 @@ const JobDetails = () => {
               </h2>
               <div className='prose max-w-none'>
                 <div className='text-gray-700'>
-                  {renderHtmlContent(
-                    cleanText(currentJob.additionalInformation)
-                  )}
+                  {renderHtmlContent(currentJob.additionalInformation)}
                 </div>
               </div>
             </div>
@@ -216,7 +211,7 @@ const JobDetails = () => {
                   Category
                 </span>
                 <p className='text-gray-900'>
-                  {cleanText(currentJob.jobCategory) || 'Not specified'}
+                  {currentJob.jobCategory || 'Not specified'}
                 </p>
               </div>
               <div>
@@ -228,8 +223,7 @@ const JobDetails = () => {
               <div>
                 <span className='text-sm font-medium text-gray-500'>Type</span>
                 <p className='text-gray-900'>
-                  {cleanText(currentJob.fullTimePartTimeIndicator) ||
-                    'Not specified'}
+                  {currentJob.fullTimePartTimeIndicator || 'Not specified'}
                 </p>
               </div>
               <div>
@@ -237,7 +231,7 @@ const JobDetails = () => {
                   Division
                 </span>
                 <p className='text-gray-900'>
-                  {cleanText(currentJob.divisionWorkUnit) || 'Not specified'}
+                  {currentJob.divisionWorkUnit || 'Not specified'}
                 </p>
               </div>
               <div>
@@ -245,7 +239,7 @@ const JobDetails = () => {
                   Hours/Shift
                 </span>
                 <p className='text-gray-900'>
-                  {cleanText(currentJob.hoursShift) || 'Not specified'}
+                  {currentJob.hoursShift || 'Not specified'}
                 </p>
               </div>
             </div>

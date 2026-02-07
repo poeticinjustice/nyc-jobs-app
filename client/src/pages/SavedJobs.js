@@ -11,7 +11,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
-import { cleanText } from '../utils/textUtils';
 import { formatSalary, formatDate } from '../utils/formatUtils';
 
 const SavedJobs = () => {
@@ -98,20 +97,20 @@ const SavedJobs = () => {
               <div className='flex justify-between items-start'>
                 <div className='flex-1'>
                   <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                    {cleanText(job.businessTitle)}
+                    {job.businessTitle}
                   </h3>
                   <p className='text-gray-600 mb-3'>
-                    {cleanText(job.civilServiceTitle)}
+                    {job.civilServiceTitle}
                   </p>
 
                   <div className='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mb-4'>
                     <div>
                       <span className='font-medium'>Category:</span>{' '}
-                      {cleanText(job.jobCategory) || 'Not specified'}
+                      {job.jobCategory || 'Not specified'}
                     </div>
                     <div>
                       <span className='font-medium'>Location:</span>{' '}
-                      {cleanText(job.workLocation) || 'Not specified'}
+                      {job.workLocation || 'Not specified'}
                     </div>
                     <div>
                       <span className='font-medium'>Salary:</span>{' '}
@@ -130,14 +129,13 @@ const SavedJobs = () => {
                     </div>
                     <div>
                       <span className='font-medium'>Type:</span>{' '}
-                      {cleanText(job.fullTimePartTimeIndicator) ||
-                        'Not specified'}
+                      {job.fullTimePartTimeIndicator || 'Not specified'}
                     </div>
                   </div>
 
                   {job.jobDescription && (
                     <p className='mt-3 text-gray-700 line-clamp-2'>
-                      {cleanText(job.jobDescription).substring(0, 200)}...
+                      {job.jobDescription.substring(0, 200)}...
                     </p>
                   )}
                 </div>

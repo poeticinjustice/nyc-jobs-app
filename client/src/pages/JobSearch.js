@@ -18,7 +18,6 @@ import {
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
-import { cleanTextForDisplay } from '../utils/textUtils';
 import { formatSalary, formatDate } from '../utils/formatUtils';
 
 const JobSearch = () => {
@@ -651,19 +650,17 @@ const JobSearch = () => {
                   <div className='flex justify-between items-start'>
                     <div className='flex-1'>
                       <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                        {cleanTextForDisplay(job.business_title)}
+                        {job.business_title}
                       </h3>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>
                           <p>
                             <strong>Category:</strong>{' '}
-                            {cleanTextForDisplay(job.job_category) ||
-                              'Not specified'}
+                            {job.job_category || 'Not specified'}
                           </p>
                           <p>
                             <strong>Location:</strong>{' '}
-                            {cleanTextForDisplay(job.work_location) ||
-                              'Not specified'}
+                            {job.work_location || 'Not specified'}
                           </p>
                           <p>
                             <strong>Salary:</strong>{' '}
@@ -691,10 +688,7 @@ const JobSearch = () => {
                       </div>
                       {job.job_description && (
                         <p className='mt-3 text-gray-700 line-clamp-2'>
-                          {cleanTextForDisplay(job.job_description).substring(
-                            0,
-                            200
-                          )}
+                          {job.job_description.substring(0, 200)}
                           ...
                         </p>
                       )}

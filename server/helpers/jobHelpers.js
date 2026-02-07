@@ -80,6 +80,25 @@ const formatJobDescription = (text) => {
   return formatted;
 };
 
+// Clean all text fields on a raw NYC API job object (snake_case)
+const TEXT_FIELDS = [
+  'business_title', 'civil_service_title', 'job_category', 'work_location',
+  'work_location_1', 'division_work_unit', 'agency', 'job_description',
+  'minimum_qual_requirements', 'preferred_skills', 'additional_information',
+  'to_apply', 'hours_shift', 'residency_requirement', 'title_classification',
+  'career_level',
+];
+
+const cleanJobFields = (job) => {
+  const cleaned = { ...job };
+  for (const field of TEXT_FIELDS) {
+    if (cleaned[field]) {
+      cleaned[field] = cleanText(cleaned[field]);
+    }
+  }
+  return cleaned;
+};
+
 // Remove duplicate jobs by job_id
 const deduplicateJobs = (jobs) => {
   const seen = new Set();
@@ -239,6 +258,7 @@ const transformNycJob = (nycJob, { clean = false } = {}) => {
 
 module.exports = {
   cleanText,
+  cleanJobFields,
   formatJobDescription,
   deduplicateJobs,
   filterJobs,

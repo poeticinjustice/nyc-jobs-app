@@ -5,7 +5,7 @@ const Job = require('../models/Job');
 const User = require('../models/User');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const {
-  cleanText,
+  cleanJobFields,
   deduplicateJobs,
   filterJobs,
   sortJobs,
@@ -86,7 +86,7 @@ const fetchAllJobs = async () => {
     }
   }
 
-  allJobs = deduplicateJobs(allJobs);
+  allJobs = deduplicateJobs(allJobs).map(cleanJobFields);
   jobsCache = allJobs;
   cacheTimestamp = now;
 
@@ -215,24 +215,9 @@ router.get(
         savedJobIds = savedJobs.map((job) => job.jobId);
       }
 
-      // Clean text and add saved status
+      // Add saved status (text already cleaned at fetch time)
       const jobsWithStatus = paginatedJobs.map((job) => ({
         ...job,
-        business_title: cleanText(job.business_title),
-        job_category: cleanText(job.job_category),
-        work_location: cleanText(job.work_location),
-        work_location_1: cleanText(job.work_location_1),
-        division_work_unit: cleanText(job.division_work_unit),
-        agency: cleanText(job.agency),
-        job_description: cleanText(job.job_description),
-        minimum_qual_requirements: cleanText(job.minimum_qual_requirements),
-        preferred_skills: cleanText(job.preferred_skills),
-        additional_information: cleanText(job.additional_information),
-        to_apply: cleanText(job.to_apply),
-        hours_shift: cleanText(job.hours_shift),
-        residency_requirement: cleanText(job.residency_requirement),
-        title_classification: cleanText(job.title_classification),
-        career_level: cleanText(job.career_level),
         isSaved: savedJobIds.includes(job.job_id),
       }));
 

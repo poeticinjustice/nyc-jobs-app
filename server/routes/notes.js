@@ -127,7 +127,7 @@ router.post(
 
             const nycJobs = response.data;
             if (nycJobs && nycJobs.length > 0) {
-              job = new Job(transformNycJob(nycJobs[0], { clean: false }));
+              job = new Job(transformNycJob(nycJobs[0], { clean: true }));
               await job.save();
             }
           } catch (error) {
