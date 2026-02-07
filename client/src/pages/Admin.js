@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import {
   HiUsers,
@@ -7,6 +7,7 @@ import {
   HiChartBar,
 } from 'react-icons/hi';
 import { formatDate } from '../utils/formatUtils';
+import api from '../utils/api';
 
 const Admin = () => {
   const { user } = useSelector((state) => state.auth);
@@ -17,6 +18,24 @@ const Admin = () => {
     totalNotes: 0,
     activeUsers: 0,
   });
+  const [recentUsers, setRecentUsers] = useState([]);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await api.get('/api/users/stats');
+        setStats((prev) => ({
+          ...prev,
+          totalUsers: response.data.totalUsers || 0,
+          activeUsers: response.data.activeUsers || 0,
+        }));
+        setRecentUsers(response.data.recentUsers || []);
+      } catch (error) {
+        // Stats are non-critical; silently fail
+      }
+    };
+    fetchStats();
+  }, []);
 
   return (
     <div className='space-y-6'>
@@ -153,37 +172,29 @@ const Admin = () => {
                 </div>
               </div>
 
-              {/* Recent Activity */}
-              <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
-                <h3 className='text-lg font-semibold text-gray-900 mb-4'>
-                  Recent Activity
-                </h3>
-                <div className='space-y-4'>
-                  <div className='flex items-center space-x-4'>
-                    <div className='w-2 h-2 bg-green-400 rounded-full'></div>
-                    <div className='flex-1'>
-                      <p className='text-sm text-gray-900'>
-                        New user registration
-                      </p>
-                      <p className='text-xs text-gray-500'>2 minutes ago</p>
-                    </div>
-                  </div>
-                  <div className='flex items-center space-x-4'>
-                    <div className='w-2 h-2 bg-blue-400 rounded-full'></div>
-                    <div className='flex-1'>
-                      <p className='text-sm text-gray-900'>Job saved by user</p>
-                      <p className='text-xs text-gray-500'>5 minutes ago</p>
-                    </div>
-                  </div>
-                  <div className='flex items-center space-x-4'>
-                    <div className='w-2 h-2 bg-orange-400 rounded-full'></div>
-                    <div className='flex-1'>
-                      <p className='text-sm text-gray-900'>Note created</p>
-                      <p className='text-xs text-gray-500'>10 minutes ago</p>
-                    </div>
+              {/* Recent Users */}
+              {recentUsers.length > 0 && (
+                <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+                  <h3 className='text-lg font-semibold text-gray-900 mb-4'>
+                    Recent Users
+                  </h3>
+                  <div className='space-y-4'>
+                    {recentUsers.map((u) => (
+                      <div key={u._id} className='flex items-center space-x-4'>
+                        <div className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-green-400' : 'bg-gray-400'}`}></div>
+                        <div className='flex-1'>
+                          <p className='text-sm text-gray-900'>
+                            {u.firstName} {u.lastName}
+                          </p>
+                          <p className='text-xs text-gray-500'>
+                            {u.email} &middot; {u.role} &middot; Joined {formatDate(u.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
