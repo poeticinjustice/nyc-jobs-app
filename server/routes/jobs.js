@@ -402,6 +402,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
     let isSaved = false;
     let applicationStatus = null;
+    let statusHistory = [];
     if (req.user) {
       const savedJob = await Job.findOne({ jobId: id, 'savedBy.user': req.user._id }).lean();
       if (savedJob) {
@@ -410,10 +411,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
           (s) => s.user.toString() === req.user._id.toString()
         );
         applicationStatus = entry?.applicationStatus || 'interested';
+        statusHistory = entry?.statusHistory || [];
       }
     }
 
-    res.json({ ...transformNycJob(nycJob), isSaved, applicationStatus });
+    res.json({ ...transformNycJob(nycJob), isSaved, applicationStatus, statusHistory });
   } catch (error) {
     console.error('Get job details error:', error);
     res.status(500).json({ message: 'Error fetching job details' });
@@ -456,6 +458,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
       savedAt: new Date(),
       applicationStatus: 'interested',
       statusUpdatedAt: new Date(),
+      statusHistory: [{ status: 'interested', changedAt: new Date() }],
     });
     await job.save();
 
@@ -517,12 +520,14 @@ router.put(
 
       entry.applicationStatus = status;
       entry.statusUpdatedAt = new Date();
+      entry.statusHistory.push({ status, changedAt: new Date() });
       await job.save();
 
       res.json({
         message: 'Application status updated',
         applicationStatus: status,
         statusUpdatedAt: entry.statusUpdatedAt,
+        statusHistory: entry.statusHistory,
       });
     } catch (error) {
       console.error('Update application status error:', error);

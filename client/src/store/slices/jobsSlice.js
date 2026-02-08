@@ -272,13 +272,16 @@ const jobsSlice = createSlice({
       .addCase(updateJobStatus.fulfilled, (state, action) => {
         state.statusLoading = false;
         state.error = null;
-        const { jobId, applicationStatus } = action.payload;
+        const { jobId, applicationStatus, statusHistory } = action.payload;
         const savedJob = state.savedJobs.find((job) => job.jobId === jobId);
         if (savedJob) {
           savedJob.applicationStatus = applicationStatus;
         }
         if (state.currentJob && state.currentJob.jobId === jobId) {
           state.currentJob.applicationStatus = applicationStatus;
+          if (statusHistory) {
+            state.currentJob.statusHistory = statusHistory;
+          }
         }
       })
       .addCase(updateJobStatus.rejected, (state, action) => {

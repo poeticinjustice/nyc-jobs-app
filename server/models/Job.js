@@ -117,6 +117,18 @@ const jobSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
+        statusHistory: [
+          {
+            status: {
+              type: String,
+              enum: ['interested', 'applied', 'interviewing', 'offered', 'rejected'],
+            },
+            changedAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
       },
     ],
   },

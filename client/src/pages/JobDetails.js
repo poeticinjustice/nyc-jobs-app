@@ -9,6 +9,7 @@ import {
   HiCalendar,
   HiCurrencyDollar,
   HiPlus,
+  HiClock,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
@@ -345,6 +346,50 @@ const JobDetails = () => {
               </div>
             </div>
           </div>
+
+          {/* Application Timeline */}
+          {currentJob.isSaved && currentJob.statusHistory?.length > 0 && (
+            <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+              <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+                <HiClock className='h-5 w-5 mr-2 text-gray-500' />
+                Application Timeline
+              </h3>
+              <div className='relative'>
+                {/* Vertical line */}
+                <div className='absolute left-3 top-2 bottom-2 w-0.5 bg-gray-200' />
+                <div className='space-y-4'>
+                  {[...currentJob.statusHistory]
+                    .sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt))
+                    .map((entry, index) => {
+                      const statusInfo = APPLICATION_STATUSES.find(
+                        (s) => s.value === entry.status
+                      );
+                      return (
+                        <div key={index} className='relative flex items-start pl-8'>
+                          <div
+                            className={`absolute left-1.5 top-1 w-3 h-3 rounded-full border-2 border-white ${
+                              index === 0 ? 'bg-primary-500' : 'bg-gray-300'
+                            }`}
+                          />
+                          <div className='flex-1'>
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                                statusInfo?.color || 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {statusInfo?.label || entry.status}
+                            </span>
+                            <p className='text-xs text-gray-500 mt-1'>
+                              {formatDate(entry.changedAt)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
