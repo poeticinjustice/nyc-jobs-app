@@ -41,6 +41,50 @@ router.get('/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/notes/export
+// @desc    Export all notes as CSV
+// @access  Private
+router.get('/export', authenticateToken, async (req, res) => {
+  try {
+    const notes = await Note.find({ user: req.user._id, status: 'active' })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const headers = ['Title', 'Content', 'Type', 'Priority', 'Job ID', 'Tags', 'Created At'];
+
+    const escCsv = (val) => {
+      if (val == null) return '';
+      const s = String(val);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const rows = notes.map((note) =>
+      [
+        note.title,
+        note.content,
+        note.type,
+        note.priority,
+        note.jobId || '',
+        (note.tags || []).join('; '),
+        note.createdAt ? new Date(note.createdAt).toISOString().split('T')[0] : '',
+      ]
+        .map(escCsv)
+        .join(',')
+    );
+
+    const csv = [headers.join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="notes.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error('Export notes error:', error);
+    res.status(500).json({ message: 'Error exporting notes' });
+  }
+});
+
 // @route   GET /api/notes/job/:jobId
 // @desc    Get all notes for a specific job
 // @access  Private

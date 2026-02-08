@@ -321,6 +321,74 @@ router.get('/saved', authenticateToken, async (req, res) => {
   }
 });
 
+// Export saved jobs as CSV
+router.get('/saved/export', authenticateToken, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const queryFilter = status
+      ? { savedBy: { $elemMatch: { user: req.user._id, applicationStatus: status } } }
+      : { 'savedBy.user': req.user._id };
+
+    const jobs = await Job.find(queryFilter).sort({ updatedAt: -1 }).lean();
+
+    const headers = [
+      'Job ID',
+      'Title',
+      'Agency',
+      'Category',
+      'Location',
+      'Salary From',
+      'Salary To',
+      'Salary Frequency',
+      'Full/Part Time',
+      'Level',
+      'Post Date',
+      'Application Status',
+      'Saved At',
+    ];
+
+    const escCsv = (val) => {
+      if (val == null) return '';
+      const s = String(val);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const rows = jobs.map((job) => {
+      const entry = job.savedBy?.find(
+        (s) => s.user.toString() === req.user._id.toString()
+      );
+      return [
+        job.jobId,
+        job.businessTitle,
+        job.agency,
+        job.jobCategory,
+        job.workLocation,
+        job.salaryRangeFrom,
+        job.salaryRangeTo,
+        job.salaryFrequency,
+        job.fullTimePartTimeIndicator,
+        job.level,
+        job.postDate ? new Date(job.postDate).toISOString().split('T')[0] : '',
+        entry?.applicationStatus || 'interested',
+        entry?.savedAt ? new Date(entry.savedAt).toISOString().split('T')[0] : '',
+      ]
+        .map(escCsv)
+        .join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="saved-jobs.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error('Export saved jobs error:', error);
+    res.status(500).json({ message: 'Error exporting saved jobs' });
+  }
+});
+
 // Get job details
 router.get('/:id', optionalAuth, async (req, res) => {
   try {

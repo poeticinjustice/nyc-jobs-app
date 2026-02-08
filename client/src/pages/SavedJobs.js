@@ -11,12 +11,14 @@ import {
   HiPlus,
   HiEye,
   HiTrash,
+  HiDownload,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate } from '../utils/formatUtils';
+import api from '../utils/api';
 
 const APPLICATION_STATUSES = [
   { value: '', label: 'All' },
@@ -85,6 +87,25 @@ const SavedJobs = () => {
     });
   };
 
+  const handleExportCsv = async () => {
+    try {
+      const params = statusFilter ? `?status=${statusFilter}` : '';
+      const response = await api.get(`/api/jobs/saved/export${params}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'saved-jobs.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className='flex justify-center py-8'>
@@ -115,6 +136,16 @@ const SavedJobs = () => {
             </p>
           </div>
           <div className='flex items-center space-x-2'>
+            {savedJobs.length > 0 && (
+              <button
+                onClick={handleExportCsv}
+                className='inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors'
+                title='Export saved jobs to CSV'
+              >
+                <HiDownload className='h-4 w-4 mr-1.5' />
+                Export CSV
+              </button>
+            )}
             <HiBookmarkAlt className='h-6 w-6 text-primary-600' />
           </div>
         </div>

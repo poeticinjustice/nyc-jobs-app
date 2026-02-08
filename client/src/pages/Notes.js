@@ -7,12 +7,14 @@ import {
   HiTrash,
   HiEye,
   HiExternalLink,
+  HiDownload,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatDate } from '../utils/formatUtils';
+import api from '../utils/api';
 
 const Notes = () => {
   const dispatch = useDispatch();
@@ -99,6 +101,24 @@ const Notes = () => {
     setViewingNote(null);
   };
 
+  const handleExportCsv = async () => {
+    try {
+      const response = await api.get('/api/notes/export', {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'notes.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  };
+
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'urgent':
@@ -157,13 +177,25 @@ const Notes = () => {
               {(pagination?.total || notes.length) === 1 ? 'note' : 'notes'}
             </p>
           </div>
-          <button
-            onClick={handleAddNote}
-            className='btn btn-primary flex items-center'
-          >
-            <HiPlus className='h-5 w-5 mr-2' />
-            Add Note
-          </button>
+          <div className='flex items-center space-x-2'>
+            {notes.length > 0 && (
+              <button
+                onClick={handleExportCsv}
+                className='inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors'
+                title='Export notes to CSV'
+              >
+                <HiDownload className='h-4 w-4 mr-1.5' />
+                Export CSV
+              </button>
+            )}
+            <button
+              onClick={handleAddNote}
+              className='btn btn-primary flex items-center'
+            >
+              <HiPlus className='h-5 w-5 mr-2' />
+              Add Note
+            </button>
+          </div>
         </div>
       </div>
 
