@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { getJobDetails, saveJob, unsaveJob } from '../store/slices/jobsSlice';
+import { getJobDetails, saveJob, unsaveJob, updateJobStatus } from '../store/slices/jobsSlice';
 import {
   HiBookmark,
   HiBookmarkAlt,
@@ -14,6 +14,18 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate } from '../utils/formatUtils';
+
+const APPLICATION_STATUSES = [
+  { value: 'interested', label: 'Interested', color: 'bg-gray-100 text-gray-800' },
+  { value: 'applied', label: 'Applied', color: 'bg-blue-100 text-blue-800' },
+  { value: 'interviewing', label: 'Interviewing', color: 'bg-purple-100 text-purple-800' },
+  { value: 'offered', label: 'Offered', color: 'bg-green-100 text-green-800' },
+  { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-800' },
+];
+
+const getStatusColor = (status) => {
+  return APPLICATION_STATUSES.find((s) => s.value === status)?.color || 'bg-gray-100 text-gray-800';
+};
 
 const JobDetails = () => {
   const { jobId } = useParams();
@@ -28,6 +40,10 @@ const JobDetails = () => {
       dispatch(getJobDetails(jobId));
     }
   }, [dispatch, jobId]);
+
+  const handleStatusChange = (newStatus) => {
+    dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus }));
+  };
 
   const handleSaveJob = async () => {
     if (!isAuthenticated) {
@@ -76,9 +92,20 @@ const JobDetails = () => {
       <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
         <div className='flex justify-between items-start'>
           <div className='flex-1'>
-            <h1 className='text-3xl font-bold text-gray-900 mb-2'>
-              {currentJob.businessTitle}
-            </h1>
+            <div className='flex items-center gap-3 mb-2'>
+              <h1 className='text-3xl font-bold text-gray-900'>
+                {currentJob.businessTitle}
+              </h1>
+              {currentJob.isSaved && (
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                    currentJob.applicationStatus
+                  )}`}
+                >
+                  {currentJob.applicationStatus || 'interested'}
+                </span>
+              )}
+            </div>
             <p className='text-lg text-gray-600 mb-4'>
               {currentJob.civilServiceTitle}
             </p>
@@ -108,7 +135,20 @@ const JobDetails = () => {
           </div>
 
           {isAuthenticated && (
-            <div className='flex space-x-2'>
+            <div className='flex items-center space-x-2'>
+              {currentJob.isSaved && (
+                <select
+                  value={currentJob.applicationStatus || 'interested'}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className='text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500'
+                >
+                  {APPLICATION_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 onClick={() => setShowNoteModal(true)}
                 className='p-3 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors'

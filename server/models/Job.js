@@ -83,6 +83,10 @@ const jobSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    agency: {
+      type: String,
+      trim: true,
+    },
     postDate: {
       type: Date,
     },
@@ -104,6 +108,15 @@ const jobSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
+        applicationStatus: {
+          type: String,
+          enum: ['interested', 'applied', 'interviewing', 'offered', 'rejected'],
+          default: 'interested',
+        },
+        statusUpdatedAt: {
+          type: Date,
+          default: Date.now,
+        },
       },
     ],
   },
@@ -118,30 +131,5 @@ jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
 jobSchema.index({ postDate: -1 });
 jobSchema.index({ 'savedBy.user': 1 });
-
-// Virtual for formatted salary range
-jobSchema.virtual('formattedSalary').get(function () {
-  if (this.salaryRangeFrom && this.salaryRangeTo) {
-    return `$${this.salaryRangeFrom.toLocaleString()} - $${this.salaryRangeTo.toLocaleString()} ${
-      this.salaryFrequency || ''
-    }`;
-  } else if (this.salaryRangeFrom) {
-    return `$${this.salaryRangeFrom.toLocaleString()} ${
-      this.salaryFrequency || ''
-    }`;
-  }
-  return 'Salary not specified';
-});
-
-// Virtual for days since posted
-jobSchema.virtual('daysSincePosted').get(function () {
-  if (!this.postDate) return null;
-  const now = new Date();
-  const diffTime = Math.abs(now - this.postDate);
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-});
-
-// Ensure virtual fields are serialized
-jobSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('Job', jobSchema);

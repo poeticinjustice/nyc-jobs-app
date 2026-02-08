@@ -1,8 +1,7 @@
 const express = require('express');
 const axios = require('axios');
-const { query, validationResult } = require('express-validator');
+const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
-const User = require('../models/User');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const {
   cleanJobFields,
@@ -18,6 +17,8 @@ const router = express.Router();
 
 let jobsCache = null;
 let cacheTimestamp = null;
+let categoriesCache = null;
+let agenciesCache = null;
 const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
 
 const searchResultCache = new Map();
@@ -38,7 +39,7 @@ setInterval(() => {
 
 const generateSearchCacheKey = (params) => {
   const { q, category, location, agency, salary_min, salary_max, sort } = params;
-  return `${q || ''}|${category || ''}|${location || ''}|${agency || ''}|${salary_min || ''}|${salary_max || ''}|${sort || ''}`;
+  return JSON.stringify([q || '', category || '', location || '', agency || '', salary_min || '', salary_max || '', sort || '']);
 };
 
 // Fetch all jobs from NYC API with caching and retry
@@ -55,6 +56,7 @@ const fetchAllJobs = async () => {
   const maxRetries = 3;
   const baseDelay = 1000;
 
+  let fetchFailed = false;
   let hasMoreData = true;
   while (hasMoreData) {
     const params = new URLSearchParams();
@@ -77,7 +79,10 @@ const fetchAllJobs = async () => {
       }
     }
 
-    if (!batchJobs || batchJobs.length === 0) {
+    if (!batchJobs) {
+      fetchFailed = true;
+      hasMoreData = false;
+    } else if (batchJobs.length === 0) {
       hasMoreData = false;
     } else {
       allJobs = allJobs.concat(batchJobs);
@@ -86,9 +91,19 @@ const fetchAllJobs = async () => {
     }
   }
 
+  // Don't cache empty/partial results from a failed fetch — serve stale cache if available
+  if (fetchFailed && allJobs.length === 0) {
+    if (jobsCache) return jobsCache;
+    return [];
+  }
+
   allJobs = deduplicateJobs(allJobs).map(cleanJobFields);
   jobsCache = allJobs;
   cacheTimestamp = now;
+
+  // Pre-compute derived caches
+  categoriesCache = [...new Set(allJobs.map((j) => j.job_category).filter(Boolean))].sort();
+  agenciesCache = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
 
   return allJobs;
 };
@@ -215,9 +230,9 @@ router.get(
         savedJobIds = savedJobs.map((job) => job.jobId);
       }
 
-      // Add saved status (text already cleaned at fetch time)
+      // Transform to camelCase and add saved status
       const jobsWithStatus = paginatedJobs.map((job) => ({
-        ...job,
+        ...transformNycJob(job),
         isSaved: savedJobIds.includes(job.job_id),
       }));
 
@@ -227,6 +242,7 @@ router.get(
           page: parseInt(page),
           limit: parseInt(limit),
           total: jobs.length,
+          pages: Math.ceil(jobs.length / parseInt(limit)),
         },
       });
     } catch (error) {
@@ -239,9 +255,8 @@ router.get(
 // Get job categories
 router.get('/categories', async (req, res) => {
   try {
-    const allJobs = await fetchAllJobs();
-    const categories = [...new Set(allJobs.map((j) => j.job_category).filter(Boolean))].sort();
-    res.json({ categories });
+    await fetchAllJobs(); // ensure cache is populated
+    res.json({ categories: categoriesCache });
   } catch (error) {
     console.error('Get categories error:', error);
     res.status(500).json({ message: 'Error fetching categories' });
@@ -251,9 +266,8 @@ router.get('/categories', async (req, res) => {
 // Get agencies list
 router.get('/agencies', async (req, res) => {
   try {
-    const allJobs = await fetchAllJobs();
-    const agencies = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
-    res.json({ agencies });
+    await fetchAllJobs(); // ensure cache is populated
+    res.json({ agencies: agenciesCache });
   } catch (error) {
     console.error('Get agencies error:', error);
     res.status(500).json({ message: 'Error fetching agencies' });
@@ -263,28 +277,37 @@ router.get('/agencies', async (req, res) => {
 // Get saved jobs
 router.get('/saved', authenticateToken, async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, status } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    const total = await Job.countDocuments({ 'savedBy.user': req.user._id });
+    const queryFilter = status
+      ? { savedBy: { $elemMatch: { user: req.user._id, applicationStatus: status } } }
+      : { 'savedBy.user': req.user._id };
 
-    const jobs = await Job.find({ 'savedBy.user': req.user._id })
+    const total = await Job.countDocuments(queryFilter);
+
+    const jobs = await Job.find(queryFilter)
       .sort({ updatedAt: -1 })
       .skip((pageNum - 1) * limitNum)
       .limit(limitNum)
       .lean();
 
-    // Add the current user's savedAt to each job as a top-level field
-    const jobsWithSavedAt = jobs.map((job) => {
+    // Add the current user's save entry fields as top-level fields
+    const jobsWithStatus = jobs.map((job) => {
       const entry = job.savedBy?.find(
         (s) => s.user.toString() === req.user._id.toString()
       );
-      return { ...job, savedAt: entry?.savedAt };
+      return {
+        ...job,
+        savedAt: entry?.savedAt,
+        applicationStatus: entry?.applicationStatus || 'interested',
+        statusUpdatedAt: entry?.statusUpdatedAt,
+      };
     });
 
     res.json({
-      jobs: jobsWithSavedAt,
+      jobs: jobsWithStatus,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -310,12 +333,19 @@ router.get('/:id', optionalAuth, async (req, res) => {
     }
 
     let isSaved = false;
+    let applicationStatus = null;
     if (req.user) {
-      const savedJob = await Job.findOne({ jobId: id, 'savedBy.user': req.user._id });
-      isSaved = !!savedJob;
+      const savedJob = await Job.findOne({ jobId: id, 'savedBy.user': req.user._id }).lean();
+      if (savedJob) {
+        isSaved = true;
+        const entry = savedJob.savedBy.find(
+          (s) => s.user.toString() === req.user._id.toString()
+        );
+        applicationStatus = entry?.applicationStatus || 'interested';
+      }
     }
 
-    res.json({ ...transformNycJob(nycJob, { clean: true }), isSaved });
+    res.json({ ...transformNycJob(nycJob), isSaved, applicationStatus });
   } catch (error) {
     console.error('Get job details error:', error);
     res.status(500).json({ message: 'Error fetching job details' });
@@ -353,10 +383,13 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Job already saved' });
     }
 
-    job.savedBy.push({ user: req.user._id, savedAt: new Date() });
+    job.savedBy.push({
+      user: req.user._id,
+      savedAt: new Date(),
+      applicationStatus: 'interested',
+      statusUpdatedAt: new Date(),
+    });
     await job.save();
-
-    await User.findByIdAndUpdate(req.user._id, { $addToSet: { savedJobs: job._id } });
 
     res.json({ message: 'Job saved successfully', job });
   } catch (error) {
@@ -378,13 +411,56 @@ router.delete('/:id/save', authenticateToken, async (req, res) => {
     job.savedBy = job.savedBy.filter((s) => s.user.toString() !== req.user._id.toString());
     await job.save();
 
-    await User.findByIdAndUpdate(req.user._id, { $pull: { savedJobs: job._id } });
-
     res.json({ message: 'Job unsaved successfully' });
   } catch (error) {
     console.error('Unsave job error:', error);
     res.status(500).json({ message: 'Error unsaving job' });
   }
 });
+
+// Update application status
+router.put(
+  '/:id/status',
+  [
+    authenticateToken,
+    body('status').isIn(['interested', 'applied', 'interviewing', 'offered', 'rejected']),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const job = await Job.findOne({ jobId: id });
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      const entry = job.savedBy.find(
+        (s) => s.user.toString() === req.user._id.toString()
+      );
+      if (!entry) {
+        return res.status(400).json({ message: 'Job is not saved' });
+      }
+
+      entry.applicationStatus = status;
+      entry.statusUpdatedAt = new Date();
+      await job.save();
+
+      res.json({
+        message: 'Application status updated',
+        applicationStatus: status,
+        statusUpdatedAt: entry.statusUpdatedAt,
+      });
+    } catch (error) {
+      console.error('Update application status error:', error);
+      res.status(500).json({ message: 'Error updating application status' });
+    }
+  }
+);
 
 module.exports = router;

@@ -89,6 +89,20 @@ export const getJobCategories = createAsyncThunk(
   }
 );
 
+export const updateJobStatus = createAsyncThunk(
+  'jobs/updateJobStatus',
+  async ({ jobId, status }, { rejectWithValue }) => {
+    try {
+      const response = await api.put(`/api/jobs/${jobId}/status`, { status });
+      return { jobId, ...response.data };
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to update status'
+      );
+    }
+  }
+);
+
 export const getJobAgencies = createAsyncThunk(
   'jobs/getJobAgencies',
   async (_, { rejectWithValue }) => {
@@ -109,42 +123,33 @@ const initialState = {
   savedJobs: [],
   categories: [],
   agencies: [],
-  searchParams: {
-    q: '',
-    category: '',
-    location: '',
-    agency: '',
-    salary_min: '',
-    salary_max: '',
-    page: 1,
-    limit: 20,
-  },
-  pagination: {
+  searchPagination: {
     page: 1,
     limit: 20,
     total: 0,
     pages: 0,
   },
+  savedPagination: {
+    page: 1,
+    limit: 20,
+    total: 0,
+    pages: 0,
+  },
+  statusFilter: '',
   loading: false,
   error: null,
   searchLoading: false,
   saveLoading: false,
+  statusLoading: false,
 };
 
 const jobsSlice = createSlice({
   name: 'jobs',
   initialState,
   reducers: {
-    setSearchParams: (state, action) => {
-      state.searchParams = {
-        ...state.searchParams,
-        ...action.payload,
-        page: 1,
-      };
-    },
     clearSearchResults: (state) => {
       state.searchResults = [];
-      state.pagination = initialState.pagination;
+      state.searchPagination = initialState.searchPagination;
     },
     clearCurrentJob: (state) => {
       state.currentJob = null;
@@ -152,10 +157,13 @@ const jobsSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    setStatusFilter: (state, action) => {
+      state.statusFilter = action.payload;
+    },
     updateJobSavedStatus: (state, action) => {
       const { jobId, isSaved } = action.payload;
 
-      const searchJob = state.searchResults.find((job) => job.job_id === jobId);
+      const searchJob = state.searchResults.find((job) => job.jobId === jobId);
       if (searchJob) {
         searchJob.isSaved = isSaved;
       }
@@ -175,7 +183,7 @@ const jobsSlice = createSlice({
       .addCase(searchJobs.fulfilled, (state, action) => {
         state.searchLoading = false;
         state.searchResults = action.payload.jobs;
-        state.pagination = action.payload.pagination;
+        state.searchPagination = action.payload.pagination;
         state.error = null;
       })
       .addCase(searchJobs.rejected, (state, action) => {
@@ -209,9 +217,10 @@ const jobsSlice = createSlice({
         const { jobId } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId) {
           state.currentJob.isSaved = true;
+          state.currentJob.applicationStatus = 'interested';
         }
         const searchJob = state.searchResults.find(
-          (job) => job.job_id === jobId
+          (job) => job.jobId === jobId
         );
         if (searchJob) {
           searchJob.isSaved = true;
@@ -235,18 +244,45 @@ const jobsSlice = createSlice({
           state.currentJob.isSaved = false;
         }
         const searchJob = state.searchResults.find(
-          (job) => job.job_id === jobId
+          (job) => job.jobId === jobId
         );
         if (searchJob) {
           searchJob.isSaved = false;
         }
-        state.savedJobs = state.savedJobs.filter((job) => {
-          const jobIdentifier = job.jobId || job.job_id;
-          return jobIdentifier !== jobId;
-        });
+        state.savedJobs = state.savedJobs.filter(
+          (job) => job.jobId !== jobId
+        );
+        if (state.savedPagination.total > 0) {
+          state.savedPagination.total -= 1;
+          state.savedPagination.pages = Math.ceil(
+            state.savedPagination.total / state.savedPagination.limit
+          );
+        }
       })
       .addCase(unsaveJob.rejected, (state, action) => {
         state.saveLoading = false;
+        state.error = action.payload;
+      })
+
+      // Update Job Status
+      .addCase(updateJobStatus.pending, (state) => {
+        state.statusLoading = true;
+        state.error = null;
+      })
+      .addCase(updateJobStatus.fulfilled, (state, action) => {
+        state.statusLoading = false;
+        state.error = null;
+        const { jobId, applicationStatus } = action.payload;
+        const savedJob = state.savedJobs.find((job) => job.jobId === jobId);
+        if (savedJob) {
+          savedJob.applicationStatus = applicationStatus;
+        }
+        if (state.currentJob && state.currentJob.jobId === jobId) {
+          state.currentJob.applicationStatus = applicationStatus;
+        }
+      })
+      .addCase(updateJobStatus.rejected, (state, action) => {
+        state.statusLoading = false;
         state.error = action.payload;
       })
 
@@ -258,7 +294,7 @@ const jobsSlice = createSlice({
       .addCase(getSavedJobs.fulfilled, (state, action) => {
         state.loading = false;
         state.savedJobs = action.payload.jobs;
-        state.pagination = action.payload.pagination;
+        state.savedPagination = action.payload.pagination;
         state.error = null;
       })
       .addCase(getSavedJobs.rejected, (state, action) => {
@@ -279,10 +315,10 @@ const jobsSlice = createSlice({
 });
 
 export const {
-  setSearchParams,
   clearSearchResults,
   clearCurrentJob,
   clearError,
+  setStatusFilter,
   updateJobSavedStatus,
 } = jobsSlice.actions;
 

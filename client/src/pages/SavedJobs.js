@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { getSavedJobs, unsaveJob } from '../store/slices/jobsSlice';
+import {
+  getSavedJobs,
+  unsaveJob,
+  updateJobStatus,
+  setStatusFilter,
+} from '../store/slices/jobsSlice';
 import {
   HiBookmarkAlt,
   HiPlus,
@@ -13,10 +18,23 @@ import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate } from '../utils/formatUtils';
 
+const APPLICATION_STATUSES = [
+  { value: '', label: 'All' },
+  { value: 'interested', label: 'Interested', color: 'bg-gray-100 text-gray-800' },
+  { value: 'applied', label: 'Applied', color: 'bg-blue-100 text-blue-800' },
+  { value: 'interviewing', label: 'Interviewing', color: 'bg-purple-100 text-purple-800' },
+  { value: 'offered', label: 'Offered', color: 'bg-green-100 text-green-800' },
+  { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-800' },
+];
+
+const getStatusColor = (status) => {
+  return APPLICATION_STATUSES.find((s) => s.value === status)?.color || 'bg-gray-100 text-gray-800';
+};
+
 const SavedJobs = () => {
   const dispatch = useDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { savedJobs, loading, error, pagination } = useSelector(
+  const { savedJobs, loading, error, savedPagination: pagination, statusFilter } = useSelector(
     (state) => state.jobs
   );
   const { isAuthenticated } = useSelector((state) => state.auth);
@@ -25,15 +43,16 @@ const SavedJobs = () => {
 
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
-  const pageSize = 20; // Number of jobs per page
+  const pageSize = 20;
 
   useEffect(() => {
     if (isAuthenticated) {
-      dispatch(getSavedJobs({ page: currentPage, limit: pageSize }));
+      const params = { page: currentPage, limit: pageSize };
+      if (statusFilter) params.status = statusFilter;
+      dispatch(getSavedJobs(params));
     }
-  }, [dispatch, isAuthenticated, currentPage, pageSize]);
+  }, [dispatch, isAuthenticated, currentPage, pageSize, statusFilter]);
 
-  // Update URL when page changes
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
       const newParams = new URLSearchParams(prev);
@@ -43,12 +62,27 @@ const SavedJobs = () => {
   };
 
   const handleUnsaveJob = (jobId) => {
-    dispatch(unsaveJob(jobId));
+    if (window.confirm('Are you sure you want to remove this bookmark?')) {
+      dispatch(unsaveJob(jobId));
+    }
   };
 
   const handleAddNote = (job) => {
     setSelectedJob(job);
     setShowNoteModal(true);
+  };
+
+  const handleStatusChange = (jobId, newStatus) => {
+    dispatch(updateJobStatus({ jobId, status: newStatus }));
+  };
+
+  const handleStatusFilterChange = (status) => {
+    dispatch(setStatusFilter(status));
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      newParams.set('page', '1');
+      return newParams;
+    });
   };
 
   if (loading) {
@@ -77,12 +111,31 @@ const SavedJobs = () => {
             <p className='text-gray-600 mt-1'>
               {pagination?.total || savedJobs.length}{' '}
               {(pagination?.total || savedJobs.length) === 1 ? 'job' : 'jobs'}{' '}
-              saved
+              {statusFilter ? `with status "${statusFilter}"` : 'saved'}
             </p>
           </div>
           <div className='flex items-center space-x-2'>
             <HiBookmarkAlt className='h-6 w-6 text-primary-600' />
           </div>
+        </div>
+      </div>
+
+      {/* Status Filter Tabs */}
+      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4'>
+        <div className='flex flex-wrap gap-2'>
+          {APPLICATION_STATUSES.map((status) => (
+            <button
+              key={status.value}
+              onClick={() => handleStatusFilterChange(status.value)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                statusFilter === status.value
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {status.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -96,9 +149,18 @@ const SavedJobs = () => {
             >
               <div className='flex justify-between items-start'>
                 <div className='flex-1'>
-                  <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                    {job.businessTitle}
-                  </h3>
+                  <div className='flex items-center gap-3 mb-2'>
+                    <h3 className='text-lg font-semibold text-gray-900'>
+                      {job.businessTitle}
+                    </h3>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                        job.applicationStatus
+                      )}`}
+                    >
+                      {job.applicationStatus || 'interested'}
+                    </span>
+                  </div>
                   <p className='text-gray-600 mb-3'>
                     {job.civilServiceTitle}
                   </p>
@@ -164,6 +226,17 @@ const SavedJobs = () => {
                       <HiTrash className='h-5 w-5' />
                     </button>
                   </div>
+                  <select
+                    value={job.applicationStatus || 'interested'}
+                    onChange={(e) => handleStatusChange(job.jobId, e.target.value)}
+                    className='text-xs border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500'
+                  >
+                    {APPLICATION_STATUSES.filter((s) => s.value).map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
                   <div className='text-xs text-gray-500'>
                     Saved {formatDate(job.savedAt)}
                   </div>
@@ -185,14 +258,25 @@ const SavedJobs = () => {
         <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center'>
           <HiBookmarkAlt className='h-12 w-12 text-gray-400 mx-auto mb-4' />
           <h3 className='text-lg font-medium text-gray-900 mb-2'>
-            No saved jobs yet
+            {statusFilter ? 'No jobs with this status' : 'No saved jobs yet'}
           </h3>
           <p className='text-gray-600 mb-4'>
-            Start searching for jobs and save the ones you're interested in.
+            {statusFilter
+              ? 'Try a different status filter or save more jobs.'
+              : "Start searching for jobs and save the ones you're interested in."}
           </p>
-          <Link to='/search' className='btn btn-primary'>
-            Search Jobs
-          </Link>
+          {statusFilter ? (
+            <button
+              onClick={() => handleStatusFilterChange('')}
+              className='btn btn-primary'
+            >
+              Show All Saved Jobs
+            </button>
+          ) : (
+            <Link to='/search' className='btn btn-primary'>
+              Search Jobs
+            </Link>
+          )}
         </div>
       )}
 
