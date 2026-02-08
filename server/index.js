@@ -10,6 +10,7 @@ const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const jobRoutes = require('./routes/jobs');
 const noteRoutes = require('./routes/notes');
+const searchRoutes = require('./routes/searches');
 const userRoutes = require('./routes/users');
 
 const app = express();
@@ -65,6 +66,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/notes', noteRoutes);
+app.use('/api/searches', searchRoutes);
 app.use('/api/users', userRoutes);
 
 // Health check endpoint

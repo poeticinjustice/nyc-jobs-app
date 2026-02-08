@@ -19,6 +19,7 @@ const initialState = {
   statusCounts: null,
   totalSavedJobs: 0,
   totalNotes: 0,
+  totalSavedSearches: 0,
   recentSavedJobs: [],
   recentNotes: [],
   loading: false,
@@ -40,6 +41,7 @@ const dashboardSlice = createSlice({
         state.statusCounts = action.payload.statusCounts;
         state.totalSavedJobs = action.payload.totalSavedJobs;
         state.totalNotes = action.payload.totalNotes;
+        state.totalSavedSearches = action.payload.totalSavedSearches;
         state.recentSavedJobs = action.payload.recentSavedJobs;
         state.recentNotes = action.payload.recentNotes;
       })

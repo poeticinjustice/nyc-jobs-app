@@ -1,6 +1,7 @@
 const express = require('express');
 const Job = require('../models/Job');
 const Note = require('../models/Note');
+const SavedSearch = require('../models/SavedSearch');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -13,7 +14,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const userId = req.user._id;
 
     // Run all queries in parallel
-    const [statusCounts, recentSavedJobs, recentNotes, totalNotes] =
+    const [statusCounts, recentSavedJobs, recentNotes, totalNotes, totalSavedSearches] =
       await Promise.all([
         // Count saved jobs grouped by application status
         Job.aggregate([
@@ -43,6 +44,9 @@ router.get('/', authenticateToken, async (req, res) => {
 
         // Total active notes
         Note.countDocuments({ user: userId, status: 'active' }),
+
+        // Total saved searches
+        SavedSearch.countDocuments({ user: userId }),
       ]);
 
     // Build status counts map with defaults
@@ -83,6 +87,7 @@ router.get('/', authenticateToken, async (req, res) => {
       statusCounts: statusMap,
       totalSavedJobs,
       totalNotes,
+      totalSavedSearches,
       recentSavedJobs: enrichedSavedJobs,
       recentNotes,
     });

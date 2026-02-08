@@ -9,10 +9,17 @@ import {
   unsaveJob,
 } from '../store/slices/jobsSlice';
 import {
+  getSavedSearches,
+  saveSearch,
+  deleteSavedSearch,
+} from '../store/slices/searchesSlice';
+import {
   HiSearch,
   HiFilter,
   HiBookmark,
   HiBookmarkAlt,
+  HiStar,
+  HiTrash,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import Pagination from '../components/UI/Pagination';
@@ -24,12 +31,16 @@ const JobSearch = () => {
   const { searchResults, categories, agencies, searchLoading, error, searchPagination: pagination } =
     useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
+  const { savedSearches } = useSelector((state) => state.searches);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [resultsPerPage, setResultsPerPage] = useState(20);
+  const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
+  const [saveSearchName, setSaveSearchName] = useState('');
+  const [showSavedSearches, setShowSavedSearches] = useState(false);
 
   // Initialize search params from URL or defaults
   const [localSearchParams, setLocalSearchParams] = useState({
@@ -55,7 +66,7 @@ const JobSearch = () => {
     limit: parseInt(searchParams.get('limit')) || 20,
   });
 
-  // Load categories and agencies on component mount
+  // Load categories, agencies, and saved searches on component mount
   useEffect(() => {
     if (categories.length === 0) {
       dispatch(getJobCategories());
@@ -63,7 +74,10 @@ const JobSearch = () => {
     if (agencies.length === 0) {
       dispatch(getJobAgencies());
     }
-  }, [dispatch, categories.length, agencies.length]);
+    if (isAuthenticated) {
+      dispatch(getSavedSearches());
+    }
+  }, [dispatch, categories.length, agencies.length, isAuthenticated]);
 
   // Single source of truth: URL drives all searches
   useEffect(() => {
@@ -195,6 +209,51 @@ const JobSearch = () => {
     handleSearch(1);
   };
 
+  const handleSaveSearch = async () => {
+    if (!saveSearchName.trim()) return;
+    const criteria = {
+      q: activeSearchParams.q || '',
+      category: activeSearchParams.category || '',
+      location: activeSearchParams.location || '',
+      agency: activeSearchParams.agency || '',
+      salary_min: activeSearchParams.salary_min || '',
+      salary_max: activeSearchParams.salary_max || '',
+      sort: activeSearchParams.sort || 'date_desc',
+    };
+    await dispatch(saveSearch({ name: saveSearchName.trim(), criteria }));
+    setSaveSearchName('');
+    setShowSaveSearchModal(false);
+  };
+
+  const handleLoadSavedSearch = (search) => {
+    const { criteria } = search;
+    const newParams = new URLSearchParams();
+    if (criteria.q) newParams.set('q', criteria.q);
+    if (criteria.category) newParams.set('category', criteria.category);
+    if (criteria.location) newParams.set('location', criteria.location);
+    if (criteria.agency) newParams.set('agency', criteria.agency);
+    if (criteria.salary_min) newParams.set('salary_min', criteria.salary_min);
+    if (criteria.salary_max) newParams.set('salary_max', criteria.salary_max);
+    newParams.set('sort', criteria.sort || 'date_desc');
+    newParams.set('page', '1');
+    newParams.set('limit', resultsPerPage.toString());
+    setSearchParams(newParams);
+    setShowSavedSearches(false);
+  };
+
+  const handleDeleteSavedSearch = (id, e) => {
+    e.stopPropagation();
+    dispatch(deleteSavedSearch(id));
+  };
+
+  const hasActiveSearch =
+    activeSearchParams.q ||
+    activeSearchParams.category ||
+    activeSearchParams.location ||
+    activeSearchParams.agency ||
+    activeSearchParams.salary_min ||
+    activeSearchParams.salary_max;
+
   const totalPages = pagination?.pages || 0;
 
   const getSortDisplayName = (sortValue) => {
@@ -299,8 +358,69 @@ const JobSearch = () => {
                 <HiFilter className='h-5 w-5' />
                 <span className='ml-2 hidden sm:inline'>Filters</span>
               </button>
+              {isAuthenticated && savedSearches.length > 0 && (
+                <button
+                  type='button'
+                  onClick={() => setShowSavedSearches(!showSavedSearches)}
+                  className='btn btn-outline flex items-center'
+                >
+                  <HiStar className='h-5 w-5' />
+                  <span className='ml-2 hidden sm:inline'>Saved</span>
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Saved Searches Panel */}
+          {showSavedSearches && savedSearches.length > 0 && (
+            <div className='p-4 bg-yellow-50 rounded-lg border border-yellow-200'>
+              <h3 className='text-sm font-medium text-gray-900 mb-2'>Saved Searches</h3>
+              <div className='space-y-2'>
+                {savedSearches.map((search) => (
+                  <div
+                    key={search._id}
+                    onClick={() => handleLoadSavedSearch(search)}
+                    className='flex items-center justify-between p-2 bg-white rounded-md border border-gray-200 cursor-pointer hover:border-primary-300 hover:bg-primary-50 transition-colors'
+                  >
+                    <div className='flex-1 min-w-0'>
+                      <p className='text-sm font-medium text-gray-900 truncate'>
+                        {search.name}
+                      </p>
+                      <div className='flex flex-wrap gap-1 mt-1'>
+                        {search.criteria.q && (
+                          <span className='px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs'>
+                            {search.criteria.q}
+                          </span>
+                        )}
+                        {search.criteria.category && (
+                          <span className='px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs'>
+                            {search.criteria.category}
+                          </span>
+                        )}
+                        {search.criteria.agency && (
+                          <span className='px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-xs'>
+                            {search.criteria.agency}
+                          </span>
+                        )}
+                        {search.criteria.location && (
+                          <span className='px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs'>
+                            {search.criteria.location}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteSavedSearch(search._id, e)}
+                      className='p-1 text-gray-400 hover:text-red-600 ml-2 flex-shrink-0'
+                      title='Delete saved search'
+                    >
+                      <HiTrash className='h-4 w-4' />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Advanced Filters */}
           {showFilters && (
@@ -627,10 +747,56 @@ const JobSearch = () => {
                         Max Salary: ${activeSearchParams.salary_max}
                       </span>
                     )}
+                    {isAuthenticated && (
+                      <button
+                        onClick={() => setShowSaveSearchModal(true)}
+                        className='px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs hover:bg-yellow-200 transition-colors font-medium'
+                      >
+                        + Save this search
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
             </div>
+
+            {/* Save Search Modal */}
+            {showSaveSearchModal && (
+              <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
+                <div className='bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4'>
+                  <h3 className='text-lg font-semibold text-gray-900 mb-4'>
+                    Save Search
+                  </h3>
+                  <input
+                    type='text'
+                    placeholder='Give this search a name...'
+                    value={saveSearchName}
+                    onChange={(e) => setSaveSearchName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveSearch()}
+                    className='input w-full mb-4'
+                    autoFocus
+                  />
+                  <div className='flex justify-end space-x-2'>
+                    <button
+                      onClick={() => {
+                        setShowSaveSearchModal(false);
+                        setSaveSearchName('');
+                      }}
+                      className='px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50'
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveSearch}
+                      disabled={!saveSearchName.trim()}
+                      className='px-4 py-2 text-sm text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50'
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className='space-y-4'>
               {searchResults.map((job, index) => (

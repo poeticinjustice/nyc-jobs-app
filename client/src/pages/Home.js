@@ -6,7 +6,7 @@ import {
   HiSearch,
   HiBookmark,
   HiDocumentText,
-  HiUser,
+  HiStar,
   HiArrowRight,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
@@ -27,6 +27,7 @@ const Home = () => {
     statusCounts,
     totalSavedJobs,
     totalNotes,
+    totalSavedSearches,
     recentSavedJobs,
     recentNotes,
     loading,
@@ -59,7 +60,7 @@ const Home = () => {
         ) : (
           <>
             {/* Summary Cards */}
-            <div className='grid grid-cols-1 md:grid-cols-3 gap-6'>
+            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6'>
               <Link
                 to='/search'
                 className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
@@ -106,6 +107,23 @@ const Home = () => {
                     <p className='text-sm text-gray-500'>Notes</p>
                     <p className='text-2xl font-bold text-gray-900'>
                       {totalNotes}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+
+              <Link
+                to='/search'
+                className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+              >
+                <div className='flex items-center'>
+                  <div className='bg-yellow-500 rounded-lg p-3 mr-4'>
+                    <HiStar className='h-6 w-6 text-white' />
+                  </div>
+                  <div>
+                    <p className='text-sm text-gray-500'>Saved Searches</p>
+                    <p className='text-2xl font-bold text-gray-900'>
+                      {totalSavedSearches}
                     </p>
                   </div>
                 </div>
