@@ -1,46 +1,283 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { HiSearch, HiBookmark, HiDocumentText, HiUser } from 'react-icons/hi';
+import { useSelector, useDispatch } from 'react-redux';
+import { getDashboard } from '../store/slices/dashboardSlice';
+import {
+  HiSearch,
+  HiBookmark,
+  HiDocumentText,
+  HiUser,
+  HiArrowRight,
+} from 'react-icons/hi';
+import LoadingSpinner from '../components/UI/LoadingSpinner';
+import { formatSalary, formatDate } from '../utils/formatUtils';
+
+const STATUS_COLORS = {
+  interested: { bg: 'bg-gray-100', text: 'text-gray-800', bar: 'bg-gray-400' },
+  applied: { bg: 'bg-blue-100', text: 'text-blue-800', bar: 'bg-blue-500' },
+  interviewing: { bg: 'bg-purple-100', text: 'text-purple-800', bar: 'bg-purple-500' },
+  offered: { bg: 'bg-green-100', text: 'text-green-800', bar: 'bg-green-500' },
+  rejected: { bg: 'bg-red-100', text: 'text-red-800', bar: 'bg-red-500' },
+};
 
 const Home = () => {
+  const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const {
+    statusCounts,
+    totalSavedJobs,
+    totalNotes,
+    recentSavedJobs,
+    recentNotes,
+    loading,
+  } = useSelector((state) => state.dashboard);
 
-  const quickActions = [
-    {
-      name: 'Search Jobs',
-      description: 'Find your next opportunity in NYC government',
-      icon: HiSearch,
-      href: '/search',
-      color: 'bg-blue-500',
-      requiresAuth: false,
-    },
-    {
-      name: 'Saved Jobs',
-      description: 'View your saved job listings',
-      icon: HiBookmark,
-      href: '/saved',
-      color: 'bg-green-500',
-      requiresAuth: true,
-    },
-    {
-      name: 'My Notes',
-      description: 'Manage your job application notes',
-      icon: HiDocumentText,
-      href: '/notes',
-      color: 'bg-purple-500',
-      requiresAuth: true,
-    },
-    {
-      name: 'Profile',
-      description: 'Update your account information',
-      icon: HiUser,
-      href: '/profile',
-      color: 'bg-orange-500',
-      requiresAuth: true,
-    },
-  ];
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(getDashboard());
+    }
+  }, [dispatch, isAuthenticated]);
 
+  // --- Authenticated Dashboard ---
+  if (isAuthenticated) {
+    return (
+      <div className='space-y-6'>
+        {/* Welcome Header */}
+        <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+          <h1 className='text-2xl font-bold text-gray-900'>
+            Welcome back, {user?.firstName}!
+          </h1>
+          <p className='text-gray-600 mt-1'>
+            Here's an overview of your job search progress.
+          </p>
+        </div>
+
+        {loading && !statusCounts ? (
+          <div className='flex justify-center py-8'>
+            <LoadingSpinner size='lg' />
+          </div>
+        ) : (
+          <>
+            {/* Summary Cards */}
+            <div className='grid grid-cols-1 md:grid-cols-3 gap-6'>
+              <Link
+                to='/search'
+                className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+              >
+                <div className='flex items-center'>
+                  <div className='bg-blue-500 rounded-lg p-3 mr-4'>
+                    <HiSearch className='h-6 w-6 text-white' />
+                  </div>
+                  <div>
+                    <p className='text-sm text-gray-500'>Search Jobs</p>
+                    <p className='text-lg font-semibold text-gray-900'>
+                      Find new opportunities
+                    </p>
+                  </div>
+                </div>
+              </Link>
+
+              <Link
+                to='/saved'
+                className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+              >
+                <div className='flex items-center'>
+                  <div className='bg-green-500 rounded-lg p-3 mr-4'>
+                    <HiBookmark className='h-6 w-6 text-white' />
+                  </div>
+                  <div>
+                    <p className='text-sm text-gray-500'>Saved Jobs</p>
+                    <p className='text-2xl font-bold text-gray-900'>
+                      {totalSavedJobs}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+
+              <Link
+                to='/notes'
+                className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+              >
+                <div className='flex items-center'>
+                  <div className='bg-purple-500 rounded-lg p-3 mr-4'>
+                    <HiDocumentText className='h-6 w-6 text-white' />
+                  </div>
+                  <div>
+                    <p className='text-sm text-gray-500'>Notes</p>
+                    <p className='text-2xl font-bold text-gray-900'>
+                      {totalNotes}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            </div>
+
+            {/* Application Pipeline */}
+            {statusCounts && totalSavedJobs > 0 && (
+              <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+                <div className='flex justify-between items-center mb-4'>
+                  <h2 className='text-lg font-semibold text-gray-900'>
+                    Application Pipeline
+                  </h2>
+                  <Link
+                    to='/saved'
+                    className='text-sm text-primary-600 hover:text-primary-700 font-medium'
+                  >
+                    View all
+                  </Link>
+                </div>
+                <div className='space-y-3'>
+                  {Object.entries(STATUS_COLORS).map(([status, colors]) => {
+                    const count = statusCounts[status] || 0;
+                    const pct =
+                      totalSavedJobs > 0
+                        ? Math.round((count / totalSavedJobs) * 100)
+                        : 0;
+                    return (
+                      <Link
+                        key={status}
+                        to={`/saved?status=${status}`}
+                        className='block'
+                      >
+                        <div className='flex items-center justify-between mb-1'>
+                          <span className='text-sm font-medium text-gray-700 capitalize'>
+                            {status}
+                          </span>
+                          <span className='text-sm text-gray-500'>
+                            {count}
+                          </span>
+                        </div>
+                        <div className='w-full bg-gray-100 rounded-full h-2'>
+                          <div
+                            className={`${colors.bar} h-2 rounded-full transition-all`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Two-column: Recent Saved Jobs + Recent Notes */}
+            <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+              {/* Recent Saved Jobs */}
+              <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+                <div className='flex justify-between items-center mb-4'>
+                  <h2 className='text-lg font-semibold text-gray-900'>
+                    Recent Saved Jobs
+                  </h2>
+                  <Link
+                    to='/saved'
+                    className='text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center'
+                  >
+                    View all <HiArrowRight className='ml-1 h-4 w-4' />
+                  </Link>
+                </div>
+                {recentSavedJobs.length > 0 ? (
+                  <div className='space-y-3'>
+                    {recentSavedJobs.map((job) => (
+                      <Link
+                        key={job.jobId}
+                        to={`/job/${job.jobId}`}
+                        className='block p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors'
+                      >
+                        <div className='flex justify-between items-start'>
+                          <div className='flex-1 min-w-0'>
+                            <p className='text-sm font-medium text-gray-900 truncate'>
+                              {job.businessTitle}
+                            </p>
+                            <p className='text-xs text-gray-500 mt-1'>
+                              {job.agency || job.workLocation || 'NYC Government'}
+                            </p>
+                          </div>
+                          <span
+                            className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+                              STATUS_COLORS[job.applicationStatus]?.bg || 'bg-gray-100'
+                            } ${STATUS_COLORS[job.applicationStatus]?.text || 'text-gray-800'}`}
+                          >
+                            {job.applicationStatus}
+                          </span>
+                        </div>
+                        <p className='text-xs text-gray-500 mt-1'>
+                          {formatSalary(
+                            job.salaryRangeFrom,
+                            job.salaryRangeTo,
+                            job.salaryFrequency
+                          )}
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className='text-sm text-gray-500'>
+                    No saved jobs yet.{' '}
+                    <Link to='/search' className='text-primary-600 hover:text-primary-700'>
+                      Start searching
+                    </Link>
+                  </p>
+                )}
+              </div>
+
+              {/* Recent Notes */}
+              <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+                <div className='flex justify-between items-center mb-4'>
+                  <h2 className='text-lg font-semibold text-gray-900'>
+                    Recent Notes
+                  </h2>
+                  <Link
+                    to='/notes'
+                    className='text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center'
+                  >
+                    View all <HiArrowRight className='ml-1 h-4 w-4' />
+                  </Link>
+                </div>
+                {recentNotes.length > 0 ? (
+                  <div className='space-y-3'>
+                    {recentNotes.map((note) => (
+                      <div
+                        key={note._id}
+                        className='p-3 rounded-lg border border-gray-100'
+                      >
+                        <div className='flex justify-between items-start'>
+                          <p className='text-sm font-medium text-gray-900 truncate flex-1'>
+                            {note.title}
+                          </p>
+                          <span
+                            className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+                              note.priority === 'urgent'
+                                ? 'bg-red-100 text-red-800'
+                                : note.priority === 'high'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {note.priority}
+                          </span>
+                        </div>
+                        <div className='flex items-center mt-1 text-xs text-gray-500'>
+                          <span className='capitalize'>{note.type}</span>
+                          <span className='mx-1'>&middot;</span>
+                          <span>{formatDate(note.createdAt)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className='text-sm text-gray-500'>
+                    No notes yet. Add notes from job details pages.
+                  </p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // --- Guest Landing Page ---
   return (
     <div className='space-y-8'>
       {/* Hero Section */}
@@ -52,73 +289,26 @@ const Home = () => {
           <p className='text-xl text-gray-600 mb-8'>
             Discover and manage job opportunities in New York City government
           </p>
-
-          {isAuthenticated ? (
-            <div className='space-y-4'>
-              <p className='text-lg text-gray-700'>
-                Welcome back, {user?.firstName}! Ready to find your next
-                opportunity?
-              </p>
+          <div className='space-y-4'>
+            <p className='text-lg text-gray-700'>
+              Create an account to save jobs and manage your applications
+            </p>
+            <div className='flex justify-center space-x-4'>
               <Link
-                to='/search'
+                to='/register'
                 className='inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700'
               >
-                <HiSearch className='mr-2 h-5 w-5' />
-                Start Searching
+                Get Started
+              </Link>
+              <Link
+                to='/search'
+                className='inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50'
+              >
+                Browse Jobs
               </Link>
             </div>
-          ) : (
-            <div className='space-y-4'>
-              <p className='text-lg text-gray-700'>
-                Create an account to save jobs and manage your applications
-              </p>
-              <div className='flex justify-center space-x-4'>
-                <Link
-                  to='/register'
-                  className='inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700'
-                >
-                  Get Started
-                </Link>
-                <Link
-                  to='/search'
-                  className='inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50'
-                >
-                  Browse Jobs
-                </Link>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6'>
-        {quickActions.map((action) => {
-          // Skip actions that require auth but user is not authenticated
-          if (action.requiresAuth && !isAuthenticated) return null;
-
-          const Icon = action.icon;
-
-          return (
-            <Link
-              key={action.name}
-              to={action.href}
-              className='group bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200'
-            >
-              <div className='flex items-center'>
-                <div className={`${action.color} rounded-lg p-3 mr-4`}>
-                  <Icon className='h-6 w-6 text-white' />
-                </div>
-                <div>
-                  <h3 className='text-lg font-medium text-gray-900 group-hover:text-primary-600'>
-                    {action.name}
-                  </h3>
-                  <p className='text-sm text-gray-500'>{action.description}</p>
-                </div>
-              </div>
-            </Link>
-          );
-        })}
       </div>
 
       {/* Features Section */}
