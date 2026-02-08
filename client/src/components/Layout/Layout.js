@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout } from '../../store/slices/authSlice';
-import { setSidebarTab } from '../../store/slices/uiSlice';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import { HiX } from 'react-icons/hi';
@@ -9,7 +8,6 @@ import { HiX } from 'react-icons/hi';
 const Layout = ({ children }) => {
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
-  const { sidebar } = useSelector((state) => state.ui);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
@@ -18,11 +16,6 @@ const Layout = ({ children }) => {
 
   const handleMobileMenuToggle = () => {
     setMobileMenuOpen(!mobileMenuOpen);
-  };
-
-  const handleTabChange = (tab) => {
-    dispatch(setSidebarTab(tab));
-    setMobileMenuOpen(false);
   };
 
   return (
@@ -39,9 +32,6 @@ const Layout = ({ children }) => {
         {/* Sidebar - Desktop */}
         <div className='hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0'>
           <Sidebar
-            isOpen={sidebar.isOpen}
-            activeTab={sidebar.activeTab}
-            onTabChange={handleTabChange}
             user={user}
             isAuthenticated={isAuthenticated}
           />
@@ -65,9 +55,7 @@ const Layout = ({ children }) => {
                 </button>
               </div>
               <Sidebar
-                isOpen={true}
-                activeTab={sidebar.activeTab}
-                onTabChange={handleTabChange}
+                onNavigate={() => setMobileMenuOpen(false)}
                 user={user}
                 isAuthenticated={isAuthenticated}
                 isMobile={true}

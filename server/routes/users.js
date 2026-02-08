@@ -43,7 +43,7 @@ router.get(
           .sort({ createdAt: -1 })
           .limit(10),
         Note.countDocuments({ status: 'active' }),
-        Job.countDocuments(),
+        Job.countDocuments({ 'savedBy.0': { $exists: true } }),
       ]);
 
       res.json({
@@ -81,27 +81,29 @@ router.get(
         return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
       }
 
-      const { page = 1, limit = 20, role, isActive } = req.query;
+      const { page = '1', limit = '20', role, isActive } = req.query;
+      const pageNum = parseInt(page) || 1;
+      const limitNum = parseInt(limit) || 20;
 
       const queryFilter = {};
       if (role) queryFilter.role = role;
-      if (isActive !== undefined) queryFilter.isActive = isActive;
+      if (isActive !== undefined) queryFilter.isActive = isActive === 'true';
 
       const users = await User.find(queryFilter)
         .select('-password')
         .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(parseInt(limit));
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum);
 
       const total = await User.countDocuments(queryFilter);
 
       res.json({
         users,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: pageNum,
+          limit: limitNum,
           total,
-          pages: Math.ceil(total / limit),
+          pages: Math.ceil(total / limitNum),
         },
       });
     } catch (error) {

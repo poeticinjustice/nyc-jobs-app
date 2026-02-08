@@ -44,12 +44,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-    savedJobs: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Job',
-      },
-    ],
   },
   {
     timestamps: true,
@@ -80,13 +74,5 @@ userSchema.methods.getProfile = function () {
   delete userObject.password;
   return userObject;
 };
-
-// Virtual for full name
-userSchema.virtual('fullName').get(function () {
-  return `${this.firstName} ${this.lastName}`;
-});
-
-// Ensure virtual fields are serialized
-userSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('User', userSchema);

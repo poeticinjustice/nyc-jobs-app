@@ -178,7 +178,7 @@ router.put(
 
       res.json({
         message: 'Profile updated successfully',
-        user: updatedUser.getProfile(),
+        user: updatedUser,
       });
     } catch (error) {
       console.error('Update profile error:', error);
@@ -229,21 +229,5 @@ router.put(
     }
   }
 );
-
-// @route   POST /api/auth/refresh
-// @desc    Refresh JWT token
-// @access  Private
-router.post('/refresh', authenticateToken, async (req, res) => {
-  try {
-    const token = generateToken(req.user._id);
-    res.json({
-      message: 'Token refreshed successfully',
-      token,
-    });
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
 
 module.exports = router;

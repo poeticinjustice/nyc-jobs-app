@@ -10,9 +10,7 @@ import {
 } from 'react-icons/hi';
 
 const Sidebar = ({
-  isOpen,
-  activeTab,
-  onTabChange,
+  onNavigate,
   user,
   isAuthenticated,
   isMobile = false,
@@ -84,8 +82,8 @@ const Sidebar = ({
           // Skip items that require auth but user is not authenticated
           if (item.requiresAuth && !isAuthenticated) return null;
 
-          // Skip admin items if user is not admin
-          if (item.requiresAdmin && user?.role !== 'admin') return null;
+          // Skip admin items if user is not admin or moderator
+          if (item.requiresAdmin && user?.role !== 'admin' && user?.role !== 'moderator') return null;
 
           const Icon = item.icon;
           const isActive = isCurrentPath(item.href);
@@ -99,10 +97,7 @@ const Sidebar = ({
                   ? 'bg-primary-100 text-primary-900 border-r-2 border-primary-600'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
               }`}
-              onClick={() =>
-                onTabChange &&
-                onTabChange(item.name.toLowerCase().replace(' ', ''))
-              }
+              onClick={() => onNavigate && onNavigate()}
             >
               <Icon
                 className={`mr-3 h-5 w-5 ${

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateProfile, changePassword } from '../store/slices/authSlice';
 import { HiUser, HiLockClosed } from 'react-icons/hi';
@@ -20,28 +20,42 @@ const Profile = () => {
     newPassword: '',
     confirmPassword: '',
   });
+
+  // Sync profile form when user data changes (e.g. after successful update)
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        email: user.email || '',
+      });
+    }
+  }, [user]);
+
   const handleProfileSubmit = (e) => {
     e.preventDefault();
     dispatch(updateProfile(profileForm));
   };
 
-  const handlePasswordSubmit = (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       alert('New passwords do not match');
       return;
     }
-    dispatch(
+    const result = await dispatch(
       changePassword({
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
       })
     );
-    setPasswordForm({
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    });
+    if (changePassword.fulfilled.match(result)) {
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+    }
   };
 
   const handleInputChange = (e) => {

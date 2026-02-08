@@ -109,8 +109,6 @@ const initialState = {
     jobId: '',
     type: '',
     priority: '',
-    page: 1,
-    limit: 20,
   },
   pagination: {
     page: 1,
@@ -153,6 +151,10 @@ const notesSlice = createSlice({
       .addCase(createNote.fulfilled, (state, action) => {
         state.createLoading = false;
         state.notes.unshift(action.payload.note);
+        state.pagination.total += 1;
+        state.pagination.pages = Math.ceil(
+          state.pagination.total / state.pagination.limit
+        );
         state.error = null;
       })
       .addCase(createNote.rejected, (state, action) => {
@@ -223,6 +225,12 @@ const notesSlice = createSlice({
         state.notes = state.notes.filter((note) => note._id !== noteId);
         if (state.currentNote && state.currentNote._id === noteId) {
           state.currentNote = null;
+        }
+        if (state.pagination.total > 0) {
+          state.pagination.total -= 1;
+          state.pagination.pages = Math.ceil(
+            state.pagination.total / state.pagination.limit
+          );
         }
         state.error = null;
       })

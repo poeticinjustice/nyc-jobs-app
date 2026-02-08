@@ -169,11 +169,11 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
   return filtered;
 };
 
-// Get salary midpoint for sorting
+// Get salary midpoint for sorting (returns null when missing)
 const getSalaryValue = (job) => {
   const from = parseInt(job.salary_range_from);
   const to = parseInt(job.salary_range_to);
-  if (!from || !to || isNaN(from) || isNaN(to)) return 0;
+  if (!from || !to || isNaN(from) || isNaN(to)) return null;
   return Math.round((from + to) / 2);
 };
 
@@ -200,10 +200,24 @@ const sortJobs = (jobs, sort) => {
       );
       break;
     case 'salary_desc':
-      sorted.sort((a, b) => getSalaryValue(b) - getSalaryValue(a));
+      sorted.sort((a, b) => {
+        const sa = getSalaryValue(a);
+        const sb = getSalaryValue(b);
+        if (sa === null && sb === null) return 0;
+        if (sa === null) return 1;
+        if (sb === null) return -1;
+        return sb - sa;
+      });
       break;
     case 'salary_asc':
-      sorted.sort((a, b) => getSalaryValue(a) - getSalaryValue(b));
+      sorted.sort((a, b) => {
+        const sa = getSalaryValue(a);
+        const sb = getSalaryValue(b);
+        if (sa === null && sb === null) return 0;
+        if (sa === null) return 1;
+        if (sb === null) return -1;
+        return sa - sb;
+      });
       break;
     case 'date_desc':
     default:
@@ -245,14 +259,9 @@ const transformNycJob = (nycJob, { clean = false } = {}) => {
     workLocation1: t(nycJob.work_location_1),
     residencyRequirement: t(nycJob.residency_requirement),
     postDate: nycJob.posting_date,
-    postingUpdated: nycJob.posting_updated,
     processDate: nycJob.process_date,
     postUntil: nycJob.post_until,
     agency: t(nycJob.agency),
-    postingType: nycJob.posting_type,
-    numberOfPositions: nycJob.number_of_positions,
-    titleClassification: t(nycJob.title_classification),
-    careerLevel: t(nycJob.career_level),
   };
 };
 

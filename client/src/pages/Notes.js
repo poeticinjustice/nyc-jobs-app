@@ -61,25 +61,15 @@ const Notes = () => {
   };
 
   const handleApplyFilters = () => {
-    // Update Redux filters
+    // Update Redux filters (the useEffect will trigger getNotes)
     dispatch(setFilters(localFilters));
 
-    // Reset to page 1 and fetch notes with new filters
-    const updatedFilters = {
-      ...localFilters,
-      page: 1,
-      limit: pageSize,
-    };
-
-    // Update URL to page 1
+    // Reset URL to page 1
     setSearchParams((prev) => {
       const newParams = new URLSearchParams(prev);
       newParams.set('page', '1');
       return newParams;
     });
-
-    // Fetch notes immediately
-    dispatch(getNotes(updatedFilters));
   };
 
   const handleDeleteNote = (noteId) => {
@@ -268,11 +258,6 @@ const Notes = () => {
                     >
                       {note.priority}
                     </span>
-                    {note.isPrivate && (
-                      <span className='px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800'>
-                        Private
-                      </span>
-                    )}
                   </div>
 
                   <p className='text-gray-600 mb-3'>

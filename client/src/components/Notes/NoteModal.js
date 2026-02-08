@@ -17,7 +17,6 @@ const NoteModal = ({
     content: '',
     type: 'general',
     priority: 'medium',
-    isPrivate: false,
     tags: '',
   });
 
@@ -29,7 +28,6 @@ const NoteModal = ({
         content: note.content || '',
         type: note.type || 'general',
         priority: note.priority || 'medium',
-        isPrivate: note.isPrivate || false,
         tags: note.tags ? note.tags.join(', ') : '',
       });
     } else {
@@ -38,7 +36,6 @@ const NoteModal = ({
         content: '',
         type: 'general',
         priority: 'medium',
-        isPrivate: false,
         tags: '',
       });
     }
@@ -69,10 +66,10 @@ const NoteModal = ({
   };
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: value,
     }));
   };
 
@@ -154,15 +151,6 @@ const NoteModal = ({
                 </div>
               </div>
             )}
-
-            <div className='flex items-center'>
-              <span className='text-sm font-medium text-gray-700 mr-2'>
-                Private:
-              </span>
-              <span className='text-gray-900'>
-                {note?.isPrivate ? 'Yes' : 'No'}
-              </span>
-            </div>
 
             <div className='flex justify-end pt-4 border-t border-gray-200'>
               <button
@@ -263,19 +251,6 @@ const NoteModal = ({
                 className='input w-full'
                 placeholder='Enter tags separated by commas'
               />
-            </div>
-
-            <div className='flex items-center'>
-              <input
-                type='checkbox'
-                name='isPrivate'
-                checked={formData.isPrivate}
-                onChange={handleChange}
-                className='h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded'
-              />
-              <label className='ml-2 block text-sm text-gray-900'>
-                Private note (only visible to you)
-              </label>
             </div>
 
             <div className='flex justify-end space-x-3 pt-4 border-t border-gray-200'>

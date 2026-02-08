@@ -47,30 +47,29 @@ router.get('/stats', authenticateToken, async (req, res) => {
 router.get('/job/:jobId', authenticateToken, async (req, res) => {
   try {
     const { jobId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const pageNum = parseInt(req.query.page) || 1;
+    const limitNum = parseInt(req.query.limit) || 20;
 
-    // Search by both job reference and jobId string field
-    const job = await Job.findOne({ jobId });
     const queryFilter = {
       user: req.user._id,
       status: 'active',
-      ...(job ? { job: job._id } : { jobId }),
+      jobId,
     };
 
     const notes = await Note.find(queryFilter)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
 
     const total = await Note.countDocuments(queryFilter);
 
     res.json({
       notes,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / limitNum),
       },
     });
   } catch (error) {
@@ -93,7 +92,6 @@ router.post(
       .optional()
       .isIn(['general', 'interview', 'application', 'followup', 'research']),
     body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
-    body('isPrivate').optional().isBoolean(),
     body('tags').optional().isArray(),
   ],
   async (req, res) => {
@@ -109,7 +107,6 @@ router.post(
         content,
         type = 'general',
         priority = 'medium',
-        isPrivate = false,
         tags = [],
       } = req.body;
 
@@ -138,18 +135,15 @@ router.post(
 
       const note = new Note({
         user: req.user._id,
-        job: job?._id,
         jobId,
         title,
         content,
         type,
         priority,
-        isPrivate,
         tags,
       });
 
       await note.save();
-      await note.populate('job');
 
       res.status(201).json({ message: 'Note created successfully', note });
     } catch (error) {
@@ -179,74 +173,50 @@ router.get(
         return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
       }
 
-      const { jobId, type, priority, page = 1, limit = 20 } = req.query;
+      const { jobId, type, priority } = req.query;
+      const pageNum = parseInt(req.query.page) || 1;
+      const limitNum = parseInt(req.query.limit) || 20;
 
       const queryFilter = { user: req.user._id, status: 'active' };
 
-      if (jobId) {
-        const job = await Job.findOne({ jobId });
-        if (job) {
-          queryFilter.job = job._id;
-        } else {
-          queryFilter.jobId = jobId;
-        }
-      }
-
+      if (jobId) queryFilter.jobId = jobId;
       if (type) queryFilter.type = type;
       if (priority) queryFilter.priority = priority;
 
       const notes = await Note.find(queryFilter)
-        .populate('job', 'jobId businessTitle jobCategory workLocation')
         .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(parseInt(limit));
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum);
 
       const total = await Note.countDocuments(queryFilter);
 
-      // Enrich notes with job info
-      const notesWithJobInfo = await Promise.all(
-        notes.map(async (note) => {
-          let jobData = null;
+      // Enrich notes with job info from MongoDB
+      const jobIds = [...new Set(notes.map((n) => n.jobId).filter(Boolean))];
+      const jobs = jobIds.length
+        ? await Job.find({ jobId: { $in: jobIds } }).select('jobId businessTitle jobCategory workLocation').lean()
+        : [];
+      const jobMap = Object.fromEntries(jobs.map((j) => [j.jobId, j]));
 
-          try {
-            if (note.job && typeof note.job === 'object' && note.job.businessTitle) {
-              jobData = note.job;
-            } else if (note.jobId && typeof note.jobId === 'string') {
-              const actualJob = await Job.findOne({ jobId: note.jobId });
-              if (actualJob) {
-                jobData = actualJob;
-              } else {
-                jobData = {
-                  jobId: note.jobId,
-                  businessTitle: 'Job not saved in database',
-                  jobCategory: 'Unknown',
-                  workLocation: 'Unknown',
-                };
-              }
-            }
-          } catch (err) {
-            console.error(`Error loading job for note ${note._id}:`, err.message);
-            if (note.jobId) {
-              jobData = {
-                jobId: note.jobId,
-                businessTitle: 'Error loading job data',
-                jobCategory: 'Unknown',
-                workLocation: 'Unknown',
-              };
-            }
-          }
-
-          return { ...note.toObject(), job: jobData };
-        })
-      );
+      const notesWithJobInfo = notes.map((note) => {
+        const noteObj = note.toObject();
+        if (noteObj.jobId) {
+          noteObj.job = jobMap[noteObj.jobId] || {
+            jobId: noteObj.jobId,
+            businessTitle: 'Job not saved in database',
+            jobCategory: 'Unknown',
+            workLocation: 'Unknown',
+          };
+        }
+        return noteObj;
+      });
 
       res.json({
         notes: notesWithJobInfo,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: pageNum,
+          limit: limitNum,
           total,
-          pages: Math.ceil(total / limit),
+          pages: Math.ceil(total / limitNum),
         },
       });
     } catch (error) {
@@ -261,9 +231,7 @@ router.get(
 // @access  Private
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const note = await Note.findById(req.params.id)
-      .populate('job', 'jobId businessTitle jobCategory workLocation')
-      .populate('user', 'firstName lastName email');
+    const note = await Note.findById(req.params.id);
 
     if (!note) {
       return res.status(404).json({ message: 'Note not found' });
@@ -273,7 +241,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    res.json({ note });
+    const noteObj = note.toObject();
+    if (noteObj.jobId) {
+      const job = await Job.findOne({ jobId: noteObj.jobId })
+        .select('jobId businessTitle jobCategory workLocation')
+        .lean();
+      noteObj.job = job || { jobId: noteObj.jobId, businessTitle: 'Job not saved in database' };
+    }
+
+    res.json({ note: noteObj });
   } catch (error) {
     console.error('Get note error:', error);
     res.status(500).json({ message: 'Error fetching note' });
@@ -293,7 +269,6 @@ router.put(
       .optional()
       .isIn(['general', 'interview', 'application', 'followup', 'research']),
     body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
-    body('isPrivate').optional().isBoolean(),
     body('tags').optional().isArray(),
   ],
   async (req, res) => {
@@ -313,7 +288,7 @@ router.put(
       }
 
       const updates = {};
-      const fields = ['title', 'content', 'type', 'priority', 'isPrivate', 'tags'];
+      const fields = ['title', 'content', 'type', 'priority', 'tags'];
       for (const field of fields) {
         if (req.body[field] !== undefined) updates[field] = req.body[field];
       }
@@ -321,7 +296,14 @@ router.put(
       const updatedNote = await Note.findByIdAndUpdate(req.params.id, updates, {
         new: true,
         runValidators: true,
-      }).populate('job', 'jobId businessTitle jobCategory workLocation');
+      }).lean();
+
+      if (updatedNote.jobId) {
+        const job = await Job.findOne({ jobId: updatedNote.jobId })
+          .select('jobId businessTitle jobCategory workLocation')
+          .lean();
+        updatedNote.job = job || { jobId: updatedNote.jobId, businessTitle: 'Job not saved in database' };
+      }
 
       res.json({ message: 'Note updated successfully', note: updatedNote });
     } catch (error) {

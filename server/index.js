@@ -81,7 +81,16 @@ app.get('/api/rate-limit-status', (req, res) => {
   res.json(rateLimitInfo);
 });
 
-// Error handling middleware (must be before SPA catch-all)
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, '../client/build')));
+
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/build/index.html'));
+});
+
+// Error handling middleware (must be after all route handlers)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -91,15 +100,6 @@ app.use((err, req, res, next) => {
         ? err.message
         : 'Internal server error',
   });
-});
-
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, '../client/build')));
-
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
 app.listen(PORT, () => {

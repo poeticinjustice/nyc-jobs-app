@@ -86,7 +86,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                       <HiBookmark className='mr-3 h-4 w-4' />
                       Saved Jobs
                     </Link>
-                    {user?.role === 'admin' && (
+                    {(user?.role === 'admin' || user?.role === 'moderator') && (
                       <Link
                         to='/admin'
                         className='flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'

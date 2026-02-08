@@ -4,7 +4,6 @@ import {
   searchJobs,
   getJobCategories,
   getJobAgencies,
-  setSearchParams as setReduxSearchParams,
   clearSearchResults,
   saveJob,
   unsaveJob,
@@ -22,7 +21,7 @@ import { formatSalary, formatDate } from '../utils/formatUtils';
 
 const JobSearch = () => {
   const dispatch = useDispatch();
-  const { searchResults, categories, agencies, searchLoading, error, pagination } =
+  const { searchResults, categories, agencies, searchLoading, error, searchPagination: pagination } =
     useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -102,16 +101,12 @@ const JobSearch = () => {
         limit: limitFromUrl,
       });
 
-      const searchParamsWithPage = {
+      dispatch(searchJobs({
         ...urlParams,
         page: pageFromUrl,
         limit: limitFromUrl,
-      };
-
-      dispatch(setReduxSearchParams(searchParamsWithPage));
-      dispatch(searchJobs(searchParamsWithPage));
+      }));
     } else {
-      dispatch(setReduxSearchParams({}));
       dispatch(clearSearchResults());
       setActiveSearchParams({});
       setCurrentPage(1);
@@ -167,13 +162,11 @@ const JobSearch = () => {
     if (!isAuthenticated) return;
 
     if (job.isSaved) {
-      // Job is already saved, show confirmation dialog
       if (window.confirm('Are you sure you want to remove this bookmark?')) {
-        dispatch(unsaveJob(job.job_id));
+        dispatch(unsaveJob(job.jobId));
       }
     } else {
-      // Job is not saved, save it
-      dispatch(saveJob(job.job_id));
+      dispatch(saveJob(job.jobId));
     }
   };
 
@@ -202,9 +195,7 @@ const JobSearch = () => {
     handleSearch(1);
   };
 
-  const totalPages = pagination
-    ? Math.ceil(pagination.total / pagination.limit)
-    : 0;
+  const totalPages = pagination?.pages || 0;
 
   const getSortDisplayName = (sortValue) => {
     switch (sortValue) {
@@ -644,51 +635,51 @@ const JobSearch = () => {
             <div className='space-y-4'>
               {searchResults.map((job, index) => (
                 <div
-                  key={job.job_id || job.jobId || `job-${index}`}
+                  key={job.jobId || `job-${index}`}
                   className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
                 >
                   <div className='flex justify-between items-start'>
                     <div className='flex-1'>
                       <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                        {job.business_title}
+                        {job.businessTitle}
                       </h3>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>
                           <p>
                             <strong>Category:</strong>{' '}
-                            {job.job_category || 'Not specified'}
+                            {job.jobCategory || 'Not specified'}
                           </p>
                           <p>
                             <strong>Location:</strong>{' '}
-                            {job.work_location || 'Not specified'}
+                            {job.workLocation || 'Not specified'}
                           </p>
                           <p>
                             <strong>Salary:</strong>{' '}
                             {formatSalary(
-                              job.salary_range_from,
-                              job.salary_range_to,
-                              job.salary_frequency
+                              job.salaryRangeFrom,
+                              job.salaryRangeTo,
+                              job.salaryFrequency
                             )}
                           </p>
                         </div>
                         <div>
                           <p>
                             <strong>Posted:</strong>{' '}
-                            {formatDate(job.posting_date)}
+                            {formatDate(job.postDate)}
                           </p>
                           <p>
                             <strong>Post Until:</strong>{' '}
-                            {formatDate(job.post_until) || 'Not specified'}
+                            {formatDate(job.postUntil) || 'Not specified'}
                           </p>
                           <p>
                             <strong>Process Date:</strong>{' '}
-                            {formatDate(job.process_date) || 'Not specified'}
+                            {formatDate(job.processDate) || 'Not specified'}
                           </p>
                         </div>
                       </div>
-                      {job.job_description && (
+                      {job.jobDescription && (
                         <p className='mt-3 text-gray-700 line-clamp-2'>
-                          {job.job_description.substring(0, 200)}
+                          {job.jobDescription.substring(0, 200)}
                           ...
                         </p>
                       )}
@@ -713,7 +704,7 @@ const JobSearch = () => {
 
                   <div className='mt-4 pt-4 border-t border-gray-200'>
                     <Link
-                      to={`/job/${job.job_id}`}
+                      to={`/job/${job.jobId}`}
                       className='text-primary-600 hover:text-primary-700 font-medium inline-block'
                     >
                       View Details →
