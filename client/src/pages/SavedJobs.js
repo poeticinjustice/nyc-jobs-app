@@ -63,9 +63,9 @@ const SavedJobs = () => {
     });
   };
 
-  const handleUnsaveJob = (jobId) => {
+  const handleUnsaveJob = (job) => {
     if (window.confirm('Are you sure you want to remove this bookmark?')) {
-      dispatch(unsaveJob(jobId));
+      dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
     }
   };
 
@@ -74,8 +74,8 @@ const SavedJobs = () => {
     setShowNoteModal(true);
   };
 
-  const handleStatusChange = (jobId, newStatus) => {
-    dispatch(updateJobStatus({ jobId, status: newStatus }));
+  const handleStatusChange = (job, newStatus) => {
+    dispatch(updateJobStatus({ jobId: job.jobId, status: newStatus, source: job.source }));
   };
 
   const handleStatusFilterChange = (status) => {
@@ -259,7 +259,7 @@ const SavedJobs = () => {
                       <HiEye className='h-5 w-5' />
                     </Link>
                     <button
-                      onClick={() => handleUnsaveJob(job.jobId)}
+                      onClick={() => handleUnsaveJob(job)}
                       className='p-2 text-gray-400 hover:text-red-600 transition-colors'
                       title='Remove from saved'
                     >
@@ -268,7 +268,7 @@ const SavedJobs = () => {
                   </div>
                   <select
                     value={job.applicationStatus || 'interested'}
-                    onChange={(e) => handleStatusChange(job.jobId, e.target.value)}
+                    onChange={(e) => handleStatusChange(job, e.target.value)}
                     className='text-xs border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500'
                   >
                     {APPLICATION_STATUSES.filter((s) => s.value).map((s) => (

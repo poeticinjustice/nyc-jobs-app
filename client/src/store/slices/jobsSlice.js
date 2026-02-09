@@ -50,9 +50,10 @@ export const saveJob = createAsyncThunk(
 
 export const unsaveJob = createAsyncThunk(
   'jobs/unsaveJob',
-  async (jobId, { rejectWithValue }) => {
+  async ({ jobId, source }, { rejectWithValue }) => {
     try {
-      const response = await api.delete(`/api/jobs/${jobId}/save`);
+      const params = source ? { source } : {};
+      const response = await api.delete(`/api/jobs/${jobId}/save`, { params });
       return { jobId, message: response.data.message };
     } catch (error) {
       return rejectWithValue(
@@ -92,9 +93,9 @@ export const getJobCategories = createAsyncThunk(
 
 export const updateJobStatus = createAsyncThunk(
   'jobs/updateJobStatus',
-  async ({ jobId, status }, { rejectWithValue }) => {
+  async ({ jobId, status, source }, { rejectWithValue }) => {
     try {
-      const response = await api.put(`/api/jobs/${jobId}/status`, { status });
+      const response = await api.put(`/api/jobs/${jobId}/status`, { status, source });
       return { jobId, ...response.data };
     } catch (error) {
       return rejectWithValue(

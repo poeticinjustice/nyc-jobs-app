@@ -181,7 +181,7 @@ const JobSearch = () => {
 
     if (job.isSaved) {
       if (window.confirm('Are you sure you want to remove this bookmark?')) {
-        dispatch(unsaveJob(job.jobId));
+        dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
       }
     } else {
       dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' }));

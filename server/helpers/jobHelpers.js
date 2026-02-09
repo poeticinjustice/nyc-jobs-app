@@ -85,8 +85,7 @@ const TEXT_FIELDS = [
   'business_title', 'civil_service_title', 'job_category', 'work_location',
   'work_location_1', 'division_work_unit', 'agency', 'job_description',
   'minimum_qual_requirements', 'preferred_skills', 'additional_information',
-  'to_apply', 'hours_shift', 'residency_requirement', 'title_classification',
-  'career_level',
+  'to_apply', 'hours_shift', 'residency_requirement',
 ];
 
 const cleanJobFields = (job) => {
@@ -275,7 +274,8 @@ const FREQUENCY_MAP = {
 };
 
 const transformUsaJob = (usaItem) => {
-  const desc = usaItem.MatchedObjectDescriptor;
+  const desc = usaItem?.MatchedObjectDescriptor;
+  if (!desc) return null;
   const details = desc.UserArea?.Details || {};
   const remuneration = desc.PositionRemuneration?.[0] || {};
 
@@ -315,6 +315,21 @@ const transformUsaJob = (usaItem) => {
   };
 };
 
+// Extract a user's save entry from a job document
+const getUserSaveEntry = (job, userId) => {
+  const entry = job.savedBy?.find(
+    (s) => s.user.toString() === userId.toString()
+  );
+  if (!entry) return { isSaved: false, applicationStatus: null, savedAt: null, statusHistory: [] };
+  return {
+    isSaved: true,
+    applicationStatus: entry.applicationStatus || 'interested',
+    savedAt: entry.savedAt,
+    statusUpdatedAt: entry.statusUpdatedAt,
+    statusHistory: entry.statusHistory || [],
+  };
+};
+
 module.exports = {
   cleanText,
   cleanJobFields,
@@ -324,4 +339,5 @@ module.exports = {
   sortJobs,
   transformNycJob,
   transformUsaJob,
+  getUserSaveEntry,
 };

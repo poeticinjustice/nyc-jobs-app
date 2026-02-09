@@ -21,6 +21,7 @@ const savedSearchSchema = new mongoose.Schema(
       salary_min: { type: String, default: '' },
       salary_max: { type: String, default: '' },
       sort: { type: String, default: 'date_desc' },
+      source: { type: String, default: 'nyc' },
     },
     lastRunAt: {
       type: Date,

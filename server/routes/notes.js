@@ -159,7 +159,8 @@ router.post(
       // Auto-fetch and save job if not in database
       let job = null;
       if (jobId) {
-        job = await Job.findOne({ jobId });
+        const jobFilter = jobSource ? { jobId, source: jobSource } : { jobId };
+        job = await Job.findOne(jobFilter);
 
         if (!job) {
           if (jobSource === 'federal') {

@@ -10,6 +10,7 @@ const {
   sortJobs,
   transformNycJob,
   transformUsaJob,
+  getUserSaveEntry,
 } = require('../helpers/jobHelpers');
 const { fetchUsaJobById } = require('../helpers/usaJobsApi');
 
@@ -18,6 +19,7 @@ const router = express.Router();
 // --- In-memory caches ---
 
 let jobsCache = null;
+let jobIdMap = null; // Map<job_id, job> for O(1) lookups
 let cacheTimestamp = null;
 let categoriesCache = null;
 let agenciesCache = null;
@@ -113,6 +115,7 @@ const fetchAllJobs = async () => {
   cacheTimestamp = now;
 
   // Pre-compute derived caches
+  jobIdMap = new Map(allJobs.map((j) => [j.job_id, j]));
   categoriesCache = [...new Set(allJobs.map((j) => j.job_category).filter(Boolean))].sort();
   agenciesCache = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
 
@@ -225,6 +228,12 @@ const sortMergedJobs = (jobs, sort) => {
   }
   return sorted;
 };
+
+// Build query filter for a user's saved jobs, optionally filtered by status
+const buildSavedJobsFilter = (userId, status) =>
+  status
+    ? { savedBy: { $elemMatch: { user: userId, applicationStatus: status } } }
+    : { 'savedBy.user': userId };
 
 // --- Routes ---
 
@@ -448,9 +457,7 @@ router.get('/saved', authenticateToken, async (req, res) => {
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    const queryFilter = status
-      ? { savedBy: { $elemMatch: { user: req.user._id, applicationStatus: status } } }
-      : { 'savedBy.user': req.user._id };
+    const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
     const total = await Job.countDocuments(queryFilter);
 
@@ -460,18 +467,10 @@ router.get('/saved', authenticateToken, async (req, res) => {
       .limit(limitNum)
       .lean();
 
-    // Add the current user's save entry fields as top-level fields
-    const jobsWithStatus = jobs.map((job) => {
-      const entry = job.savedBy?.find(
-        (s) => s.user.toString() === req.user._id.toString()
-      );
-      return {
-        ...job,
-        savedAt: entry?.savedAt,
-        applicationStatus: entry?.applicationStatus || 'interested',
-        statusUpdatedAt: entry?.statusUpdatedAt,
-      };
-    });
+    const jobsWithStatus = jobs.map((job) => ({
+      ...job,
+      ...getUserSaveEntry(job, req.user._id),
+    }));
 
     res.json({
       jobs: jobsWithStatus,
@@ -492,9 +491,7 @@ router.get('/saved', authenticateToken, async (req, res) => {
 router.get('/saved/export', authenticateToken, async (req, res) => {
   try {
     const { status } = req.query;
-    const queryFilter = status
-      ? { savedBy: { $elemMatch: { user: req.user._id, applicationStatus: status } } }
-      : { 'savedBy.user': req.user._id };
+    const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
     const jobs = await Job.find(queryFilter).sort({ updatedAt: -1 }).lean();
 
@@ -524,9 +521,7 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
     };
 
     const rows = jobs.map((job) => {
-      const entry = job.savedBy?.find(
-        (s) => s.user.toString() === req.user._id.toString()
-      );
+      const entry = getUserSaveEntry(job, req.user._id);
       return [
         job.jobId,
         job.source || 'nyc',
@@ -540,8 +535,8 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
         job.fullTimePartTimeIndicator,
         job.level,
         job.postDate ? new Date(job.postDate).toISOString().split('T')[0] : '',
-        entry?.applicationStatus || 'interested',
-        entry?.savedAt ? new Date(entry.savedAt).toISOString().split('T')[0] : '',
+        entry.applicationStatus || 'interested',
+        entry.savedAt ? new Date(entry.savedAt).toISOString().split('T')[0] : '',
       ]
         .map(escCsv)
         .join(',');
@@ -565,18 +560,19 @@ router.get('/:id', optionalAuth, async (req, res) => {
     const { source } = req.query;
 
     let jobData = null;
+    const jobSource = source || 'nyc';
 
     // Try NYC source
-    if (!source || source === 'nyc') {
-      const allJobs = await fetchAllJobs();
-      const nycJob = allJobs.find((job) => job.job_id === id);
+    if (jobSource === 'nyc') {
+      await fetchAllJobs(); // ensure cache is populated
+      const nycJob = jobIdMap?.get(id);
       if (nycJob) {
         jobData = { ...transformNycJob(nycJob), source: 'nyc' };
       }
     }
 
     // Try federal source
-    if (!jobData && (!source || source === 'federal')) {
+    if (!jobData && (jobSource === 'federal' || !source)) {
       const savedJob = await Job.findOne({ jobId: id, source: 'federal' }).lean();
       if (savedJob) {
         jobData = { ...savedJob, source: 'federal' };
@@ -593,22 +589,19 @@ router.get('/:id', optionalAuth, async (req, res) => {
     }
 
     // Check saved status
-    let isSaved = false;
-    let applicationStatus = null;
-    let statusHistory = [];
+    let saveEntry = { isSaved: false, applicationStatus: null, statusHistory: [] };
     if (req.user) {
-      const savedJob = await Job.findOne({ jobId: id, 'savedBy.user': req.user._id }).lean();
+      const savedJob = await Job.findOne({
+        jobId: id,
+        source: jobData.source,
+        'savedBy.user': req.user._id,
+      }).lean();
       if (savedJob) {
-        isSaved = true;
-        const entry = savedJob.savedBy.find(
-          (s) => s.user.toString() === req.user._id.toString()
-        );
-        applicationStatus = entry?.applicationStatus || 'interested';
-        statusHistory = entry?.statusHistory || [];
+        saveEntry = getUserSaveEntry(savedJob, req.user._id);
       }
     }
 
-    res.json({ ...jobData, isSaved, applicationStatus, statusHistory });
+    res.json({ ...jobData, ...saveEntry });
   } catch (error) {
     console.error('Get job details error:', error);
     res.status(500).json({ message: 'Error fetching job details' });
@@ -619,9 +612,9 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.post('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { source } = req.body;
+    const { source = 'nyc' } = req.body;
 
-    let job = await Job.findOne({ jobId: id });
+    let job = await Job.findOne({ jobId: id, source });
 
     if (!job) {
       if (source === 'federal') {
@@ -675,8 +668,11 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 router.delete('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const { source } = req.query;
 
-    const job = await Job.findOne({ jobId: id });
+    const filter = { jobId: id };
+    if (source) filter.source = source;
+    const job = await Job.findOne(filter);
     if (!job) {
       return res.status(404).json({ message: 'Job not found' });
     }
@@ -706,9 +702,11 @@ router.put(
       }
 
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, source } = req.body;
 
-      const job = await Job.findOne({ jobId: id });
+      const filter = { jobId: id };
+      if (source) filter.source = source;
+      const job = await Job.findOne(filter);
       if (!job) {
         return res.status(404).json({ message: 'Job not found' });
       }

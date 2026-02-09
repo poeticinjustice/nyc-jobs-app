@@ -3,6 +3,7 @@ const Job = require('../models/Job');
 const Note = require('../models/Note');
 const SavedSearch = require('../models/SavedSearch');
 const { authenticateToken } = require('../middleware/auth');
+const { getUserSaveEntry } = require('../helpers/jobHelpers');
 
 const router = express.Router();
 
@@ -66,23 +67,17 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     // Extract current user's save entry for each recent saved job
-    const enrichedSavedJobs = recentSavedJobs.map((job) => {
-      const entry = job.savedBy?.find(
-        (s) => s.user.toString() === userId.toString()
-      );
-      return {
-        jobId: job.jobId,
-        source: job.source || 'nyc',
-        businessTitle: job.businessTitle,
-        agency: job.agency,
-        workLocation: job.workLocation,
-        salaryRangeFrom: job.salaryRangeFrom,
-        salaryRangeTo: job.salaryRangeTo,
-        salaryFrequency: job.salaryFrequency,
-        applicationStatus: entry?.applicationStatus || 'interested',
-        savedAt: entry?.savedAt,
-      };
-    });
+    const enrichedSavedJobs = recentSavedJobs.map((job) => ({
+      jobId: job.jobId,
+      source: job.source || 'nyc',
+      businessTitle: job.businessTitle,
+      agency: job.agency,
+      workLocation: job.workLocation,
+      salaryRangeFrom: job.salaryRangeFrom,
+      salaryRangeTo: job.salaryRangeTo,
+      salaryFrequency: job.salaryFrequency,
+      ...getUserSaveEntry(job, userId),
+    }));
 
     res.json({
       statusCounts: statusMap,

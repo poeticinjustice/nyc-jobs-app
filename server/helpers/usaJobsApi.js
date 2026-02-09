@@ -7,8 +7,18 @@ const USA_HEADERS = {
   Host: 'data.usajobs.gov',
 };
 
+// Simple TTL cache for individual job lookups
+const jobByIdCache = new Map();
+const JOB_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const MAX_JOB_CACHE_SIZE = 100;
+
 // Fetch a single job from USAJobs by control number
 const fetchUsaJobById = async (controlNumber) => {
+  const cached = jobByIdCache.get(controlNumber);
+  if (cached && Date.now() - cached.timestamp < JOB_CACHE_TTL) {
+    return cached.data;
+  }
+
   try {
     const response = await axios.get(
       `${process.env.USAJOBS_BASE_URL}?ControlNumber=${controlNumber}&Fields=Full`,
@@ -16,7 +26,15 @@ const fetchUsaJobById = async (controlNumber) => {
     );
     const items = response.data.SearchResult?.SearchResultItems || [];
     if (items.length === 0) return null;
-    return transformUsaJob(items[0]);
+    const job = transformUsaJob(items[0]);
+
+    if (jobByIdCache.size >= MAX_JOB_CACHE_SIZE) {
+      const oldestKey = jobByIdCache.keys().next().value;
+      jobByIdCache.delete(oldestKey);
+    }
+    jobByIdCache.set(controlNumber, { data: job, timestamp: Date.now() });
+
+    return job;
   } catch (error) {
     console.error('USAJobs fetch by ID error:', error.message);
     return null;

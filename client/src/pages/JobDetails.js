@@ -45,7 +45,7 @@ const JobDetails = () => {
   }, [dispatch, jobId, source]);
 
   const handleStatusChange = (newStatus) => {
-    dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus }));
+    dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus, source: currentJob.source || source }));
   };
 
   const handleSaveJob = async () => {
@@ -56,7 +56,7 @@ const JobDetails = () => {
 
     try {
       if (currentJob.isSaved) {
-        await dispatch(unsaveJob(currentJob.jobId)).unwrap();
+        await dispatch(unsaveJob({ jobId: currentJob.jobId, source: currentJob.source || source })).unwrap();
       } else {
         await dispatch(saveJob({ jobId: currentJob.jobId, source: currentJob.source || source })).unwrap();
       }
