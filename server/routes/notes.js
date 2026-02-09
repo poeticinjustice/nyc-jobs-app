@@ -4,7 +4,7 @@ const Note = require('../models/Note');
 const Job = require('../models/Job');
 const { authenticateToken } = require('../middleware/auth');
 const axios = require('axios');
-const { transformNycJob } = require('../helpers/jobHelpers');
+const { transformNycJob, escCsv } = require('../helpers/jobHelpers');
 const { fetchUsaJobById } = require('../helpers/usaJobsApi');
 
 const router = express.Router();
@@ -52,14 +52,6 @@ router.get('/export', authenticateToken, async (req, res) => {
       .lean();
 
     const headers = ['Title', 'Content', 'Type', 'Priority', 'Job ID', 'Tags', 'Created At'];
-
-    const escCsv = (val) => {
-      if (val == null) return '';
-      const s = String(val);
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? `"${s.replace(/"/g, '""')}"`
-        : s;
-    };
 
     const rows = notes.map((note) =>
       [

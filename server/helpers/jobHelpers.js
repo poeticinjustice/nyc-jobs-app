@@ -152,17 +152,23 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
   }
 
   if (salary_min) {
-    const min = parseInt(salary_min);
-    filtered = filtered.filter(
-      (job) => job.salary_range_from && parseInt(job.salary_range_from) >= min
-    );
+    const min = parseInt(salary_min, 10);
+    if (!isNaN(min)) {
+      filtered = filtered.filter((job) => {
+        const from = parseInt(job.salary_range_from, 10);
+        return !isNaN(from) && from >= min;
+      });
+    }
   }
 
   if (salary_max) {
-    const max = parseInt(salary_max);
-    filtered = filtered.filter(
-      (job) => job.salary_range_to && parseInt(job.salary_range_to) <= max
-    );
+    const max = parseInt(salary_max, 10);
+    if (!isNaN(max)) {
+      filtered = filtered.filter((job) => {
+        const to = parseInt(job.salary_range_to, 10);
+        return !isNaN(to) && to <= max;
+      });
+    }
   }
 
   return filtered;
@@ -330,6 +336,15 @@ const getUserSaveEntry = (job, userId) => {
   };
 };
 
+// Escape a value for CSV output
+const escCsv = (val) => {
+  if (val == null) return '';
+  const s = String(val);
+  return s.includes(',') || s.includes('"') || s.includes('\n')
+    ? `"${s.replace(/"/g, '""')}"`
+    : s;
+};
+
 module.exports = {
   cleanText,
   cleanJobFields,
@@ -340,4 +355,5 @@ module.exports = {
   transformNycJob,
   transformUsaJob,
   getUserSaveEntry,
+  escCsv,
 };

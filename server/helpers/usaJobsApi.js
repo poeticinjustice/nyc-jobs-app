@@ -16,6 +16,9 @@ const MAX_JOB_CACHE_SIZE = 100;
 const fetchUsaJobById = async (controlNumber) => {
   const cached = jobByIdCache.get(controlNumber);
   if (cached && Date.now() - cached.timestamp < JOB_CACHE_TTL) {
+    // Move to end for LRU ordering
+    jobByIdCache.delete(controlNumber);
+    jobByIdCache.set(controlNumber, cached);
     return cached.data;
   }
 

@@ -15,18 +15,7 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate } from '../utils/formatUtils';
-
-const APPLICATION_STATUSES = [
-  { value: 'interested', label: 'Interested', color: 'bg-gray-100 text-gray-800' },
-  { value: 'applied', label: 'Applied', color: 'bg-blue-100 text-blue-800' },
-  { value: 'interviewing', label: 'Interviewing', color: 'bg-purple-100 text-purple-800' },
-  { value: 'offered', label: 'Offered', color: 'bg-green-100 text-green-800' },
-  { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-800' },
-];
-
-const getStatusColor = (status) => {
-  return APPLICATION_STATUSES.find((s) => s.value === status)?.color || 'bg-gray-100 text-gray-800';
-};
+import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
 const JobDetails = () => {
   const { jobId } = useParams();

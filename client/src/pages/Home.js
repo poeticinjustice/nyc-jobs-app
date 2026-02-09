@@ -11,14 +11,7 @@ import {
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { formatSalary, formatDate } from '../utils/formatUtils';
-
-const STATUS_COLORS = {
-  interested: { bg: 'bg-gray-100', text: 'text-gray-800', bar: 'bg-gray-400' },
-  applied: { bg: 'bg-blue-100', text: 'text-blue-800', bar: 'bg-blue-500' },
-  interviewing: { bg: 'bg-purple-100', text: 'text-purple-800', bar: 'bg-purple-500' },
-  offered: { bg: 'bg-green-100', text: 'text-green-800', bar: 'bg-green-500' },
-  rejected: { bg: 'bg-red-100', text: 'text-red-800', bar: 'bg-red-500' },
-};
+import { STATUS_COLORS } from '../utils/statusConstants';
 
 const Home = () => {
   const dispatch = useDispatch();

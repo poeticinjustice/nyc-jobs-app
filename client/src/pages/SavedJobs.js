@@ -19,19 +19,9 @@ import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate } from '../utils/formatUtils';
 import api from '../utils/api';
+import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
-const APPLICATION_STATUSES = [
-  { value: '', label: 'All' },
-  { value: 'interested', label: 'Interested', color: 'bg-gray-100 text-gray-800' },
-  { value: 'applied', label: 'Applied', color: 'bg-blue-100 text-blue-800' },
-  { value: 'interviewing', label: 'Interviewing', color: 'bg-purple-100 text-purple-800' },
-  { value: 'offered', label: 'Offered', color: 'bg-green-100 text-green-800' },
-  { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-800' },
-];
-
-const getStatusColor = (status) => {
-  return APPLICATION_STATUSES.find((s) => s.value === status)?.color || 'bg-gray-100 text-gray-800';
-};
+const STATUS_FILTER_OPTIONS = [{ value: '', label: 'All' }, ...APPLICATION_STATUSES];
 
 const SavedJobs = () => {
   const dispatch = useDispatch();
@@ -154,7 +144,7 @@ const SavedJobs = () => {
       {/* Status Filter Tabs */}
       <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4'>
         <div className='flex flex-wrap gap-2'>
-          {APPLICATION_STATUSES.map((status) => (
+          {STATUS_FILTER_OPTIONS.map((status) => (
             <button
               key={status.value}
               onClick={() => handleStatusFilterChange(status.value)}
@@ -271,7 +261,7 @@ const SavedJobs = () => {
                     onChange={(e) => handleStatusChange(job, e.target.value)}
                     className='text-xs border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500'
                   >
-                    {APPLICATION_STATUSES.filter((s) => s.value).map((s) => (
+                    {APPLICATION_STATUSES.map((s) => (
                       <option key={s.value} value={s.value}>
                         {s.label}
                       </option>

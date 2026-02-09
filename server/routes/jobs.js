@@ -11,6 +11,7 @@ const {
   transformNycJob,
   transformUsaJob,
   getUserSaveEntry,
+  escCsv,
 } = require('../helpers/jobHelpers');
 const { fetchUsaJobById } = require('../helpers/usaJobsApi');
 
@@ -24,6 +25,7 @@ let cacheTimestamp = null;
 let categoriesCache = null;
 let agenciesCache = null;
 const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
+const MAX_NYC_API_OFFSET = 50000;
 
 const searchResultCache = new Map();
 const SEARCH_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -100,14 +102,22 @@ const fetchAllJobs = async () => {
     } else {
       allJobs = allJobs.concat(batchJobs);
       offset += batchSize;
-      if (offset > 50000) hasMoreData = false;
+      if (offset > MAX_NYC_API_OFFSET) hasMoreData = false;
     }
   }
 
-  // Don't cache empty/partial results from a failed fetch — serve stale cache if available
-  if (fetchFailed && allJobs.length === 0) {
+  // Don't cache partial results from a failed fetch — serve stale cache if available
+  if (fetchFailed) {
     if (jobsCache) return jobsCache;
-    return [];
+    if (allJobs.length === 0) return [];
+    // No stale cache and we got partial data — use it but with a short TTL
+    allJobs = deduplicateJobs(allJobs).map(cleanJobFields);
+    jobsCache = allJobs;
+    cacheTimestamp = now - CACHE_DURATION + 5 * 60 * 1000; // expire in 5 min
+    jobIdMap = new Map(allJobs.map((j) => [j.job_id, j]));
+    categoriesCache = [...new Set(allJobs.map((j) => j.job_category).filter(Boolean))].sort();
+    agenciesCache = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
+    return allJobs;
   }
 
   allJobs = deduplicateJobs(allJobs).map(cleanJobFields);
@@ -137,6 +147,9 @@ const fetchUsaJobs = async ({ q, category, location, agency, salary_min, salary_
   const cacheKey = JSON.stringify(['usa', q || '', category || '', location || '', agency || '', salary_min || '', salary_max || '', sort, page, limit]);
   const cached = usaJobsSearchCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < USA_SEARCH_CACHE_DURATION) {
+    // Move to end for LRU ordering
+    usaJobsSearchCache.delete(cacheKey);
+    usaJobsSearchCache.set(cacheKey, cached);
     return cached.data;
   }
 
@@ -337,6 +350,9 @@ router.get(
 
         let nycJobs;
         if (cachedSearch && Date.now() - cachedSearch.timestamp < SEARCH_CACHE_DURATION) {
+          // Move to end for LRU ordering
+          searchResultCache.delete(cacheKey);
+          searchResultCache.set(cacheKey, cachedSearch);
           nycJobs = cachedSearch.results;
         } else {
           const allJobs = await fetchAllJobs();
@@ -360,6 +376,7 @@ router.get(
             const savedJobs = await Job.find({
               'savedBy.user': req.user._id,
               jobId: { $in: paginatedJobs.map((job) => job.job_id) },
+              source: 'nyc',
             });
             savedJobIds = savedJobs.map((job) => job.jobId);
           }
@@ -385,8 +402,9 @@ router.get(
           jobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
           total = usaResult.total;
         } else {
-          // 'all' mode: fetch first page of federal (up to 250), merge with NYC
-          const usaResult = await fetchUsaJobs({ q, category, location, agency, salary_min, salary_max, sort, page: 1, limit: 250 });
+          // 'all' mode: fetch federal jobs scoped to NYC, merge with city jobs
+          const nycLocation = location || 'New York';
+          const usaResult = await fetchUsaJobs({ q, category, location: nycLocation, agency, salary_min, salary_max, sort, page: 1, limit: 250 });
           const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
 
           jobs = sortMergedJobs([...jobs, ...federalJobs], sort);
@@ -511,14 +529,6 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
       'Application Status',
       'Saved At',
     ];
-
-    const escCsv = (val) => {
-      if (val == null) return '';
-      const s = String(val);
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? `"${s.replace(/"/g, '""')}"`
-        : s;
-    };
 
     const rows = jobs.map((job) => {
       const entry = getUserSaveEntry(job, req.user._id);
@@ -668,11 +678,9 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 router.delete('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { source } = req.query;
+    const { source = 'nyc' } = req.query;
 
-    const filter = { jobId: id };
-    if (source) filter.source = source;
-    const job = await Job.findOne(filter);
+    const job = await Job.findOne({ jobId: id, source });
     if (!job) {
       return res.status(404).json({ message: 'Job not found' });
     }
@@ -702,11 +710,9 @@ router.put(
       }
 
       const { id } = req.params;
-      const { status, source } = req.body;
+      const { status, source = 'nyc' } = req.body;
 
-      const filter = { jobId: id };
-      if (source) filter.source = source;
-      const job = await Job.findOne(filter);
+      const job = await Job.findOne({ jobId: id, source });
       if (!job) {
         return res.status(404).json({ message: 'Job not found' });
       }

@@ -680,12 +680,12 @@ const JobSearch = () => {
               <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
                 <div className='text-sm text-gray-600'>
                   <span className='font-medium'>
-                    {pagination ? pagination.total : searchResults.length}
+                    {pagination ? pagination.total.toLocaleString() : searchResults.length}
                   </span>{' '}
                   jobs found
-                  {pagination && (
+                  {pagination && pagination.total > searchResults.length && (
                     <span className='ml-2'>
-                      (showing {searchResults.length} of {pagination.total}{' '}
+                      (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
                       total)
                     </span>
                   )}
