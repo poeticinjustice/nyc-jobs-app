@@ -52,6 +52,7 @@ const JobSearch = () => {
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
     limit: parseInt(searchParams.get('limit')) || 20,
+    source: searchParams.get('source') || 'nyc',
   });
 
   // Track the active search (what's actually being searched for in results)
@@ -64,6 +65,7 @@ const JobSearch = () => {
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
     limit: parseInt(searchParams.get('limit')) || 20,
+    source: searchParams.get('source') || 'nyc',
   });
 
   // Load categories, agencies, and saved searches on component mount
@@ -113,6 +115,7 @@ const JobSearch = () => {
         salary_max: urlParams.salary_max || '',
         sort: urlParams.sort,
         limit: limitFromUrl,
+        source: urlParams.source || 'nyc',
       });
 
       dispatch(searchJobs({
@@ -158,6 +161,7 @@ const JobSearch = () => {
       }
     });
     newSearchParams.set('sort', localSearchParams.sort || 'date_desc');
+    newSearchParams.set('source', localSearchParams.source || 'nyc');
     newSearchParams.set('page', page.toString());
     newSearchParams.set('limit', resultsPerPage.toString());
 
@@ -180,7 +184,7 @@ const JobSearch = () => {
         dispatch(unsaveJob(job.jobId));
       }
     } else {
-      dispatch(saveJob(job.jobId));
+      dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
     }
   };
 
@@ -219,6 +223,7 @@ const JobSearch = () => {
       salary_min: activeSearchParams.salary_min || '',
       salary_max: activeSearchParams.salary_max || '',
       sort: activeSearchParams.sort || 'date_desc',
+      source: activeSearchParams.source || 'nyc',
     };
     await dispatch(saveSearch({ name: saveSearchName.trim(), criteria }));
     setSaveSearchName('');
@@ -235,8 +240,10 @@ const JobSearch = () => {
     if (criteria.salary_min) newParams.set('salary_min', criteria.salary_min);
     if (criteria.salary_max) newParams.set('salary_max', criteria.salary_max);
     newParams.set('sort', criteria.sort || 'date_desc');
+    newParams.set('source', criteria.source || 'nyc');
     newParams.set('page', '1');
     newParams.set('limit', resultsPerPage.toString());
+    setLocalSearchParams((prev) => ({ ...prev, source: criteria.source || 'nyc' }));
     setSearchParams(newParams);
     setShowSavedSearches(false);
   };
@@ -280,8 +287,42 @@ const JobSearch = () => {
       {/* Search Header */}
       <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
         <h1 className='text-2xl font-bold text-gray-900 mb-4'>
-          Search NYC Jobs
+          {localSearchParams.source === 'federal'
+            ? 'Search Federal Jobs'
+            : localSearchParams.source === 'all'
+              ? 'Search All Jobs'
+              : 'Search NYC Jobs'}
         </h1>
+
+        {/* Source Toggle */}
+        <div className='flex items-center gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit'>
+          {[
+            { value: 'nyc', label: 'NYC Jobs' },
+            { value: 'federal', label: 'Federal Jobs' },
+            { value: 'all', label: 'All Jobs' },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              type='button'
+              onClick={() => {
+                setLocalSearchParams((prev) => ({ ...prev, source: opt.value }));
+                if (hasActiveSearch || searchResults.length > 0) {
+                  const newParams = new URLSearchParams(searchParams);
+                  newParams.set('source', opt.value);
+                  newParams.set('page', '1');
+                  setSearchParams(newParams);
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                localSearchParams.source === opt.value
+                  ? 'bg-white text-primary-700 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
         {/* Search Form */}
         <form onSubmit={handleSearchSubmit} className='space-y-4'>
@@ -327,6 +368,7 @@ const JobSearch = () => {
                       salary_max: '',
                       sort: 'date_desc',
                       limit: 20,
+                      source: localSearchParams.source,
                     });
                     setResultsPerPage(20);
                     setSearchParams(new URLSearchParams());
@@ -429,38 +471,60 @@ const JobSearch = () => {
                 <label className='block text-sm font-medium text-gray-700 mb-1'>
                   Category
                 </label>
-                <select
-                  name='category'
-                  value={localSearchParams.category}
-                  onChange={handleInputChange}
-                  className='input'
-                >
-                  <option value=''>All Categories</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
+                {localSearchParams.source === 'nyc' ? (
+                  <select
+                    name='category'
+                    value={localSearchParams.category}
+                    onChange={handleInputChange}
+                    className='input'
+                  >
+                    <option value=''>All Categories</option>
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type='text'
+                    name='category'
+                    placeholder='Job category keyword...'
+                    value={localSearchParams.category}
+                    onChange={handleInputChange}
+                    className='input'
+                  />
+                )}
               </div>
 
               <div>
                 <label className='block text-sm font-medium text-gray-700 mb-1'>
                   Agency
                 </label>
-                <select
-                  name='agency'
-                  value={localSearchParams.agency}
-                  onChange={handleInputChange}
-                  className='input'
-                >
-                  <option value=''>All Agencies</option>
-                  {agencies.map((agency) => (
-                    <option key={agency} value={agency}>
-                      {agency}
-                    </option>
-                  ))}
-                </select>
+                {localSearchParams.source === 'nyc' ? (
+                  <select
+                    name='agency'
+                    value={localSearchParams.agency}
+                    onChange={handleInputChange}
+                    className='input'
+                  >
+                    <option value=''>All Agencies</option>
+                    {agencies.map((agency) => (
+                      <option key={agency} value={agency}>
+                        {agency}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type='text'
+                    name='agency'
+                    placeholder='Agency name...'
+                    value={localSearchParams.agency}
+                    onChange={handleInputChange}
+                    className='input'
+                  />
+                )}
               </div>
 
               <div>
@@ -565,13 +629,14 @@ const JobSearch = () => {
                   <HiSearch className='h-8 w-8 text-blue-600' />
                 </div>
                 <h3 className='text-xl font-bold text-blue-900 mb-2'>
-                  Ready to Search NYC Jobs
+                  Ready to Search {localSearchParams.source === 'federal' ? 'Federal' : localSearchParams.source === 'all' ? 'All' : 'NYC'} Jobs
                 </h3>
                 <p className='text-blue-700 max-w-md mx-auto'>
-                  Search through thousands of current job listings from NYC
-                  government agencies. Enter keywords, job titles, or browse by
-                  category to get started. Or click Search to see all available
-                  jobs.
+                  {localSearchParams.source === 'federal'
+                    ? 'Search through federal government job listings from USAJobs. Enter keywords, job titles, or locations to get started.'
+                    : localSearchParams.source === 'all'
+                      ? 'Search across NYC city and federal government jobs simultaneously. Enter keywords, job titles, or locations to get started.'
+                      : 'Search through thousands of current job listings from NYC government agencies. Enter keywords, job titles, or browse by category to get started. Or click Search to see all available jobs.'}
                 </p>
               </div>
 
@@ -806,9 +871,22 @@ const JobSearch = () => {
                 >
                   <div className='flex justify-between items-start'>
                     <div className='flex-1'>
-                      <h3 className='text-lg font-semibold text-gray-900 mb-2'>
-                        {job.businessTitle}
-                      </h3>
+                      <div className='flex items-center gap-2 mb-2'>
+                        <h3 className='text-lg font-semibold text-gray-900'>
+                          {job.businessTitle}
+                        </h3>
+                        {activeSearchParams.source === 'all' && (
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              job.source === 'federal'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-green-100 text-green-800'
+                            }`}
+                          >
+                            {job.source === 'federal' ? 'Federal' : 'NYC'}
+                          </span>
+                        )}
+                      </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>
                           <p>
@@ -870,7 +948,7 @@ const JobSearch = () => {
 
                   <div className='mt-4 pt-4 border-t border-gray-200'>
                     <Link
-                      to={`/job/${job.jobId}`}
+                      to={`/job/${job.jobId}?source=${job.source || 'nyc'}`}
                       className='text-primary-600 hover:text-primary-700 font-medium inline-block'
                     >
                       View Details →

@@ -2,11 +2,18 @@ const mongoose = require('mongoose');
 
 const jobSchema = new mongoose.Schema(
   {
-    // NYC API fields
     jobId: {
       type: String,
       required: true,
-      unique: true,
+    },
+    source: {
+      type: String,
+      enum: ['nyc', 'federal'],
+      default: 'nyc',
+    },
+    externalUrl: {
+      type: String,
+      trim: true,
     },
     businessTitle: {
       type: String,
@@ -138,6 +145,7 @@ const jobSchema = new mongoose.Schema(
 );
 
 // Indexes for better query performance
+jobSchema.index({ jobId: 1, source: 1 }, { unique: true });
 jobSchema.index({ businessTitle: 'text', jobDescription: 'text' });
 jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });

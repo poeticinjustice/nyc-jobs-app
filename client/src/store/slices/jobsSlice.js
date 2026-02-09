@@ -21,9 +21,10 @@ export const searchJobs = createAsyncThunk(
 
 export const getJobDetails = createAsyncThunk(
   'jobs/getJobDetails',
-  async (jobId, { rejectWithValue }) => {
+  async ({ jobId, source }, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/api/jobs/${jobId}`);
+      const params = source ? { source } : {};
+      const response = await api.get(`/api/jobs/${jobId}`, { params });
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -35,10 +36,10 @@ export const getJobDetails = createAsyncThunk(
 
 export const saveJob = createAsyncThunk(
   'jobs/saveJob',
-  async (jobId, { rejectWithValue }) => {
+  async ({ jobId, source }, { rejectWithValue }) => {
     try {
-      const response = await api.post(`/api/jobs/${jobId}/save`);
-      return { jobId, message: response.data.message };
+      const response = await api.post(`/api/jobs/${jobId}/save`, { source: source || 'nyc' });
+      return { jobId, source, message: response.data.message };
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to save job'

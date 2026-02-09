@@ -32,7 +32,7 @@ router.get('/', authenticateToken, async (req, res) => {
         Job.find({ 'savedBy.user': userId })
           .sort({ updatedAt: -1 })
           .limit(5)
-          .select('jobId businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency savedBy')
+          .select('jobId source businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency savedBy')
           .lean(),
 
         // Get 5 most recent notes
@@ -72,6 +72,7 @@ router.get('/', authenticateToken, async (req, res) => {
       );
       return {
         jobId: job.jobId,
+        source: job.source || 'nyc',
         businessTitle: job.businessTitle,
         agency: job.agency,
         workLocation: job.workLocation,

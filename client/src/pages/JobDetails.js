@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getJobDetails, saveJob, unsaveJob, updateJobStatus } from '../store/slices/jobsSlice';
 import {
@@ -30,6 +30,8 @@ const getStatusColor = (status) => {
 
 const JobDetails = () => {
   const { jobId } = useParams();
+  const [searchParams] = useSearchParams();
+  const source = searchParams.get('source') || 'nyc';
   const dispatch = useDispatch();
   const { currentJob, loading, error } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
@@ -38,9 +40,9 @@ const JobDetails = () => {
 
   useEffect(() => {
     if (jobId) {
-      dispatch(getJobDetails(jobId));
+      dispatch(getJobDetails({ jobId, source }));
     }
-  }, [dispatch, jobId]);
+  }, [dispatch, jobId, source]);
 
   const handleStatusChange = (newStatus) => {
     dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus }));
@@ -56,7 +58,7 @@ const JobDetails = () => {
       if (currentJob.isSaved) {
         await dispatch(unsaveJob(currentJob.jobId)).unwrap();
       } else {
-        await dispatch(saveJob(currentJob.jobId)).unwrap();
+        await dispatch(saveJob({ jobId: currentJob.jobId, source: currentJob.source || source })).unwrap();
       }
     } catch (error) {
       console.error('Error saving/unsaving job:', error);
@@ -97,6 +99,15 @@ const JobDetails = () => {
               <h1 className='text-3xl font-bold text-gray-900'>
                 {currentJob.businessTitle}
               </h1>
+              {(currentJob.source || source) === 'federal' ? (
+                <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
+                  Federal
+                </span>
+              ) : (
+                <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800'>
+                  NYC
+                </span>
+              )}
               {currentJob.isSaved && (
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
@@ -292,12 +303,18 @@ const JobDetails = () => {
               How to Apply
             </h3>
             <a
-              href={`https://cityjobs.nyc.gov/job/${currentJob.jobId}`}
+              href={
+                (currentJob.source || source) === 'federal'
+                  ? currentJob.externalUrl || `https://www.usajobs.gov/job/${currentJob.jobId}`
+                  : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
+              }
               target='_blank'
               rel='noopener noreferrer'
               className='inline-flex items-center px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors'
             >
-              Apply at Original Site
+              {(currentJob.source || source) === 'federal'
+                ? 'Apply at USAJobs'
+                : 'Apply at NYC Jobs'}
               <svg
                 className='ml-2 h-4 w-4'
                 fill='none'
@@ -399,6 +416,7 @@ const JobDetails = () => {
         onClose={() => setShowNoteModal(false)}
         jobId={currentJob?.jobId}
         jobTitle={currentJob?.businessTitle}
+        source={currentJob?.source || source}
       />
     </div>
   );

@@ -184,6 +184,15 @@ const SavedJobs = () => {
                     <h3 className='text-lg font-semibold text-gray-900'>
                       {job.businessTitle}
                     </h3>
+                    {job.source === 'federal' ? (
+                      <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
+                        Federal
+                      </span>
+                    ) : (
+                      <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800'>
+                        NYC
+                      </span>
+                    )}
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
                         job.applicationStatus
@@ -243,7 +252,7 @@ const SavedJobs = () => {
                       <HiPlus className='h-5 w-5' />
                     </button>
                     <Link
-                      to={`/job/${job.jobId}`}
+                      to={`/job/${job.jobId}?source=${job.source || 'nyc'}`}
                       className='p-2 text-gray-400 hover:text-primary-600 transition-colors'
                       title='View details'
                     >
@@ -276,7 +285,7 @@ const SavedJobs = () => {
 
               <div className='mt-4 pt-4 border-t border-gray-200'>
                 <Link
-                  to={`/job/${job.jobId}`}
+                  to={`/job/${job.jobId}?source=${job.source || 'nyc'}`}
                   className='text-primary-600 hover:text-primary-700 font-medium inline-block'
                 >
                   View Details →
@@ -320,6 +329,7 @@ const SavedJobs = () => {
         }}
         jobId={selectedJob?.jobId}
         jobTitle={selectedJob?.businessTitle}
+        source={selectedJob?.source}
       />
 
       {/* Pagination */}

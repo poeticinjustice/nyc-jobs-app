@@ -265,6 +265,56 @@ const transformNycJob = (nycJob, { clean = false } = {}) => {
   };
 };
 
+// Transform USAJobs API response item to camelCase model fields
+const FREQUENCY_MAP = {
+  PA: 'Annual',
+  PH: 'Hourly',
+  PD: 'Daily',
+  PW: 'Bi-Weekly',
+  PM: 'Monthly',
+};
+
+const transformUsaJob = (usaItem) => {
+  const desc = usaItem.MatchedObjectDescriptor;
+  const details = desc.UserArea?.Details || {};
+  const remuneration = desc.PositionRemuneration?.[0] || {};
+
+  const descriptionParts = [
+    details.JobSummary,
+    details.MajorDuties,
+  ].filter(Boolean);
+  const jobDescription = descriptionParts.join('\n\n') || desc.QualificationSummary || '';
+
+  return {
+    jobId: usaItem.MatchedObjectId,
+    source: 'federal',
+    businessTitle: desc.PositionTitle,
+    civilServiceTitle: null,
+    titleCodeNo: null,
+    level: desc.JobGrade?.[0]?.Code || null,
+    jobCategory: desc.JobCategory?.[0]?.Name || null,
+    fullTimePartTimeIndicator: desc.PositionSchedule?.[0]?.Name || null,
+    salaryRangeFrom: remuneration.MinimumRange ? parseFloat(remuneration.MinimumRange) : null,
+    salaryRangeTo: remuneration.MaximumRange ? parseFloat(remuneration.MaximumRange) : null,
+    salaryFrequency: FREQUENCY_MAP[remuneration.RateIntervalCode] || remuneration.RateIntervalCode || null,
+    workLocation: desc.PositionLocationDisplay || null,
+    divisionWorkUnit: desc.DepartmentName || null,
+    jobDescription,
+    minimumQualRequirements: desc.QualificationSummary || null,
+    preferredSkills: null,
+    additionalInformation: details.Education || null,
+    toApply: desc.ApplyURI?.[0] || null,
+    externalUrl: desc.ApplyURI?.[0] || null,
+    hoursShift: null,
+    workLocation1: null,
+    residencyRequirement: null,
+    postDate: desc.PublicationStartDate || null,
+    processDate: null,
+    postUntil: desc.ApplicationCloseDate || null,
+    agency: desc.OrganizationName || null,
+  };
+};
+
 module.exports = {
   cleanText,
   cleanJobFields,
@@ -273,4 +323,5 @@ module.exports = {
   filterJobs,
   sortJobs,
   transformNycJob,
+  transformUsaJob,
 };

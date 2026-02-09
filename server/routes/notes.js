@@ -5,6 +5,7 @@ const Job = require('../models/Job');
 const { authenticateToken } = require('../middleware/auth');
 const axios = require('axios');
 const { transformNycJob } = require('../helpers/jobHelpers');
+const { fetchUsaJobById } = require('../helpers/usaJobsApi');
 
 const router = express.Router();
 
@@ -147,6 +148,7 @@ router.post(
 
       const {
         jobId,
+        source: jobSource,
         title,
         content,
         type = 'general',
@@ -160,19 +162,31 @@ router.post(
         job = await Job.findOne({ jobId });
 
         if (!job) {
-          try {
-            const response = await axios.get(
-              `${process.env.NYC_JOBS_API_URL}?job_id=${jobId}`,
-              { timeout: 10000 }
-            );
-
-            const nycJobs = response.data;
-            if (nycJobs && nycJobs.length > 0) {
-              job = new Job(transformNycJob(nycJobs[0], { clean: true }));
-              await job.save();
+          if (jobSource === 'federal') {
+            try {
+              const federalJob = await fetchUsaJobById(jobId);
+              if (federalJob) {
+                job = new Job({ ...federalJob, source: 'federal' });
+                await job.save();
+              }
+            } catch (error) {
+              console.error(`Error auto-saving federal job ${jobId}:`, error.message);
             }
-          } catch (error) {
-            console.error(`Error auto-saving job ${jobId}:`, error.message);
+          } else {
+            try {
+              const response = await axios.get(
+                `${process.env.NYC_JOBS_API_URL}?job_id=${jobId}`,
+                { timeout: 10000 }
+              );
+
+              const nycJobs = response.data;
+              if (nycJobs && nycJobs.length > 0) {
+                job = new Job({ ...transformNycJob(nycJobs[0], { clean: true }), source: 'nyc' });
+                await job.save();
+              }
+            } catch (error) {
+              console.error(`Error auto-saving job ${jobId}:`, error.message);
+            }
           }
         }
       }

@@ -198,14 +198,25 @@ const Home = () => {
                     {recentSavedJobs.map((job) => (
                       <Link
                         key={job.jobId}
-                        to={`/job/${job.jobId}`}
+                        to={`/job/${job.jobId}?source=${job.source || 'nyc'}`}
                         className='block p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors'
                       >
                         <div className='flex justify-between items-start'>
                           <div className='flex-1 min-w-0'>
-                            <p className='text-sm font-medium text-gray-900 truncate'>
-                              {job.businessTitle}
-                            </p>
+                            <div className='flex items-center gap-2'>
+                              <p className='text-sm font-medium text-gray-900 truncate'>
+                                {job.businessTitle}
+                              </p>
+                              {job.source === 'federal' ? (
+                                <span className='shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800'>
+                                  Fed
+                                </span>
+                              ) : (
+                                <span className='shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800'>
+                                  NYC
+                                </span>
+                              )}
+                            </div>
                             <p className='text-xs text-gray-500 mt-1'>
                               {job.agency || job.workLocation || 'NYC Government'}
                             </p>

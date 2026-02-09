@@ -9,6 +9,7 @@ const NoteModal = ({
   note = null,
   jobId = null,
   jobTitle = null,
+  source = null,
   isViewMode = false,
 }) => {
   const dispatch = useDispatch();
@@ -51,6 +52,7 @@ const NoteModal = ({
         .map((tag) => tag.trim())
         .filter((tag) => tag),
       jobId: jobId,
+      source: source,
     };
 
     try {
