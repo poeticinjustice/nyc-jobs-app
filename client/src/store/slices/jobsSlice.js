@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../utils/api';
+import { logout } from './authSlice';
 
 // Async thunks
 export const searchJobs = createAsyncThunk(
@@ -40,7 +41,8 @@ export const saveJob = createAsyncThunk(
       const body = { source: source || 'nyc' };
       if (jobData) body.jobData = jobData;
       const response = await api.post(`/api/jobs/${jobId}/save`, body);
-      return { jobId, source, message: response.data.message };
+      const { applicationStatus, statusHistory } = response.data;
+      return { jobId, source, applicationStatus, statusHistory };
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to save job'
@@ -97,7 +99,8 @@ export const updateJobStatus = createAsyncThunk(
   async ({ jobId, status, source }, { rejectWithValue }) => {
     try {
       const response = await api.put(`/api/jobs/${jobId}/status`, { status, source });
-      return { jobId, source, ...response.data };
+      const { applicationStatus, statusHistory } = response.data;
+      return { jobId, source, applicationStatus, statusHistory };
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to update status'
@@ -205,11 +208,12 @@ const jobsSlice = createSlice({
       .addCase(saveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
         state.error = null;
-        const { jobId, source } = action.payload;
+        const { jobId, source, applicationStatus, statusHistory } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
           state.currentJob.isSaved = true;
-          state.currentJob.applicationStatus = 'interested';
+          state.currentJob.applicationStatus = applicationStatus || 'interested';
+          if (statusHistory) state.currentJob.statusHistory = statusHistory;
         }
         const searchJob = state.searchResults.find(
           (job) => job.jobId === jobId && (!source || job.source === source)
@@ -232,8 +236,11 @@ const jobsSlice = createSlice({
         state.saveLoading = false;
         state.error = null;
         const { jobId, source } = action.payload;
-        if (state.currentJob && state.currentJob.jobId === jobId) {
+        if (state.currentJob && state.currentJob.jobId === jobId &&
+            (!source || state.currentJob.source === source)) {
           state.currentJob.isSaved = false;
+          state.currentJob.applicationStatus = null;
+          state.currentJob.statusHistory = [];
         }
         const searchJob = state.searchResults.find(
           (job) => job.jobId === jobId && (!source || job.source === source)
@@ -317,6 +324,15 @@ const jobsSlice = createSlice({
       })
       .addCase(getJobAgencies.rejected, (state, action) => {
         state.error = action.payload;
+      })
+
+      // Reset user-specific state on logout
+      .addCase(logout, (state) => {
+        state.currentJob = null;
+        state.savedJobs = [];
+        state.savedPagination = initialState.savedPagination;
+        state.statusFilter = '';
+        state.error = null;
       });
   },
 });

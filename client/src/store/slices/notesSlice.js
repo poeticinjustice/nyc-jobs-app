@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../utils/api';
+import { logout } from './authSlice';
 
 // Async thunks
 export const createNote = createAsyncThunk(
@@ -151,7 +152,12 @@ const notesSlice = createSlice({
       })
       .addCase(createNote.fulfilled, (state, action) => {
         state.createLoading = false;
-        state.notes.unshift(action.payload.note);
+        if (state.pagination.page === 1) {
+          state.notes.unshift(action.payload.note);
+          if (state.notes.length > state.pagination.limit) {
+            state.notes.pop();
+          }
+        }
         state.pagination.total += 1;
         state.pagination.pages = Math.ceil(
           state.pagination.total / state.pagination.limit
@@ -231,7 +237,12 @@ const notesSlice = createSlice({
         for (const jid of Object.keys(state.jobNotes)) {
           const cached = state.jobNotes[jid];
           if (cached) {
+            const before = cached.notes.length;
             cached.notes = cached.notes.filter((n) => n._id !== noteId);
+            if (cached.notes.length < before && cached.pagination) {
+              cached.pagination.total = Math.max(0, cached.pagination.total - 1);
+              cached.pagination.pages = Math.ceil(cached.pagination.total / cached.pagination.limit);
+            }
           }
         }
         if (state.pagination.total > 0) {
@@ -276,7 +287,10 @@ const notesSlice = createSlice({
       .addCase(getNoteStats.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
-      });
+      })
+
+      // Reset on logout
+      .addCase(logout, () => initialState);
   },
 });
 

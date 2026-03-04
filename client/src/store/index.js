@@ -4,6 +4,7 @@ import dashboardReducer from './slices/dashboardSlice';
 import jobsReducer from './slices/jobsSlice';
 import notesReducer from './slices/notesSlice';
 import searchesReducer from './slices/searchesSlice';
+import { setupInterceptors } from '../utils/api';
 
 export const store = configureStore({
   reducer: {
@@ -14,3 +15,6 @@ export const store = configureStore({
     searches: searchesReducer,
   },
 });
+
+// Connect axios 401 interceptor to Redux store for automatic logout
+setupInterceptors(store);

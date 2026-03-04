@@ -93,12 +93,14 @@ router.get('/job/:jobId', authenticateToken, async (req, res) => {
       jobId,
     };
 
-    const notes = await Note.find(queryFilter)
-      .sort({ createdAt: -1 })
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum);
-
-    const total = await Note.countDocuments(queryFilter);
+    const [notes, total] = await Promise.all([
+      Note.find(queryFilter)
+        .sort({ createdAt: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
+      Note.countDocuments(queryFilter),
+    ]);
 
     res.json({
       notes,
@@ -235,22 +237,29 @@ router.get(
       if (type) queryFilter.type = type;
       if (priority) queryFilter.priority = priority;
 
-      const notes = await Note.find(queryFilter)
-        .sort({ createdAt: -1 })
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum);
-
-      const total = await Note.countDocuments(queryFilter);
+      const [notes, total] = await Promise.all([
+        Note.find(queryFilter)
+          .sort({ createdAt: -1 })
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .lean(),
+        Note.countDocuments(queryFilter),
+      ]);
 
       // Enrich notes with job info from MongoDB
       const jobIds = [...new Set(notes.map((n) => n.jobId).filter(Boolean))];
       const jobs = jobIds.length
         ? await Job.find({ jobId: { $in: jobIds } }).select('jobId source businessTitle jobCategory workLocation').lean()
         : [];
-      const jobMap = Object.fromEntries(jobs.map((j) => [j.jobId, j]));
+      // Use compound key to avoid collisions when different sources share a jobId
+      const jobMap = Object.fromEntries(jobs.map((j) => [`${j.source}:${j.jobId}`, j]));
+      // Also index by jobId alone as fallback (notes don't store source)
+      for (const j of jobs) {
+        if (!jobMap[j.jobId]) jobMap[j.jobId] = j;
+      }
 
       const notesWithJobInfo = notes.map((note) => {
-        const noteObj = note.toObject();
+        const noteObj = { ...note };
         if (noteObj.jobId) {
           noteObj.job = jobMap[noteObj.jobId] || {
             jobId: noteObj.jobId,

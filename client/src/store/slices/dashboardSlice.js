@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../utils/api';
+import { logout } from './authSlice';
 
 export const getDashboard = createAsyncThunk(
   'dashboard/getDashboard',
@@ -49,7 +50,10 @@ const dashboardSlice = createSlice({
       .addCase(getDashboard.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
-      });
+      })
+
+      // Reset on logout
+      .addCase(logout, () => initialState);
   },
 });
 

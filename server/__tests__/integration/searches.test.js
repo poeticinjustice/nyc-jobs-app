@@ -138,7 +138,7 @@ describe('DELETE /api/searches/:id', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 403 when deleting another user search', async () => {
+  it('returns 404 when deleting another user search', async () => {
     const { user: otherUser } = await createTestUser();
     const { token } = await createTestUser();
     const search = await createTestSearch(otherUser._id, { name: 'Not Yours' });
@@ -147,7 +147,8 @@ describe('DELETE /api/searches/:id', () => {
       .delete(`/api/searches/${search._id}`)
       .set('Authorization', authHeader(token));
 
-    expect(res.status).toBe(403);
+    // Atomic delete returns 404 (not 403) to avoid revealing resource existence
+    expect(res.status).toBe(404);
   });
 
   it('returns 401 without token', async () => {

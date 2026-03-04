@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../utils/api';
+import { logout } from './authSlice';
 
 export const getSavedSearches = createAsyncThunk(
   'searches/getSavedSearches',
@@ -82,7 +83,10 @@ const searchesSlice = createSlice({
       })
       .addCase(deleteSavedSearch.rejected, (state, action) => {
         state.error = action.payload;
-      });
+      })
+
+      // Reset on logout
+      .addCase(logout, () => initialState);
   },
 });
 

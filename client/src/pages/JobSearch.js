@@ -214,6 +214,7 @@ const JobSearch = () => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('page', newPage.toString());
     setSearchParams(newParams);
+    window.scrollTo(0, 0);
   };
 
   const handleResultsPerPageChange = (newLimit) => {
@@ -318,11 +319,22 @@ const JobSearch = () => {
               key={opt.value}
               type='button'
               onClick={() => {
-                setLocalSearchParams((prev) => ({ ...prev, source: opt.value }));
+                const prevSource = localSearchParams.source;
+                const updates = { source: opt.value };
+                // Clear NYC-specific dropdown values when switching away from NYC
+                if (prevSource === 'nyc' && opt.value !== 'nyc') {
+                  updates.category = '';
+                  updates.agency = '';
+                }
+                setLocalSearchParams((prev) => ({ ...prev, ...updates }));
                 if (hasActiveSearch || searchResults.length > 0) {
                   const newParams = new URLSearchParams(searchParams);
                   newParams.set('source', opt.value);
                   newParams.set('page', '1');
+                  if (prevSource === 'nyc' && opt.value !== 'nyc') {
+                    newParams.delete('category');
+                    newParams.delete('agency');
+                  }
                   setSearchParams(newParams);
                 }
               }}
@@ -384,7 +396,11 @@ const JobSearch = () => {
                       source: localSearchParams.source,
                     });
                     setResultsPerPage(20);
-                    setSearchParams(new URLSearchParams());
+                    const clearedParams = new URLSearchParams();
+                    if (localSearchParams.source !== 'nyc') {
+                      clearedParams.set('source', localSearchParams.source);
+                    }
+                    setSearchParams(clearedParams);
                     setCurrentPage(1);
                   }}
                   className='p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors'

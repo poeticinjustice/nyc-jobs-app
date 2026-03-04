@@ -43,6 +43,8 @@ const Register = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (validationError) setValidationError('');
+    if (error) dispatch(clearError());
     setFormData((prev) => ({
       ...prev,
       [name]: value,

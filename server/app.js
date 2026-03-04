@@ -36,7 +36,7 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === 'production'
-        ? (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim())
+        ? (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean)
         : ['http://localhost:3000'],
     credentials: true,
   })

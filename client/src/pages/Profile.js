@@ -68,6 +68,8 @@ const Profile = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (validationError) setValidationError('');
+    if (error) dispatch(clearError());
     if (activeTab === 'profile') {
       setProfileForm((prev) => ({
         ...prev,

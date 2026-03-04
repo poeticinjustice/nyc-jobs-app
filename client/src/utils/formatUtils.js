@@ -3,9 +3,11 @@
 export const formatSalary = (from, to, frequency) => {
   const numFrom = Number(from);
   const numTo = Number(to);
-  if (!isNaN(numFrom) && from != null && from !== '' && !isNaN(numTo) && to != null && to !== '') {
+  const hasFrom = !isNaN(numFrom) && from != null && from !== '' && numFrom > 0;
+  const hasTo = !isNaN(numTo) && to != null && to !== '' && numTo > 0;
+  if (hasFrom && hasTo) {
     return `$${numFrom.toLocaleString()} - $${numTo.toLocaleString()} ${frequency || ''}`.trim();
-  } else if (!isNaN(numFrom) && from != null && from !== '') {
+  } else if (hasFrom) {
     return `$${numFrom.toLocaleString()} ${frequency || ''}`.trim();
   }
   return 'Salary not specified';

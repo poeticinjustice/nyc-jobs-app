@@ -77,12 +77,9 @@ const fetchAdzunaJobs = async ({ q, location, category, salary_min, salary_max, 
       }
     }
 
-    // Adzuna doesn't support reverse sort — handle client-side for asc variants
-    if (sort === 'date_asc') {
-      jobs.reverse();
-    } else if (sort === 'salary_asc') {
-      jobs.reverse();
-    }
+    // Note: Adzuna only supports descending for date/salary sorts.
+    // Reversing within a page would give a misleading sawtooth pattern across pages,
+    // so we let Adzuna's native sort order stand for asc variants.
 
     const result = { jobs, total: totalCount };
 

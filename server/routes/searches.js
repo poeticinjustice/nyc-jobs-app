@@ -75,16 +75,10 @@ router.post(
 // @access  Private
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const search = await SavedSearch.findById(req.params.id);
-    if (!search) {
+    const result = await SavedSearch.findOneAndDelete({ _id: req.params.id, user: req.user._id });
+    if (!result) {
       return res.status(404).json({ message: 'Saved search not found' });
     }
-
-    if (search.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
-    await SavedSearch.findByIdAndDelete(req.params.id);
     res.json({ message: 'Search deleted' });
   } catch (error) {
     console.error('Delete search error:', error);

@@ -61,6 +61,7 @@ const SavedJobs = () => {
       newParams.set('page', newPage.toString());
       return newParams;
     });
+    window.scrollTo(0, 0);
   };
 
   const handleUnsaveJob = (job) => {
@@ -111,22 +112,6 @@ const SavedJobs = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className='flex justify-center py-8'>
-        <LoadingSpinner size='lg' />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
-        <p className='text-red-800'>{error}</p>
-      </div>
-    );
-  }
-
   return (
     <div className='space-y-6'>
       {/* Header */}
@@ -175,8 +160,18 @@ const SavedJobs = () => {
         </div>
       </div>
 
+      {error && (
+        <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
+          <p className='text-red-800'>{error}</p>
+        </div>
+      )}
+
       {/* Saved Jobs List */}
-      {savedJobs.length > 0 ? (
+      {loading ? (
+        <div className='flex justify-center py-8'>
+          <LoadingSpinner size='lg' />
+        </div>
+      ) : savedJobs.length > 0 ? (
         <div className='space-y-4'>
           {savedJobs.map((job, index) => (
             <div

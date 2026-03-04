@@ -11,12 +11,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401 responses, clear the token and let Redux auth state handle redirects
+// On 401 responses, clear token and reset Redux auth state
+let storeRef = null;
+export const setupInterceptors = (store) => {
+  storeRef = store;
+};
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
+      if (storeRef) {
+        storeRef.dispatch({ type: 'auth/logout' });
+      }
     }
     return Promise.reject(error);
   }

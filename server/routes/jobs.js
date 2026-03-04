@@ -55,7 +55,7 @@ setInterval(() => {
 
 const generateSearchCacheKey = (params) => {
   const { q, category, location, agency, salary_min, salary_max, sort } = params;
-  return JSON.stringify([q || '', category || '', location || '', agency || '', salary_min || '', salary_max || '', sort || '']);
+  return JSON.stringify([q || '', category || '', location || '', agency || '', salary_min ?? '', salary_max ?? '', sort || '']);
 };
 
 // Fetch all jobs from NYC API with caching and retry
@@ -177,7 +177,7 @@ const fetchUsaJobs = async ({ q, category, location, agency, salary_min, salary_
   const sortConfig = USA_SORT_MAP[sort] || USA_SORT_MAP.date_desc;
   params.append('SortField', sortConfig.SortField);
   params.append('SortDirection', sortConfig.SortDirection);
-  params.append('ResultsPerPage', String(Math.min(parseInt(limit), 250)));
+  params.append('ResultsPerPage', String(Math.min(parseInt(limit) || 20, 250)));
   params.append('Page', String(page));
   params.append('Fields', 'Full');
 
@@ -586,7 +586,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     }
 
     // Try federal source
-    if (!jobData && (jobSource === 'federal' || !source)) {
+    if (!jobData && jobSource === 'federal') {
       const savedJob = await Job.findOne({ jobId: id, source: 'federal' }).lean();
       if (savedJob) {
         jobData = { ...savedJob, source: 'federal' };
@@ -600,7 +600,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     }
 
     // Try Adzuna source — check DB first, then in-memory search cache
-    if (!jobData && (jobSource === 'adzuna' || !source)) {
+    if (!jobData && jobSource === 'adzuna') {
       const savedJob = await Job.findOne({ jobId: id, source: 'adzuna' }).lean();
       if (savedJob) {
         jobData = { ...savedJob, source: 'adzuna' };
@@ -716,7 +716,9 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
     });
     await job.save();
 
-    res.json({ message: 'Job saved successfully', job });
+    const entry = getUserSaveEntry(job, req.user._id);
+    const { savedBy: _sb, __v: _v, ...safeJob } = job.toObject();
+    res.json({ message: 'Job saved successfully', jobId: id, source, ...entry, job: safeJob });
   } catch (error) {
     console.error('Error saving job:', error);
     res.status(500).json({ message: 'Failed to save job' });

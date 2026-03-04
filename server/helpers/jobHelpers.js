@@ -176,9 +176,9 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
 // Get salary midpoint for sorting (returns null when missing)
 const getSalaryValue = (job) => {
   const from = parseInt(job.salary_range_from);
+  if (isNaN(from)) return null;
   const to = parseInt(job.salary_range_to);
-  if (isNaN(from) || isNaN(to)) return null;
-  return Math.round((from + to) / 2);
+  return Math.round((from + (isNaN(to) ? from : to)) / 2);
 };
 
 // Sort jobs by the given sort parameter
