@@ -275,7 +275,7 @@ describe('deduplicateJobs', () => {
     expect(result[1].title).toBe('Second');
   });
 
-  it('filters out jobs without job_id', () => {
+  it('keeps jobs without job_id (does not filter them out)', () => {
     const jobs = [
       { job_id: '1', title: 'Has ID' },
       { title: 'No ID' },
@@ -284,8 +284,7 @@ describe('deduplicateJobs', () => {
       { job_id: '', title: 'Empty ID' },
     ];
     const result = deduplicateJobs(jobs);
-    expect(result).toHaveLength(1);
-    expect(result[0].title).toBe('Has ID');
+    expect(result).toHaveLength(5);
   });
 
   it('returns empty array for empty input', () => {

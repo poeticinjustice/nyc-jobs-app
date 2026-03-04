@@ -19,6 +19,7 @@ import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate } from '../utils/formatUtils';
+import { stripHtml } from '../utils/textUtils';
 import api from '../utils/api';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
@@ -37,6 +38,14 @@ const SavedJobs = () => {
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
   const pageSize = 20;
+
+  // Sync status filter from URL on mount (e.g. /saved?status=applied from Home)
+  useEffect(() => {
+    const urlStatus = searchParams.get('status') || '';
+    if (urlStatus !== statusFilter) {
+      dispatch(setStatusFilter(urlStatus));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -220,7 +229,7 @@ const SavedJobs = () => {
 
                   {job.jobDescription && (
                     <p className='mt-3 text-gray-700 line-clamp-2'>
-                      {job.jobDescription.substring(0, 200)}...
+                      {stripHtml(job.jobDescription).substring(0, 200)}...
                     </p>
                   )}
                 </div>

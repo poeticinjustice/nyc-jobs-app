@@ -1,5 +1,15 @@
 import React from 'react';
 
+// Strip HTML tags and collapse whitespace into a plain-text preview
+export const stripHtml = (html) => {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 // Safely render HTML content by converting <br><br> to paragraphs
 export const renderHtmlContent = (htmlString) => {
   if (!htmlString) return null;

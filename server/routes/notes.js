@@ -85,7 +85,7 @@ router.get('/job/:jobId', authenticateToken, async (req, res) => {
   try {
     const { jobId } = req.params;
     const pageNum = parseInt(req.query.page) || 1;
-    const limitNum = parseInt(req.query.limit) || 20;
+    const limitNum = Math.min(parseInt(req.query.limit) || 20, 100);
 
     const queryFilter = {
       user: req.user._id,
@@ -169,7 +169,7 @@ router.post(
             // Adzuna has no single-job fetch endpoint — skip auto-fetch
             try {
               const response = await axios.get(
-                `${process.env.NYC_JOBS_API_URL}?job_id=${jobId}`,
+                `${process.env.NYC_JOBS_API_URL}?job_id=${encodeURIComponent(jobId)}`,
                 { timeout: 10000 }
               );
 
@@ -227,7 +227,7 @@ router.get(
 
       const { jobId, type, priority } = req.query;
       const pageNum = parseInt(req.query.page) || 1;
-      const limitNum = parseInt(req.query.limit) || 20;
+      const limitNum = Math.min(parseInt(req.query.limit) || 20, 100);
 
       const queryFilter = { user: req.user._id, status: 'active' };
 

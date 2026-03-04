@@ -11,7 +11,6 @@ export const searchJobs = createAsyncThunk(
       });
       return response.data;
     } catch (error) {
-      console.error('Error in searchJobs thunk:', error);
       return rejectWithValue(
         error.response?.data?.message || 'Failed to search jobs'
       );
@@ -56,7 +55,7 @@ export const unsaveJob = createAsyncThunk(
     try {
       const params = source ? { source } : {};
       const response = await api.delete(`/api/jobs/${jobId}/save`, { params });
-      return { jobId, message: response.data.message };
+      return { jobId, source, message: response.data.message };
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to unsave job'
@@ -164,18 +163,6 @@ const jobsSlice = createSlice({
     setStatusFilter: (state, action) => {
       state.statusFilter = action.payload;
     },
-    updateJobSavedStatus: (state, action) => {
-      const { jobId, isSaved } = action.payload;
-
-      const searchJob = state.searchResults.find((job) => job.jobId === jobId);
-      if (searchJob) {
-        searchJob.isSaved = isSaved;
-      }
-
-      if (state.currentJob && state.currentJob.jobId === jobId) {
-        state.currentJob.isSaved = isSaved;
-      }
-    },
   },
   extraReducers: (builder) => {
     builder
@@ -243,18 +230,18 @@ const jobsSlice = createSlice({
       .addCase(unsaveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
         state.error = null;
-        const { jobId } = action.payload;
+        const { jobId, source } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId) {
           state.currentJob.isSaved = false;
         }
         const searchJob = state.searchResults.find(
-          (job) => job.jobId === jobId
+          (job) => job.jobId === jobId && (!source || job.source === source)
         );
         if (searchJob) {
           searchJob.isSaved = false;
         }
         state.savedJobs = state.savedJobs.filter(
-          (job) => job.jobId !== jobId
+          (job) => !(job.jobId === jobId && (!source || job.source === source))
         );
         if (state.savedPagination.total > 0) {
           state.savedPagination.total -= 1;
@@ -313,10 +300,16 @@ const jobsSlice = createSlice({
       .addCase(getJobCategories.fulfilled, (state, action) => {
         state.categories = action.payload.categories;
       })
+      .addCase(getJobCategories.rejected, (state, action) => {
+        state.error = action.payload;
+      })
 
       // Get Job Agencies
       .addCase(getJobAgencies.fulfilled, (state, action) => {
         state.agencies = action.payload.agencies;
+      })
+      .addCase(getJobAgencies.rejected, (state, action) => {
+        state.error = action.payload;
       });
   },
 });
@@ -326,7 +319,6 @@ export const {
   clearCurrentJob,
   clearError,
   setStatusFilter,
-  updateJobSavedStatus,
 } = jobsSlice.actions;
 
 export default jobsSlice.reducer;

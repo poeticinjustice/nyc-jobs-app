@@ -25,6 +25,7 @@ const Home = () => {
     recentSavedJobs,
     recentNotes,
     loading,
+    error: dashboardError,
   } = useSelector((state) => state.dashboard);
 
   useEffect(() => {
@@ -47,6 +48,12 @@ const Home = () => {
           </p>
         </div>
 
+        {dashboardError && (
+          <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
+            <p className='text-red-800'>{dashboardError}</p>
+          </div>
+        )}
+
         {loading && !statusCounts ? (
           <div className='flex justify-center py-8'>
             <LoadingSpinner size='lg' />
@@ -63,9 +70,9 @@ const Home = () => {
                   <div className='bg-blue-500 rounded-lg p-3 mr-4'>
                     <HiSearch className='h-6 w-6 text-white' />
                   </div>
-                  <div>
+                  <div className='min-w-0'>
                     <p className='text-sm text-gray-500'>Search Jobs</p>
-                    <p className='text-lg font-semibold text-gray-900'>
+                    <p className='text-lg font-semibold text-gray-900 truncate'>
                       Find new opportunities
                     </p>
                   </div>

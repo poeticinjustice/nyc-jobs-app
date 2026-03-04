@@ -36,13 +36,15 @@ export const getProfile = createAsyncThunk(
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        throw new Error('No token found');
+        return rejectWithValue('No token found');
       }
 
       const response = await api.get('/api/auth/me');
       return response.data;
     } catch (error) {
-      localStorage.removeItem('token');
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+      }
       return rejectWithValue(
         error.response?.data?.message || 'Failed to get profile'
       );
@@ -83,6 +85,8 @@ const initialState = {
   token: localStorage.getItem('token'),
   isAuthenticated: false,
   loading: false,
+  profileUpdateLoading: false,
+  passwordChangeLoading: false,
   error: null,
 };
 
@@ -99,10 +103,6 @@ const authSlice = createSlice({
     },
     clearError: (state) => {
       state.error = null;
-    },
-    setToken: (state, action) => {
-      state.token = action.payload;
-      state.isAuthenticated = !!action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -162,34 +162,34 @@ const authSlice = createSlice({
 
       // Update Profile
       .addCase(updateProfile.pending, (state) => {
-        state.loading = true;
+        state.profileUpdateLoading = true;
         state.error = null;
       })
       .addCase(updateProfile.fulfilled, (state, action) => {
-        state.loading = false;
+        state.profileUpdateLoading = false;
         state.user = action.payload.user;
         state.error = null;
       })
       .addCase(updateProfile.rejected, (state, action) => {
-        state.loading = false;
+        state.profileUpdateLoading = false;
         state.error = action.payload;
       })
 
       // Change Password
       .addCase(changePassword.pending, (state) => {
-        state.loading = true;
+        state.passwordChangeLoading = true;
         state.error = null;
       })
       .addCase(changePassword.fulfilled, (state) => {
-        state.loading = false;
+        state.passwordChangeLoading = false;
         state.error = null;
       })
       .addCase(changePassword.rejected, (state, action) => {
-        state.loading = false;
+        state.passwordChangeLoading = false;
         state.error = action.payload;
       });
   },
 });
 
-export const { logout, clearError, setToken } = authSlice.actions;
+export const { logout, clearError } = authSlice.actions;
 export default authSlice.reducer;

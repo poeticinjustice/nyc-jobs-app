@@ -59,6 +59,7 @@ const generateSearchCacheKey = (params) => {
 };
 
 // Fetch all jobs from NYC API with caching and retry
+let fetchPromise = null;
 const fetchAllJobs = async () => {
   const now = Date.now();
 
@@ -66,6 +67,14 @@ const fetchAllJobs = async () => {
     return jobsCache;
   }
 
+  // Prevent concurrent fetches from hammering the API
+  if (fetchPromise) return fetchPromise;
+  fetchPromise = _fetchAllJobsImpl();
+  try { return await fetchPromise; } finally { fetchPromise = null; }
+};
+
+const _fetchAllJobsImpl = async () => {
+  const now = Date.now();
   let allJobs = [];
   let offset = 0;
   const batchSize = 1000;
@@ -131,7 +140,7 @@ const fetchAllJobs = async () => {
   agenciesCache = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
 
   return allJobs;
-};
+}; // end _fetchAllJobsImpl
 
 // Map our sort params to USAJobs SortField/SortDirection
 const USA_SORT_MAP = {
@@ -277,7 +286,7 @@ router.get('/nyc-api-health', async (req, res) => {
       sampleData: response.data.length > 0 ? 'Available' : 'No data',
     });
   } catch (error) {
-    res.json({
+    res.status(503).json({
       status: 'error',
       nycApiWorking: false,
       error: error.message,
@@ -337,8 +346,8 @@ router.get(
         source = 'nyc',
       } = req.query;
 
-      const pageNum = parseInt(page);
-      const limitNum = parseInt(limit);
+      const pageNum = parseInt(page) || 1;
+      const limitNum = Math.min(parseInt(limit) || 20, 100);
 
       let jobs = [];
       let total = 0;
@@ -470,8 +479,8 @@ router.get('/agencies', async (req, res) => {
 router.get('/saved', authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = parseInt(page) || 1;
+    const limitNum = Math.min(parseInt(limit) || 20, 100);
 
     const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
@@ -651,9 +660,16 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
           'jobDescription', 'toApply', 'externalUrl', 'postDate',
           'fullTimePartTimeIndicator', 'divisionWorkUnit',
         ];
+        const numericFields = new Set(['salaryRangeFrom', 'salaryRangeTo']);
         const sanitized = {};
         for (const field of allowedFields) {
-          if (jobData[field] !== undefined) sanitized[field] = jobData[field];
+          if (jobData[field] === undefined) continue;
+          if (numericFields.has(field)) {
+            const num = Number(jobData[field]);
+            if (!isNaN(num)) sanitized[field] = num;
+          } else {
+            sanitized[field] = String(jobData[field]);
+          }
         }
         job = new Job({ ...sanitized, jobId: id, source: 'adzuna' });
       } else if (source === 'federal') {
@@ -664,7 +680,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
         job = new Job({ ...federalJob, source: 'federal' });
       } else {
         try {
-          const response = await axios.get(`${process.env.NYC_JOBS_API_URL}?job_id=${id}`, {
+          const response = await axios.get(`${process.env.NYC_JOBS_API_URL}?job_id=${encodeURIComponent(id)}`, {
             timeout: 10000,
           });
 
@@ -707,7 +723,8 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 router.delete('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { source = 'nyc' } = req.query;
+    const validSources = ['nyc', 'federal', 'adzuna'];
+    const source = validSources.includes(req.query.source) ? req.query.source : 'nyc';
 
     const job = await Job.findOne({ jobId: id, source });
     if (!job) {

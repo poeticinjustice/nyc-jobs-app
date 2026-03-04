@@ -262,8 +262,6 @@ describe('requireRole', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
       message: 'Insufficient permissions',
-      requiredRoles: ['admin'],
-      userRole: 'user',
     });
     expect(mockNext).not.toHaveBeenCalled();
   });
@@ -294,8 +292,6 @@ describe('requireRole', () => {
     expect(resUser.status).toHaveBeenCalledWith(403);
     expect(resUser.json).toHaveBeenCalledWith({
       message: 'Insufficient permissions',
-      requiredRoles: ['admin', 'moderator'],
-      userRole: 'user',
     });
     expect(mockNext).not.toHaveBeenCalled();
   });

@@ -102,11 +102,10 @@ const cleanJobFields = (job) => {
 const deduplicateJobs = (jobs) => {
   const seen = new Set();
   return jobs.filter((job) => {
-    if (job.job_id && !seen.has(job.job_id)) {
-      seen.add(job.job_id);
-      return true;
-    }
-    return false;
+    if (!job.job_id) return true;
+    if (seen.has(job.job_id)) return false;
+    seen.add(job.job_id);
+    return true;
   });
 };
 
@@ -178,7 +177,7 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
 const getSalaryValue = (job) => {
   const from = parseInt(job.salary_range_from);
   const to = parseInt(job.salary_range_to);
-  if (!from || !to || isNaN(from) || isNaN(to)) return null;
+  if (isNaN(from) || isNaN(to)) return null;
   return Math.round((from + to) / 2);
 };
 

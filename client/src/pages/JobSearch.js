@@ -26,6 +26,7 @@ import SourceBadge from '../components/UI/SourceBadge';
 import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate } from '../utils/formatUtils';
+import { stripHtml } from '../utils/textUtils';
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Most Recent First' },
@@ -906,7 +907,7 @@ const JobSearch = () => {
                       </div>
                       {job.jobDescription && (
                         <p className='mt-3 text-gray-700 line-clamp-2'>
-                          {job.jobDescription.substring(0, 200)}
+                          {stripHtml(job.jobDescription).substring(0, 200)}
                           ...
                         </p>
                       )}

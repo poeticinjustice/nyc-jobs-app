@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { getJobDetails, saveJob, unsaveJob, updateJobStatus } from '../store/slices/jobsSlice';
+import { getJobDetails, saveJob, unsaveJob, updateJobStatus, clearCurrentJob } from '../store/slices/jobsSlice';
 import {
   HiBookmark,
   HiBookmarkAlt,
@@ -29,6 +29,7 @@ const JobDetails = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    dispatch(clearCurrentJob());
     if (jobId) {
       dispatch(getJobDetails({ jobId, source }));
     }
@@ -37,10 +38,12 @@ const JobDetails = () => {
   const effectiveSource = currentJob?.source || source;
 
   const handleStatusChange = (newStatus) => {
+    if (!currentJob) return;
     dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus, source: effectiveSource }));
   };
 
   const handleSaveJob = async () => {
+    if (!currentJob) return;
     if (!isAuthenticated) {
       navigate('/login');
       return;

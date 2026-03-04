@@ -38,6 +38,7 @@ const dashboardSlice = createSlice({
       })
       .addCase(getDashboard.fulfilled, (state, action) => {
         state.loading = false;
+        state.error = null;
         state.statusCounts = action.payload.statusCounts;
         state.totalSavedJobs = action.payload.totalSavedJobs;
         state.totalNotes = action.payload.totalNotes;

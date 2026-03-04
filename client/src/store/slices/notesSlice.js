@@ -128,7 +128,8 @@ const notesSlice = createSlice({
   initialState,
   reducers: {
     setFilters: (state, action) => {
-      state.filters = { ...state.filters, ...action.payload, page: 1 };
+      state.filters = { ...state.filters, ...action.payload };
+      state.pagination.page = 1;
     },
     clearNotes: (state) => {
       state.notes = [];
