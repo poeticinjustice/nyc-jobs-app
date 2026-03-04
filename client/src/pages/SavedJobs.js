@@ -18,7 +18,7 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
-import { formatSalary, formatDate } from '../utils/formatUtils';
+import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
 import { downloadFile } from '../utils/downloadFile';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
@@ -190,6 +190,20 @@ const SavedJobs = () => {
                     >
                       {job.applicationStatus || 'interested'}
                     </span>
+                    {(() => {
+                      const deadline = getDeadlineInfo(job.postUntil);
+                      if (!deadline) return null;
+                      const colors = deadline.urgency === 'closed'
+                        ? 'bg-gray-100 text-gray-700'
+                        : deadline.urgency === 'urgent'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-yellow-100 text-yellow-700';
+                      return (
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors}`}>
+                          {deadline.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <p className='text-gray-600 mb-3'>
                     {job.civilServiceTitle}

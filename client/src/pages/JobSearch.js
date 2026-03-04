@@ -22,8 +22,9 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
-import { formatSalary, formatDate } from '../utils/formatUtils';
+import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
+import { SEARCH_NAME_MAX } from '../utils/validation';
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Most Recent First' },
@@ -602,9 +603,13 @@ const JobSearch = () => {
                     value={saveSearchName}
                     onChange={(e) => setSaveSearchName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveSearch()}
-                    className='input w-full mb-4'
+                    maxLength={SEARCH_NAME_MAX}
+                    className='input w-full'
                     autoFocus
                   />
+                  <span className='text-xs text-gray-400 block text-right mt-1 mb-3'>
+                    {saveSearchName.length}/{SEARCH_NAME_MAX}
+                  </span>
                   <div className='flex justify-end space-x-2'>
                     <button
                       onClick={() => {
@@ -640,6 +645,20 @@ const JobSearch = () => {
                           {job.businessTitle}
                         </h3>
                         <SourceBadge source={job.source} />
+                        {(() => {
+                          const deadline = getDeadlineInfo(job.postUntil);
+                          if (!deadline) return null;
+                          const colors = deadline.urgency === 'closed'
+                            ? 'bg-gray-100 text-gray-700'
+                            : deadline.urgency === 'urgent'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-yellow-100 text-yellow-700';
+                          return (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors}`}>
+                              {deadline.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>

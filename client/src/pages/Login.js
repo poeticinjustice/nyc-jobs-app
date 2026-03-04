@@ -4,6 +4,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { login, clearError } from '../store/slices/authSlice';
 import { HiMail, HiLockClosed, HiEye, HiEyeOff } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import { validateEmail } from '../utils/validation';
 
 const Login = () => {
   const dispatch = useDispatch();
@@ -16,6 +17,7 @@ const Login = () => {
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const from = location.state?.from?.pathname || '/';
 
@@ -25,6 +27,12 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const emailError = validateEmail(formData.email);
+    if (emailError) {
+      setFieldErrors({ email: emailError });
+      return;
+    }
+    setFieldErrors({});
     const result = await dispatch(login(formData));
     if (login.fulfilled.match(result)) {
       navigate(from, { replace: true });
@@ -33,6 +41,7 @@ const Login = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
     if (error) dispatch(clearError());
     setFormData((prev) => ({
       ...prev,
@@ -88,10 +97,13 @@ const Login = () => {
                   required
                   value={formData.email}
                   onChange={handleInputChange}
-                  className='appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500'
+                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${fieldErrors.email ? 'border-red-300' : 'border-gray-300'}`}
                   placeholder='Enter your email'
                 />
               </div>
+              {fieldErrors.email && (
+                <p className='mt-1 text-sm text-red-600'>{fieldErrors.email}</p>
+              )}
             </div>
 
             <div>

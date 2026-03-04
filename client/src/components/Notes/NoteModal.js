@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { createNote, updateNote, clearError } from '../../store/slices/notesSlice';
 import { HiX, HiSave, HiPencil } from 'react-icons/hi';
+import { NOTE_TITLE_MAX, NOTE_CONTENT_MAX } from '../../utils/validation';
 
 const INITIAL_FORM_DATA = {
   title: '',
@@ -222,9 +223,13 @@ const NoteModal = ({
                 value={formData.title}
                 onChange={handleChange}
                 required
+                maxLength={NOTE_TITLE_MAX}
                 className='input w-full'
                 placeholder='Note title'
               />
+              <span className={`text-xs mt-1 block text-right ${formData.title.length > NOTE_TITLE_MAX * 0.9 ? 'text-red-500' : 'text-gray-400'}`}>
+                {formData.title.length}/{NOTE_TITLE_MAX}
+              </span>
             </div>
 
             <div>
@@ -237,10 +242,14 @@ const NoteModal = ({
                 value={formData.content}
                 onChange={handleChange}
                 required
+                maxLength={NOTE_CONTENT_MAX}
                 rows={6}
                 className='input w-full'
                 placeholder='Write your note here...'
               />
+              <span className={`text-xs mt-1 block text-right ${formData.content.length > NOTE_CONTENT_MAX * 0.9 ? 'text-red-500' : 'text-gray-400'}`}>
+                {formData.content.length}/{NOTE_CONTENT_MAX}
+              </span>
             </div>
 
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>

@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { register, clearError } from '../store/slices/authSlice';
 import { HiMail, HiLockClosed, HiUser, HiEye, HiEyeOff } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import { validateEmail, validateName, validatePassword, validatePasswordMatch, NAME_MAX } from '../utils/validation';
 
 const Register = () => {
   const dispatch = useDispatch();
@@ -19,7 +20,7 @@ const Register = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [validationError, setValidationError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     dispatch(clearError());
@@ -28,11 +29,23 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (formData.password !== formData.confirmPassword) {
-      setValidationError('Passwords do not match');
+    const errors = {};
+    const fnErr = validateName(formData.firstName, 'First name');
+    if (fnErr) errors.firstName = fnErr;
+    const lnErr = validateName(formData.lastName, 'Last name');
+    if (lnErr) errors.lastName = lnErr;
+    const emErr = validateEmail(formData.email);
+    if (emErr) errors.email = emErr;
+    const pwErr = validatePassword(formData.password);
+    if (pwErr) errors.password = pwErr;
+    const pmErr = validatePasswordMatch(formData.password, formData.confirmPassword);
+    if (pmErr) errors.confirmPassword = pmErr;
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    setValidationError('');
+    setFieldErrors({});
 
     const { confirmPassword, ...registerData } = formData;
     const result = await dispatch(register(registerData));
@@ -43,7 +56,7 @@ const Register = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    if (validationError) setValidationError('');
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
     if (error) dispatch(clearError());
     setFormData((prev) => ({
       ...prev,
@@ -73,9 +86,9 @@ const Register = () => {
         </div>
 
         <div className='bg-white py-8 px-6 shadow-sm border border-gray-200 rounded-lg'>
-          {(validationError || error) && (
+          {error && (
             <div className='bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
-              <p className='text-red-800'>{validationError || error}</p>
+              <p className='text-red-800'>{error}</p>
             </div>
           )}
 
@@ -98,12 +111,16 @@ const Register = () => {
                     type='text'
                     autoComplete='given-name'
                     required
+                    maxLength={NAME_MAX}
                     value={formData.firstName}
                     onChange={handleInputChange}
-                    className='appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500'
+                    className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${fieldErrors.firstName ? 'border-red-300' : 'border-gray-300'}`}
                     placeholder='Enter your first name'
                   />
                 </div>
+                {fieldErrors.firstName && (
+                  <p className='mt-1 text-sm text-red-600'>{fieldErrors.firstName}</p>
+                )}
               </div>
 
               <div>
@@ -123,12 +140,16 @@ const Register = () => {
                     type='text'
                     autoComplete='family-name'
                     required
+                    maxLength={NAME_MAX}
                     value={formData.lastName}
                     onChange={handleInputChange}
-                    className='appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500'
+                    className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${fieldErrors.lastName ? 'border-red-300' : 'border-gray-300'}`}
                     placeholder='Enter your last name'
                   />
                 </div>
+                {fieldErrors.lastName && (
+                  <p className='mt-1 text-sm text-red-600'>{fieldErrors.lastName}</p>
+                )}
               </div>
             </div>
 
@@ -151,10 +172,13 @@ const Register = () => {
                   required
                   value={formData.email}
                   onChange={handleInputChange}
-                  className='appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500'
+                  className={`appearance-none block w-full pl-10 pr-3 py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${fieldErrors.email ? 'border-red-300' : 'border-gray-300'}`}
                   placeholder='Enter your email'
                 />
               </div>
+              {fieldErrors.email && (
+                <p className='mt-1 text-sm text-red-600'>{fieldErrors.email}</p>
+              )}
             </div>
 
             <div>
@@ -177,7 +201,7 @@ const Register = () => {
                   minLength={6}
                   value={formData.password}
                   onChange={handleInputChange}
-                  className='appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500'
+                  className={`appearance-none block w-full pl-10 pr-10 py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${fieldErrors.password ? 'border-red-300' : 'border-gray-300'}`}
                   placeholder='Enter your password'
                 />
                 <button
@@ -192,6 +216,9 @@ const Register = () => {
                   )}
                 </button>
               </div>
+              {fieldErrors.password && (
+                <p className='mt-1 text-sm text-red-600'>{fieldErrors.password}</p>
+              )}
             </div>
 
             <div>
@@ -214,7 +241,7 @@ const Register = () => {
                   minLength={6}
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
-                  className='appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500'
+                  className={`appearance-none block w-full pl-10 pr-10 py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${fieldErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'}`}
                   placeholder='Confirm your password'
                 />
                 <button
@@ -229,6 +256,9 @@ const Register = () => {
                   )}
                 </button>
               </div>
+              {fieldErrors.confirmPassword && (
+                <p className='mt-1 text-sm text-red-600'>{fieldErrors.confirmPassword}</p>
+              )}
             </div>
 
             <div>

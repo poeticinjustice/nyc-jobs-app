@@ -4,6 +4,7 @@ import { updateProfile, changePassword, clearError } from '../store/slices/authS
 import { HiUser, HiLockClosed } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { formatDate } from '../utils/formatUtils';
+import { validateEmail, validateName, NAME_MAX } from '../utils/validation';
 
 const Profile = () => {
   const dispatch = useDispatch();
@@ -11,6 +12,7 @@ const Profile = () => {
 
   const [activeTab, setActiveTab] = useState('profile');
   const [successMessage, setSuccessMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [validationError, setValidationError] = useState('');
   const [profileForm, setProfileForm] = useState({
     firstName: user?.firstName || '',
@@ -37,6 +39,18 @@ const Profile = () => {
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setSuccessMessage('');
+    const errors = {};
+    const fnErr = validateName(profileForm.firstName, 'First name');
+    if (fnErr) errors.firstName = fnErr;
+    const lnErr = validateName(profileForm.lastName, 'Last name');
+    if (lnErr) errors.lastName = lnErr;
+    const emErr = validateEmail(profileForm.email);
+    if (emErr) errors.email = emErr;
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
     try {
       await dispatch(updateProfile(profileForm)).unwrap();
       setSuccessMessage('Profile updated successfully.');
@@ -48,6 +62,7 @@ const Profile = () => {
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setSuccessMessage('');
+    setFieldErrors({});
     setValidationError('');
     dispatch(clearError());
   };
@@ -81,6 +96,7 @@ const Profile = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     if (successMessage) setSuccessMessage('');
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
     if (validationError) setValidationError('');
     if (error) dispatch(clearError());
     if (activeTab === 'profile') {
@@ -187,9 +203,13 @@ const Profile = () => {
                       name='firstName'
                       value={profileForm.firstName}
                       onChange={handleInputChange}
-                      className='input'
+                      className={`input ${fieldErrors.firstName ? 'border-red-300' : ''}`}
                       required
+                      maxLength={NAME_MAX}
                     />
+                    {fieldErrors.firstName && (
+                      <p className='mt-1 text-sm text-red-600'>{fieldErrors.firstName}</p>
+                    )}
                   </div>
 
                   <div>
@@ -201,9 +221,13 @@ const Profile = () => {
                       name='lastName'
                       value={profileForm.lastName}
                       onChange={handleInputChange}
-                      className='input'
+                      className={`input ${fieldErrors.lastName ? 'border-red-300' : ''}`}
                       required
+                      maxLength={NAME_MAX}
                     />
+                    {fieldErrors.lastName && (
+                      <p className='mt-1 text-sm text-red-600'>{fieldErrors.lastName}</p>
+                    )}
                   </div>
                 </div>
 
@@ -216,9 +240,12 @@ const Profile = () => {
                     name='email'
                     value={profileForm.email}
                     onChange={handleInputChange}
-                    className='input'
+                    className={`input ${fieldErrors.email ? 'border-red-300' : ''}`}
                     required
                   />
+                  {fieldErrors.email && (
+                    <p className='mt-1 text-sm text-red-600'>{fieldErrors.email}</p>
+                  )}
                 </div>
 
                 <div className='flex justify-end'>

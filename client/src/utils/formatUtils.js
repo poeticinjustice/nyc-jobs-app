@@ -21,3 +21,31 @@ export const formatDate = (dateString) => {
   if (isNaN(d)) return 'Date not specified';
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
+
+export const getDeadlineInfo = (postUntil) => {
+  if (!postUntil) return null;
+  const deadline = new Date(postUntil);
+  if (isNaN(deadline)) return null;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const deadlineDay = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  const diffDays = Math.round((deadlineDay - today) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return { label: 'Closed', urgency: 'closed', isClosed: true };
+  }
+  if (diffDays === 0) {
+    return { label: 'Closes today', urgency: 'urgent', isClosed: false };
+  }
+  if (diffDays === 1) {
+    return { label: 'Closes tomorrow', urgency: 'urgent', isClosed: false };
+  }
+  if (diffDays <= 3) {
+    return { label: `Closes in ${diffDays} days`, urgency: 'urgent', isClosed: false };
+  }
+  if (diffDays <= 7) {
+    return { label: `Closes in ${diffDays} days`, urgency: 'warning', isClosed: false };
+  }
+  return null;
+};

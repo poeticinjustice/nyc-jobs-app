@@ -10,12 +10,13 @@ import {
   HiCurrencyDollar,
   HiPlus,
   HiClock,
+  HiShare,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
-import { formatSalary, formatDate } from '../utils/formatUtils';
+import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
 const JobDetails = () => {
@@ -26,7 +27,28 @@ const JobDetails = () => {
   const { currentJob, detailsLoading: loading, detailsError: error } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
+
+  const deadlineInfo = currentJob ? getDeadlineInfo(currentJob.postUntil) : null;
+
+  const handleCopyLink = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   useEffect(() => {
     if (jobId) {
@@ -132,46 +154,99 @@ const JobDetails = () => {
             </div>
           </div>
 
-          {isAuthenticated && (
-            <div className='flex items-center space-x-2'>
-              {currentJob.isSaved && (
-                <select
-                  value={currentJob.applicationStatus || 'interested'}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  className='text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500'
-                >
-                  {APPLICATION_STATUSES.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              )}
+          <div className='flex items-center space-x-2'>
+            <div className='relative'>
               <button
-                onClick={() => setShowNoteModal(true)}
+                onClick={handleCopyLink}
                 className='p-3 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors'
-                title='Add note for this job'
+                title='Copy link to this job'
               >
-                <HiPlus className='h-6 w-6' />
+                <HiShare className='h-6 w-6' />
               </button>
-              <button
-                onClick={handleSaveJob}
-                className={`p-3 rounded-lg border transition-colors ${
-                  currentJob.isSaved
-                    ? 'bg-primary-50 border-primary-200 text-primary-700'
-                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {currentJob.isSaved ? (
-                  <HiBookmarkAlt className='h-6 w-6' />
-                ) : (
-                  <HiBookmark className='h-6 w-6' />
-                )}
-              </button>
+              {copied && (
+                <span className='absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap'>
+                  Copied!
+                </span>
+              )}
             </div>
-          )}
+            {isAuthenticated && (
+              <>
+                {currentJob.isSaved && (
+                  <select
+                    value={currentJob.applicationStatus || 'interested'}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    className='text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500'
+                  >
+                    {APPLICATION_STATUSES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  onClick={() => setShowNoteModal(true)}
+                  className='p-3 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors'
+                  title='Add note for this job'
+                >
+                  <HiPlus className='h-6 w-6' />
+                </button>
+                <button
+                  onClick={handleSaveJob}
+                  className={`p-3 rounded-lg border transition-colors ${
+                    currentJob.isSaved
+                      ? 'bg-primary-50 border-primary-200 text-primary-700'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {currentJob.isSaved ? (
+                    <HiBookmarkAlt className='h-6 w-6' />
+                  ) : (
+                    <HiBookmark className='h-6 w-6' />
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Deadline Banner */}
+      {deadlineInfo && (
+        <div className={`rounded-lg border p-4 flex items-center ${
+          deadlineInfo.urgency === 'closed'
+            ? 'bg-gray-50 border-gray-200'
+            : deadlineInfo.urgency === 'urgent'
+              ? 'bg-red-50 border-red-200'
+              : 'bg-yellow-50 border-yellow-200'
+        }`}>
+          <HiCalendar className={`h-5 w-5 mr-3 flex-shrink-0 ${
+            deadlineInfo.urgency === 'closed'
+              ? 'text-gray-500'
+              : deadlineInfo.urgency === 'urgent'
+                ? 'text-red-500'
+                : 'text-yellow-500'
+          }`} />
+          <div>
+            <p className={`font-medium ${
+              deadlineInfo.urgency === 'closed'
+                ? 'text-gray-700'
+                : deadlineInfo.urgency === 'urgent'
+                  ? 'text-red-700'
+                  : 'text-yellow-700'
+            }`}>
+              {deadlineInfo.isClosed
+                ? 'This posting has closed.'
+                : `Application deadline approaching: ${deadlineInfo.label.toLowerCase()}`}
+            </p>
+            <p className={`text-sm ${
+              deadlineInfo.urgency === 'closed' ? 'text-gray-500' : deadlineInfo.urgency === 'urgent' ? 'text-red-500' : 'text-yellow-500'
+            }`}>
+              Deadline: {formatDate(currentJob.postUntil)}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Job Details */}
       <div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
@@ -337,6 +412,17 @@ const JobDetails = () => {
                 </span>
                 <p className='text-gray-900'>
                   {formatDate(currentJob.postUntil)}
+                  {deadlineInfo && (
+                    <span className={`ml-2 text-sm font-medium ${
+                      deadlineInfo.urgency === 'closed'
+                        ? 'text-gray-500'
+                        : deadlineInfo.urgency === 'urgent'
+                          ? 'text-red-600'
+                          : 'text-yellow-600'
+                    }`}>
+                      ({deadlineInfo.label})
+                    </span>
+                  )}
                 </p>
               </div>
               <div>
