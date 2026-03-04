@@ -358,44 +358,103 @@ const JobSearch = () => {
             </div>
           </div>
 
-          {/* Source Tabs */}
-          <div className='flex gap-2'>
-            {SOURCE_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                type='button'
-                onClick={() => handleSourceChange(tab.value)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  localSearchParams.source === tab.value
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {/* Filter Bar: Source Tabs | Salary | Sort */}
+          <div className='flex flex-wrap items-center gap-3 justify-between'>
+            {/* Left: Source Tabs + Salary */}
+            <div className='flex flex-wrap items-center gap-3'>
+              <div className='flex gap-1'>
+                {SOURCE_TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    type='button'
+                    onClick={() => handleSourceChange(tab.value)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      localSearchParams.source === tab.value
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-          {/* Salary Range */}
-          <div className='flex items-center gap-3'>
-            <span className='text-sm font-medium text-gray-700'>Salary:</span>
-            <input
-              type='number'
-              name='salary_min'
-              placeholder='Min'
-              value={localSearchParams.salary_min}
-              onChange={handleInputChange}
-              className='input w-28'
-            />
-            <span className='text-sm text-gray-500'>to</span>
-            <input
-              type='number'
-              name='salary_max'
-              placeholder='Max'
-              value={localSearchParams.salary_max}
-              onChange={handleInputChange}
-              className='input w-28'
-            />
+              <div className='h-5 w-px bg-gray-300 hidden sm:block' />
+
+              <div className='flex items-center gap-2'>
+                <input
+                  type='number'
+                  name='salary_min'
+                  placeholder='Min salary'
+                  value={localSearchParams.salary_min}
+                  onChange={handleInputChange}
+                  className='input w-24 text-sm py-1.5'
+                />
+                <span className='text-sm text-gray-400'>–</span>
+                <input
+                  type='number'
+                  name='salary_max'
+                  placeholder='Max salary'
+                  value={localSearchParams.salary_max}
+                  onChange={handleInputChange}
+                  className='input w-24 text-sm py-1.5'
+                />
+              </div>
+            </div>
+
+            {/* Right: Sort */}
+            <div className='relative sort-dropdown-container'>
+              <button
+                type='button'
+                onClick={() => setShowSortDropdown(!showSortDropdown)}
+                className='flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500'
+              >
+                <span>{getSortDisplayName(localSearchParams.sort || 'date_desc')}</span>
+                <svg
+                  className='w-3.5 h-3.5 text-gray-400'
+                  fill='none'
+                  stroke='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    strokeWidth={2}
+                    d='M19 9l-7 7-7-7'
+                  />
+                </svg>
+              </button>
+
+              {showSortDropdown && (
+                <div className='absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10'>
+                  <div className='py-1'>
+                    {SORT_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          setLocalSearchParams((prev) => ({
+                            ...prev,
+                            sort: option.value,
+                          }));
+                          setShowSortDropdown(false);
+                          const newParams = new URLSearchParams(searchParams);
+                          newParams.set('sort', option.value);
+                          newParams.set('page', '1');
+                          setSearchParams(newParams);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                          (localSearchParams.sort || 'date_desc') === option.value
+                            ? 'bg-primary-50 text-primary-700'
+                            : 'text-gray-700'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Saved Searches Panel */}
@@ -526,84 +585,17 @@ const JobSearch = () => {
           <>
             {/* Search Results Summary */}
             <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
-              <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
-                <div className='text-sm text-gray-600'>
-                  <span className='font-medium'>
-                    {pagination ? pagination.total.toLocaleString() : searchResults.length}
-                  </span>{' '}
-                  jobs found
-                  {pagination && pagination.total > searchResults.length && (
-                    <span className='ml-2'>
-                      (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
-                      total)
-                    </span>
-                  )}
-                </div>
-
-                {/* Sort Button */}
-                <div className='flex-shrink-0 sort-dropdown-container'>
-                  <div className='relative'>
-                    <button
-                      type='button'
-                      onClick={() => setShowSortDropdown(!showSortDropdown)}
-                      className='flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500'
-                    >
-                      <span>
-                        Sort:{' '}
-                        {getSortDisplayName(
-                          localSearchParams.sort || 'date_desc'
-                        )}
-                      </span>
-                      <svg
-                        className='w-4 h-4 text-gray-400'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M19 9l-7 7-7-7'
-                        />
-                      </svg>
-                    </button>
-
-                    {/* Sort Dropdown */}
-                    {showSortDropdown && (
-                      <div className='absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10'>
-                        <div className='py-1'>
-                          {SORT_OPTIONS.map((option) => (
-                            <button
-                              key={option.value}
-                              onClick={() => {
-                                setLocalSearchParams((prev) => ({
-                                  ...prev,
-                                  sort: option.value,
-                                }));
-                                setShowSortDropdown(false);
-                                const newParams = new URLSearchParams(
-                                  searchParams
-                                );
-                                newParams.set('sort', option.value);
-                                newParams.set('page', '1');
-                                setSearchParams(newParams);
-                              }}
-                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
-                                (localSearchParams.sort || 'date_desc') ===
-                                option.value
-                                  ? 'bg-primary-50 text-primary-700'
-                                  : 'text-gray-700'
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+              <div className='text-sm text-gray-600'>
+                <span className='font-medium'>
+                  {pagination ? pagination.total.toLocaleString() : searchResults.length}
+                </span>{' '}
+                jobs found
+                {pagination && pagination.total > searchResults.length && (
+                  <span className='ml-2'>
+                    (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
+                    total)
+                  </span>
+                )}
               </div>
 
               {/* Current Search Parameters */}
