@@ -1,5 +1,3 @@
-import React from 'react';
-
 // Strip HTML tags and collapse whitespace into a plain-text preview
 export const stripHtml = (html) => {
   if (!html) return '';

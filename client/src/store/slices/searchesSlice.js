@@ -68,12 +68,20 @@ const searchesSlice = createSlice({
         state.error = action.payload;
       })
       .addCase(saveSearch.fulfilled, (state, action) => {
+        state.error = null;
         state.savedSearches.unshift(action.payload.search);
       })
+      .addCase(saveSearch.rejected, (state, action) => {
+        state.error = action.payload;
+      })
       .addCase(deleteSavedSearch.fulfilled, (state, action) => {
+        state.error = null;
         state.savedSearches = state.savedSearches.filter(
           (s) => s._id !== action.payload.id
         );
+      })
+      .addCase(deleteSavedSearch.rejected, (state, action) => {
+        state.error = action.payload;
       });
   },
 });

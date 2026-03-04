@@ -583,8 +583,8 @@ describe('transformNycJob', () => {
     expect(result.titleCodeNo).toBe('10050');
     expect(result.level).toBe('02');
     expect(result.fullTimePartTimeIndicator).toBe('F');
-    expect(result.salaryRangeFrom).toBe('65000');
-    expect(result.salaryRangeTo).toBe('95000');
+    expect(result.salaryRangeFrom).toBe(65000);
+    expect(result.salaryRangeTo).toBe(95000);
     expect(result.salaryFrequency).toBe('Annual');
     expect(result.workLocation).toBe('Manhattan');
     expect(result.workLocation1).toBe('100 Church St., New York, NY');

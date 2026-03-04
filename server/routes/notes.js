@@ -12,7 +12,7 @@ const router = express.Router();
 // Helper: check ownership
 const checkOwnership = (note, userId, userRole) => {
   const isOwner = note.user.toString() === userId.toString();
-  const isAdmin = ['admin', 'moderator'].includes(userRole);
+  const isAdmin = userRole === 'admin';
   return isOwner || isAdmin;
 };
 

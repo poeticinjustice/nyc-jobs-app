@@ -227,6 +227,13 @@ const notesSlice = createSlice({
         if (state.currentNote && state.currentNote._id === noteId) {
           state.currentNote = null;
         }
+        // Clean up jobNotes cache
+        for (const jid of Object.keys(state.jobNotes)) {
+          const cached = state.jobNotes[jid];
+          if (cached) {
+            cached.notes = cached.notes.filter((n) => n._id !== noteId);
+          }
+        }
         if (state.pagination.total > 0) {
           state.pagination.total -= 1;
           state.pagination.pages = Math.ceil(

@@ -19,6 +19,7 @@ const Register = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     dispatch(clearError());
@@ -28,9 +29,10 @@ const Register = () => {
     e.preventDefault();
 
     if (formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match');
+      setValidationError('Passwords do not match');
       return;
     }
+    setValidationError('');
 
     const { confirmPassword, ...registerData } = formData;
     const result = await dispatch(register(registerData));
@@ -69,9 +71,9 @@ const Register = () => {
         </div>
 
         <div className='bg-white py-8 px-6 shadow-sm border border-gray-200 rounded-lg'>
-          {error && (
+          {(validationError || error) && (
             <div className='bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
-              <p className='text-red-800'>{error}</p>
+              <p className='text-red-800'>{validationError || error}</p>
             </div>
           )}
 

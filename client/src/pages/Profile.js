@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { updateProfile, changePassword } from '../store/slices/authSlice';
+import { updateProfile, changePassword, clearError } from '../store/slices/authSlice';
 import { HiUser, HiLockClosed } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { formatDate } from '../utils/formatUtils';
 
 const Profile = () => {
   const dispatch = useDispatch();
-  const { user, loading, error } = useSelector((state) => state.auth);
+  const { user, profileUpdateLoading, passwordChangeLoading, error } = useSelector((state) => state.auth);
 
   const [activeTab, setActiveTab] = useState('profile');
+  const [validationError, setValidationError] = useState('');
   const [profileForm, setProfileForm] = useState({
     firstName: user?.firstName || '',
     lastName: user?.lastName || '',
@@ -37,12 +38,19 @@ const Profile = () => {
     dispatch(updateProfile(profileForm));
   };
 
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setValidationError('');
+    dispatch(clearError());
+  };
+
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      alert('New passwords do not match');
+      setValidationError('New passwords do not match');
       return;
     }
+    setValidationError('');
     const result = await dispatch(
       changePassword({
         currentPassword: passwordForm.currentPassword,
@@ -73,13 +81,7 @@ const Profile = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className='flex justify-center py-8'>
-        <LoadingSpinner size='lg' />
-      </div>
-    );
-  }
+  const displayError = validationError || error;
 
   return (
     <div className='space-y-6'>
@@ -114,7 +116,7 @@ const Profile = () => {
 
             <nav className='space-y-2'>
               <button
-                onClick={() => setActiveTab('profile')}
+                onClick={() => handleTabChange('profile')}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'profile'
                     ? 'bg-primary-100 text-primary-700'
@@ -125,7 +127,7 @@ const Profile = () => {
                 Profile Information
               </button>
               <button
-                onClick={() => setActiveTab('password')}
+                onClick={() => handleTabChange('password')}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'password'
                     ? 'bg-primary-100 text-primary-700'
@@ -147,9 +149,9 @@ const Profile = () => {
                 Profile Information
               </h2>
 
-              {error && (
+              {displayError && (
                 <div className='bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
-                  <p className='text-red-800'>{error}</p>
+                  <p className='text-red-800'>{displayError}</p>
                 </div>
               )}
 
@@ -201,10 +203,10 @@ const Profile = () => {
                 <div className='flex justify-end'>
                   <button
                     type='submit'
-                    disabled={loading}
+                    disabled={profileUpdateLoading}
                     className='btn btn-primary'
                   >
-                    {loading ? <LoadingSpinner size='sm' /> : 'Update Profile'}
+                    {profileUpdateLoading ? <LoadingSpinner size='sm' /> : 'Update Profile'}
                   </button>
                 </div>
               </form>
@@ -215,9 +217,9 @@ const Profile = () => {
                 Change Password
               </h2>
 
-              {error && (
+              {displayError && (
                 <div className='bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
-                  <p className='text-red-800'>{error}</p>
+                  <p className='text-red-800'>{displayError}</p>
                 </div>
               )}
 
@@ -269,10 +271,10 @@ const Profile = () => {
                 <div className='flex justify-end'>
                   <button
                     type='submit'
-                    disabled={loading}
+                    disabled={passwordChangeLoading}
                     className='btn btn-primary'
                   >
-                    {loading ? <LoadingSpinner size='sm' /> : 'Change Password'}
+                    {passwordChangeLoading ? <LoadingSpinner size='sm' /> : 'Change Password'}
                   </button>
                 </div>
               </form>

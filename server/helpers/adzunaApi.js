@@ -46,9 +46,8 @@ const fetchAdzunaJobs = async ({ q, location, category, salary_min, salary_max, 
     params.append('what', whatParts.join(' '));
   }
 
-  if (location) {
-    params.append('where', location);
-  }
+  // Default to New York City since this is a NYC jobs app
+  params.append('where', location || 'New York City, NY');
 
   if (salary_min) params.append('salary_min', salary_min);
   if (salary_max) params.append('salary_max', salary_max);

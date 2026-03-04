@@ -11,16 +11,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout on expired/invalid token (401)
+// On 401 responses, clear the token and let Redux auth state handle redirects
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      const path = window.location.pathname;
-      if (path !== '/login' && path !== '/register') {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-      }
+      localStorage.removeItem('token');
     }
     return Promise.reject(error);
   }

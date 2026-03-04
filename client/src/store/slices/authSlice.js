@@ -157,7 +157,10 @@ const authSlice = createSlice({
         state.user = null;
         state.token = null;
         state.isAuthenticated = false;
-        state.error = action.payload;
+        // Only set error for actual failures, not missing token (normal unauthenticated state)
+        if (action.payload && action.payload !== 'No token found') {
+          state.error = action.payload;
+        }
       })
 
       // Update Profile

@@ -83,6 +83,11 @@ const SavedJobs = () => {
     setSearchParams((prev) => {
       const newParams = new URLSearchParams(prev);
       newParams.set('page', '1');
+      if (status) {
+        newParams.set('status', status);
+      } else {
+        newParams.delete('status');
+      }
       return newParams;
     });
   };
@@ -229,7 +234,10 @@ const SavedJobs = () => {
 
                   {job.jobDescription && (
                     <p className='mt-3 text-gray-700 line-clamp-2'>
-                      {stripHtml(job.jobDescription).substring(0, 200)}...
+                      {(() => {
+                        const text = stripHtml(job.jobDescription);
+                        return text.length > 200 ? text.substring(0, 200) + '...' : text;
+                      })()}
                     </p>
                   )}
                 </div>

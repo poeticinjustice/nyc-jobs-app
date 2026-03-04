@@ -97,7 +97,7 @@ export const updateJobStatus = createAsyncThunk(
   async ({ jobId, status, source }, { rejectWithValue }) => {
     try {
       const response = await api.put(`/api/jobs/${jobId}/status`, { status, source });
-      return { jobId, ...response.data };
+      return { jobId, source, ...response.data };
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || 'Failed to update status'
@@ -205,13 +205,14 @@ const jobsSlice = createSlice({
       .addCase(saveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
         state.error = null;
-        const { jobId } = action.payload;
-        if (state.currentJob && state.currentJob.jobId === jobId) {
+        const { jobId, source } = action.payload;
+        if (state.currentJob && state.currentJob.jobId === jobId &&
+            (!source || state.currentJob.source === source)) {
           state.currentJob.isSaved = true;
           state.currentJob.applicationStatus = 'interested';
         }
         const searchJob = state.searchResults.find(
-          (job) => job.jobId === jobId
+          (job) => job.jobId === jobId && (!source || job.source === source)
         );
         if (searchJob) {
           searchJob.isSaved = true;
@@ -263,12 +264,18 @@ const jobsSlice = createSlice({
       .addCase(updateJobStatus.fulfilled, (state, action) => {
         state.statusLoading = false;
         state.error = null;
-        const { jobId, applicationStatus, statusHistory } = action.payload;
-        const savedJob = state.savedJobs.find((job) => job.jobId === jobId);
+        const { jobId, source, applicationStatus, statusHistory } = action.payload;
+        const savedJob = state.savedJobs.find(
+          (job) => job.jobId === jobId && (!source || job.source === source)
+        );
         if (savedJob) {
           savedJob.applicationStatus = applicationStatus;
+          if (statusHistory) {
+            savedJob.statusHistory = statusHistory;
+          }
         }
-        if (state.currentJob && state.currentJob.jobId === jobId) {
+        if (state.currentJob && state.currentJob.jobId === jobId &&
+            (!source || state.currentJob.source === source)) {
           state.currentJob.applicationStatus = applicationStatus;
           if (statusHistory) {
             state.currentJob.statusHistory = statusHistory;

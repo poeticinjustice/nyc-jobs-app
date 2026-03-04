@@ -1,11 +1,11 @@
 const axios = require('axios');
 const { transformUsaJob } = require('./jobHelpers');
 
-const USA_HEADERS = {
+const getUsaHeaders = () => ({
   'Authorization-Key': process.env.USAJOBS_API_KEY,
   'User-Agent': process.env.USAJOBS_EMAIL,
   Host: 'data.usajobs.gov',
-};
+});
 
 // Simple TTL cache for individual job lookups
 const jobByIdCache = new Map();
@@ -25,7 +25,7 @@ const fetchUsaJobById = async (controlNumber) => {
   try {
     const response = await axios.get(
       `${process.env.USAJOBS_BASE_URL}?ControlNumber=${controlNumber}&Fields=Full`,
-      { headers: USA_HEADERS, timeout: 15000 }
+      { headers: getUsaHeaders(), timeout: 15000 }
     );
     const items = response.data.SearchResult?.SearchResultItems || [];
     if (items.length === 0) return null;
@@ -44,4 +44,4 @@ const fetchUsaJobById = async (controlNumber) => {
   }
 };
 
-module.exports = { fetchUsaJobById };
+module.exports = { fetchUsaJobById, getUsaHeaders };

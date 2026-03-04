@@ -264,7 +264,17 @@ const JobSearch = () => {
     newParams.set('source', criteria.source || 'nyc');
     newParams.set('page', '1');
     newParams.set('limit', resultsPerPage.toString());
-    setLocalSearchParams((prev) => ({ ...prev, source: criteria.source || 'nyc' }));
+    setLocalSearchParams({
+      q: criteria.q || '',
+      category: criteria.category || '',
+      location: criteria.location || '',
+      agency: criteria.agency || '',
+      salary_min: criteria.salary_min || '',
+      salary_max: criteria.salary_max || '',
+      sort: criteria.sort || 'date_desc',
+      limit: resultsPerPage,
+      source: criteria.source || 'nyc',
+    });
     setSearchParams(newParams);
     setShowSavedSearches(false);
   };
@@ -907,8 +917,10 @@ const JobSearch = () => {
                       </div>
                       {job.jobDescription && (
                         <p className='mt-3 text-gray-700 line-clamp-2'>
-                          {stripHtml(job.jobDescription).substring(0, 200)}
-                          ...
+                          {(() => {
+                            const text = stripHtml(job.jobDescription);
+                            return text.length > 200 ? text.substring(0, 200) + '...' : text;
+                          })()}
                         </p>
                       )}
                     </div>

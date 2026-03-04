@@ -13,7 +13,7 @@ const {
   getUserSaveEntry,
   escCsv,
 } = require('../helpers/jobHelpers');
-const { fetchUsaJobById } = require('../helpers/usaJobsApi');
+const { fetchUsaJobById, getUsaHeaders } = require('../helpers/usaJobsApi');
 const { fetchAdzunaJobs, getAdzunaJobById, cleanSearchCache: cleanAdzunaCache } = require('../helpers/adzunaApi');
 
 const router = express.Router();
@@ -170,7 +170,7 @@ const fetchUsaJobs = async ({ q, category, location, agency, salary_min, salary_
   if (keywordParts.length > 0) {
     params.append('Keyword', keywordParts.join(' '));
   }
-  if (location) params.append('LocationName', location);
+  params.append('LocationName', location || 'New York City, NY');
   if (salary_min) params.append('RemunerationMinimumAmount', salary_min);
   if (salary_max) params.append('RemunerationMaximumAmount', salary_max);
 
@@ -183,11 +183,7 @@ const fetchUsaJobs = async ({ q, category, location, agency, salary_min, salary_
 
   try {
     const response = await axios.get(`${process.env.USAJOBS_BASE_URL}?${params.toString()}`, {
-      headers: {
-        'Authorization-Key': process.env.USAJOBS_API_KEY,
-        'User-Agent': process.env.USAJOBS_EMAIL,
-        Host: 'data.usajobs.gov',
-      },
+      headers: getUsaHeaders(),
       timeout: 15000,
     });
 
@@ -397,20 +393,20 @@ router.get(
         const startIndex = (pageNum - 1) * limitNum;
         const paginatedJobs = nycJobs.slice(startIndex, startIndex + limitNum);
 
-        let savedJobIds = [];
+        let savedJobIdSet = new Set();
         if (req.user) {
           const savedJobs = await Job.find({
             'savedBy.user': req.user._id,
-            jobId: { $in: paginatedJobs.map((job) => job.job_id) },
+            jobId: { $in: paginatedJobs.map((job) => String(job.job_id)) },
             source: 'nyc',
-          });
-          savedJobIds = savedJobs.map((job) => job.jobId);
+          }).lean();
+          savedJobIdSet = new Set(savedJobs.map((job) => String(job.jobId)));
         }
 
         jobs = paginatedJobs.map((job) => ({
           ...transformNycJob(job),
           source: 'nyc',
-          isSaved: savedJobIds.includes(job.job_id),
+          isSaved: savedJobIdSet.has(String(job.job_id)),
         }));
       } else if (source === 'federal') {
         const usaResult = await fetchUsaJobs({ q, category, location, agency, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
@@ -577,6 +573,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     const { source } = req.query;
 
     let jobData = null;
+    let fromDb = false;
     const jobSource = source || 'nyc';
 
     // Try NYC source
@@ -593,6 +590,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
       const savedJob = await Job.findOne({ jobId: id, source: 'federal' }).lean();
       if (savedJob) {
         jobData = { ...savedJob, source: 'federal' };
+        fromDb = true;
       } else {
         const federalJob = await fetchUsaJobById(id);
         if (federalJob) {
@@ -606,6 +604,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
       const savedJob = await Job.findOne({ jobId: id, source: 'adzuna' }).lean();
       if (savedJob) {
         jobData = { ...savedJob, source: 'adzuna' };
+        fromDb = true;
       } else {
         const cachedJob = getAdzunaJobById(id);
         if (cachedJob) {
@@ -618,20 +617,25 @@ router.get('/:id', optionalAuth, async (req, res) => {
       return res.status(404).json({ message: 'Job not found' });
     }
 
-    // Check saved status
+    // Check saved status — reuse DB data if we already have it, otherwise query
     let saveEntry = { isSaved: false, applicationStatus: null, statusHistory: [] };
     if (req.user) {
-      const savedJob = await Job.findOne({
-        jobId: id,
-        source: jobData.source,
-        'savedBy.user': req.user._id,
-      }).lean();
-      if (savedJob) {
-        saveEntry = getUserSaveEntry(savedJob, req.user._id);
+      if (fromDb) {
+        saveEntry = getUserSaveEntry(jobData, req.user._id);
+      } else {
+        const savedJob = await Job.findOne({
+          jobId: id,
+          source: jobData.source,
+          'savedBy.user': req.user._id,
+        }).lean();
+        if (savedJob) {
+          saveEntry = getUserSaveEntry(savedJob, req.user._id);
+        }
       }
     }
 
-    res.json({ ...jobData, ...saveEntry });
+    const { savedBy, __v, ...safeJobData } = jobData;
+    res.json({ ...safeJobData, ...saveEntry });
   } catch (error) {
     console.error('Get job details error:', error);
     res.status(500).json({ message: 'Error fetching job details' });
