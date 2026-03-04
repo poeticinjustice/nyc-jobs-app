@@ -36,9 +36,11 @@ export const getJobDetails = createAsyncThunk(
 
 export const saveJob = createAsyncThunk(
   'jobs/saveJob',
-  async ({ jobId, source }, { rejectWithValue }) => {
+  async ({ jobId, source, jobData }, { rejectWithValue }) => {
     try {
-      const response = await api.post(`/api/jobs/${jobId}/save`, { source: source || 'nyc' });
+      const body = { source: source || 'nyc' };
+      if (jobData) body.jobData = jobData;
+      const response = await api.post(`/api/jobs/${jobId}/save`, body);
       return { jobId, source, message: response.data.message };
     } catch (error) {
       return rejectWithValue(

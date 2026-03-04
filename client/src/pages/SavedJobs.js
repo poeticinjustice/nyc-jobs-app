@@ -178,6 +178,10 @@ const SavedJobs = () => {
                       <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
                         Federal
                       </span>
+                    ) : job.source === 'adzuna' ? (
+                      <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800'>
+                        Private
+                      </span>
                     ) : (
                       <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800'>
                         NYC

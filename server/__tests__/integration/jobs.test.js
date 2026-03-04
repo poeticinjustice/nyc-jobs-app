@@ -1,7 +1,7 @@
 const request = require('supertest');
 const { setupDB } = require('../setup');
 const { createTestUser, createTestJob, createSavedJob, authHeader } = require('../helpers/testHelpers');
-const { nycApiJobsList, usaJobsSearchResponse } = require('../helpers/fixtures');
+const { nycApiJobsList, usaJobsSearchResponse, adzunaSearchResponse } = require('../helpers/fixtures');
 
 jest.mock('axios');
 const axios = require('axios');
@@ -19,6 +19,9 @@ beforeEach(() => {
     }
     if (url.includes('data.usajobs.gov')) {
       return Promise.resolve({ data: usaJobsSearchResponse });
+    }
+    if (url.includes('api.adzuna.com')) {
+      return Promise.resolve({ data: adzunaSearchResponse });
     }
     return Promise.reject(new Error(`Unmocked URL: ${url}`));
   });
@@ -79,6 +82,102 @@ describe('GET /api/jobs/search', () => {
     res.body.jobs.forEach((job) => {
       expect(job.isSaved).toBe(false);
     });
+  });
+});
+
+describe('GET /api/jobs/search (Adzuna)', () => {
+  it('returns Adzuna jobs with source adzuna', async () => {
+    // Set Adzuna env vars for the test
+    process.env.ADZUNA_APP_ID = 'test-app-id';
+    process.env.ADZUNA_APP_KEY = 'test-app-key';
+    process.env.ADZUNA_BASE_URL = 'https://api.adzuna.com/v1/api';
+
+    const res = await request(app)
+      .get('/api/jobs/search')
+      .query({ source: 'adzuna', q: 'software' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe('adzuna');
+    expect(Array.isArray(res.body.jobs)).toBe(true);
+    expect(res.body.pagination).toBeDefined();
+    if (res.body.jobs.length > 0) {
+      expect(res.body.jobs[0].source).toBe('adzuna');
+    }
+  });
+
+  it('rejects invalid source value', async () => {
+    const res = await request(app)
+      .get('/api/jobs/search')
+      .query({ source: 'invalid_source' });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/jobs/:id/save (Adzuna)', () => {
+  it('saves an Adzuna job with jobData', async () => {
+    const { token } = await createTestUser();
+
+    const res = await request(app)
+      .post('/api/jobs/adzuna-123/save')
+      .set('Authorization', authHeader(token))
+      .send({
+        source: 'adzuna',
+        jobData: {
+          businessTitle: 'Test Adzuna Job',
+          agency: 'Test Company',
+          jobCategory: 'IT Jobs',
+          workLocation: 'New York, NY',
+          salaryRangeFrom: 100000,
+          salaryRangeTo: 130000,
+          salaryFrequency: 'Annual',
+          jobDescription: 'A test job from Adzuna.',
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Job saved successfully');
+    expect(res.body.job.source).toBe('adzuna');
+    expect(res.body.job.jobId).toBe('adzuna-123');
+  });
+
+  it('returns 404 when saving Adzuna job without jobData', async () => {
+    const { token } = await createTestUser();
+
+    const res = await request(app)
+      .post('/api/jobs/adzuna-missing/save')
+      .set('Authorization', authHeader(token))
+      .send({ source: 'adzuna' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toContain('Job not found');
+  });
+});
+
+describe('GET /api/jobs/:id (Adzuna)', () => {
+  it('returns Adzuna job from DB when saved', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'adzuna-detail-1', source: 'adzuna', businessTitle: 'Adzuna Detail Job' });
+
+    const res = await request(app)
+      .get('/api/jobs/adzuna-detail-1')
+      .set('Authorization', authHeader(token))
+      .query({ source: 'adzuna' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobId).toBe('adzuna-detail-1');
+    expect(res.body.source).toBe('adzuna');
+  });
+
+  it('returns 404 for non-existent Adzuna job', async () => {
+    // Populate NYC cache first to avoid fallback match
+    await request(app).get('/api/jobs/search').query({ source: 'nyc' });
+
+    const res = await request(app)
+      .get('/api/jobs/adzuna-nonexistent')
+      .query({ source: 'adzuna' });
+
+    expect(res.status).toBe(404);
   });
 });
 

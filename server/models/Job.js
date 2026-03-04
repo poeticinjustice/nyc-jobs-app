@@ -8,7 +8,7 @@ const jobSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['nyc', 'federal'],
+      enum: ['nyc', 'federal', 'adzuna'],
       default: 'nyc',
     },
     externalUrl: {

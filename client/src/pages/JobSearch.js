@@ -184,7 +184,10 @@ const JobSearch = () => {
         dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
       }
     } else {
-      dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
+      const payload = { jobId: job.jobId, source: job.source || 'nyc' };
+      // Adzuna has no single-job fetch API, so send full job data for DB creation
+      if (job.source === 'adzuna') payload.jobData = job;
+      dispatch(saveJob(payload));
     }
   };
 
@@ -289,9 +292,11 @@ const JobSearch = () => {
         <h1 className='text-2xl font-bold text-gray-900 mb-4'>
           {localSearchParams.source === 'federal'
             ? 'Search Federal Jobs'
-            : localSearchParams.source === 'all'
-              ? 'Search All Jobs'
-              : 'Search NYC Jobs'}
+            : localSearchParams.source === 'adzuna'
+              ? 'Search Private Sector Jobs'
+              : localSearchParams.source === 'all'
+                ? 'Search All Jobs'
+                : 'Search NYC Jobs'}
         </h1>
 
         {/* Source Toggle */}
@@ -299,6 +304,7 @@ const JobSearch = () => {
           {[
             { value: 'nyc', label: 'NYC Jobs' },
             { value: 'federal', label: 'Federal Jobs' },
+            { value: 'adzuna', label: 'Private Sector' },
             { value: 'all', label: 'All Jobs' },
           ].map((opt) => (
             <button
@@ -629,14 +635,16 @@ const JobSearch = () => {
                   <HiSearch className='h-8 w-8 text-blue-600' />
                 </div>
                 <h3 className='text-xl font-bold text-blue-900 mb-2'>
-                  Ready to Search {localSearchParams.source === 'federal' ? 'Federal' : localSearchParams.source === 'all' ? 'All' : 'NYC'} Jobs
+                  Ready to Search {localSearchParams.source === 'federal' ? 'Federal' : localSearchParams.source === 'adzuna' ? 'Private Sector' : localSearchParams.source === 'all' ? 'All' : 'NYC'} Jobs
                 </h3>
                 <p className='text-blue-700 max-w-md mx-auto'>
                   {localSearchParams.source === 'federal'
                     ? 'Search through federal government job listings from USAJobs. Enter keywords, job titles, or locations to get started.'
-                    : localSearchParams.source === 'all'
-                      ? 'Search across NYC city and federal government jobs simultaneously. Enter keywords, job titles, or locations to get started.'
-                      : 'Search through thousands of current job listings from NYC government agencies. Enter keywords, job titles, or browse by category to get started. Or click Search to see all available jobs.'}
+                    : localSearchParams.source === 'adzuna'
+                      ? 'Search private sector jobs across tech, finance, healthcare, and more. Enter keywords, job titles, or locations to get started.'
+                      : localSearchParams.source === 'all'
+                        ? 'Search across NYC city, federal government, and private sector jobs simultaneously. Enter keywords, job titles, or locations to get started.'
+                        : 'Search through thousands of current job listings from NYC government agencies. Enter keywords, job titles, or browse by category to get started. Or click Search to see all available jobs.'}
                 </p>
               </div>
 
@@ -880,10 +888,12 @@ const JobSearch = () => {
                             className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                               job.source === 'federal'
                                 ? 'bg-blue-100 text-blue-800'
-                                : 'bg-green-100 text-green-800'
+                                : job.source === 'adzuna'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : 'bg-green-100 text-green-800'
                             }`}
                           >
-                            {job.source === 'federal' ? 'Federal' : 'NYC'}
+                            {job.source === 'federal' ? 'Federal' : job.source === 'adzuna' ? 'Private' : 'NYC'}
                           </span>
                         )}
                       </div>

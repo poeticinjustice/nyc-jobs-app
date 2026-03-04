@@ -47,7 +47,9 @@ const JobDetails = () => {
       if (currentJob.isSaved) {
         await dispatch(unsaveJob({ jobId: currentJob.jobId, source: currentJob.source || source })).unwrap();
       } else {
-        await dispatch(saveJob({ jobId: currentJob.jobId, source: currentJob.source || source })).unwrap();
+        const payload = { jobId: currentJob.jobId, source: currentJob.source || source };
+        if ((currentJob.source || source) === 'adzuna') payload.jobData = currentJob;
+        await dispatch(saveJob(payload)).unwrap();
       }
     } catch (error) {
       console.error('Error saving/unsaving job:', error);
@@ -91,6 +93,10 @@ const JobDetails = () => {
               {(currentJob.source || source) === 'federal' ? (
                 <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
                   Federal
+                </span>
+              ) : (currentJob.source || source) === 'adzuna' ? (
+                <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800'>
+                  Private Sector
                 </span>
               ) : (
                 <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800'>
@@ -295,7 +301,9 @@ const JobDetails = () => {
               href={
                 (currentJob.source || source) === 'federal'
                   ? currentJob.externalUrl || `https://www.usajobs.gov/job/${currentJob.jobId}`
-                  : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
+                  : (currentJob.source || source) === 'adzuna'
+                    ? currentJob.externalUrl || currentJob.toApply || '#'
+                    : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
               }
               target='_blank'
               rel='noopener noreferrer'
@@ -303,7 +311,9 @@ const JobDetails = () => {
             >
               {(currentJob.source || source) === 'federal'
                 ? 'Apply at USAJobs'
-                : 'Apply at NYC Jobs'}
+                : (currentJob.source || source) === 'adzuna'
+                  ? 'Apply Now'
+                  : 'Apply at NYC Jobs'}
               <svg
                 className='ml-2 h-4 w-4'
                 fill='none'

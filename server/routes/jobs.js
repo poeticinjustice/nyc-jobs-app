@@ -14,6 +14,7 @@ const {
   escCsv,
 } = require('../helpers/jobHelpers');
 const { fetchUsaJobById } = require('../helpers/usaJobsApi');
+const { fetchAdzunaJobs, cleanSearchCache: cleanAdzunaCache } = require('../helpers/adzunaApi');
 
 const router = express.Router();
 
@@ -48,6 +49,7 @@ setInterval(() => {
       usaJobsSearchCache.delete(key);
     }
   }
+  cleanAdzunaCache();
 }, 60 * 1000); // every minute
 
 // --- Helpers ---
@@ -315,7 +317,7 @@ router.get(
     query('sort')
       .optional()
       .isIn(['date_desc', 'date_asc', 'title_asc', 'title_desc', 'salary_desc', 'salary_asc']),
-    query('source').optional().isIn(['nyc', 'federal', 'all']),
+    query('source').optional().isIn(['nyc', 'federal', 'adzuna', 'all']),
   ],
   async (req, res) => {
     try {
@@ -406,17 +408,35 @@ router.get(
           const nycLocation = location || 'New York';
           const usaResult = await fetchUsaJobs({ q, category, location: nycLocation, agency, salary_min, salary_max, sort, page: 1, limit: 250 });
           const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-
-          jobs = sortMergedJobs([...jobs, ...federalJobs], sort);
-          total = jobs.length;
-
-          const startIndex = (pageNum - 1) * limitNum;
-          jobs = jobs.slice(startIndex, startIndex + limitNum);
+          jobs = [...jobs, ...federalJobs];
         }
       }
 
-      // Check saved status for authenticated users (federal and all modes)
-      if (req.user && (source === 'federal' || source === 'all')) {
+      // --- Adzuna path ---
+      if (source === 'adzuna' || source === 'all') {
+        if (source === 'adzuna') {
+          const adzunaResult = await fetchAdzunaJobs({ q, location, category, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
+          jobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
+          total = adzunaResult.total;
+        } else {
+          // 'all' mode: fetch Adzuna jobs scoped to NYC, merge with existing
+          const nycLocation = location || 'New York';
+          const adzunaResult = await fetchAdzunaJobs({ q, location: nycLocation, category, salary_min, salary_max, sort, page: 1, limit: 50 });
+          const adzunaJobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
+          jobs = [...jobs, ...adzunaJobs];
+        }
+      }
+
+      // 'all' mode: sort merged results and paginate
+      if (source === 'all') {
+        jobs = sortMergedJobs(jobs, sort);
+        total = jobs.length;
+        const startIndex = (pageNum - 1) * limitNum;
+        jobs = jobs.slice(startIndex, startIndex + limitNum);
+      }
+
+      // Check saved status for authenticated users (non-nyc modes)
+      if (req.user && source !== 'nyc') {
         const jobIds = jobs.map((j) => j.jobId);
         const savedJobs = await Job.find({
           'savedBy.user': req.user._id,
@@ -594,6 +614,14 @@ router.get('/:id', optionalAuth, async (req, res) => {
       }
     }
 
+    // Try Adzuna source (DB only — Adzuna has no single-job fetch endpoint)
+    if (!jobData && (jobSource === 'adzuna' || !source)) {
+      const savedJob = await Job.findOne({ jobId: id, source: 'adzuna' }).lean();
+      if (savedJob) {
+        jobData = { ...savedJob, source: 'adzuna' };
+      }
+    }
+
     if (!jobData) {
       return res.status(404).json({ message: 'Job not found' });
     }
@@ -627,7 +655,14 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
     let job = await Job.findOne({ jobId: id, source });
 
     if (!job) {
-      if (source === 'federal') {
+      if (source === 'adzuna') {
+        // Adzuna has no single-job fetch endpoint — create from request body data
+        const jobData = req.body.jobData;
+        if (!jobData || !jobData.businessTitle) {
+          return res.status(404).json({ message: 'Job not found. Please include job data.' });
+        }
+        job = new Job({ ...jobData, jobId: id, source: 'adzuna' });
+      } else if (source === 'federal') {
         const federalJob = await fetchUsaJobById(id);
         if (!federalJob) {
           return res.status(404).json({ message: 'Job not found in USAJobs API' });

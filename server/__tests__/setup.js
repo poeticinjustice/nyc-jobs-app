@@ -13,6 +13,9 @@ const setupDB = () => {
     process.env.USAJOBS_API_KEY = 'test-api-key';
     process.env.USAJOBS_EMAIL = 'test@example.com';
     process.env.USAJOBS_BASE_URL = 'https://data.usajobs.gov/api/Search';
+    process.env.ADZUNA_APP_ID = 'test-app-id';
+    process.env.ADZUNA_APP_KEY = 'test-app-key';
+    process.env.ADZUNA_BASE_URL = 'https://api.adzuna.com/v1/api';
     process.env.NODE_ENV = 'test';
     process.env.RATE_LIMIT_MAX_REQUESTS = '10000';
   });
