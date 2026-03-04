@@ -7,7 +7,7 @@ const Pagination = ({ currentPage, totalPages, total, pageSize, onPageChange, la
   return (
     <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4'>
       <div className='flex items-center justify-between'>
-        <div className='text-sm text-gray-700'>
+        <div className='text-sm text-gray-700' aria-live='polite'>
           Showing {(currentPage - 1) * pageSize + 1} to{' '}
           {Math.min(currentPage * pageSize, total)} of {total} {label}
         </div>

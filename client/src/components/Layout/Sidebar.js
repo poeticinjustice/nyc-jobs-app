@@ -61,7 +61,7 @@ const Sidebar = ({
       )}
 
       {/* Navigation */}
-      <nav className='flex-1 px-2 py-4 space-y-1'>
+      <nav className='flex-1 px-2 py-4 space-y-1' aria-label='Main navigation'>
         {NAVIGATION.map((item) => {
           // Skip items that require auth but user is not authenticated
           if (item.requiresAuth && !isAuthenticated) return null;

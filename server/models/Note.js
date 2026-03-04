@@ -55,8 +55,7 @@ const noteSchema = new mongoose.Schema(
 // Indexes for better query performance
 noteSchema.index({ user: 1, jobId: 1 });
 noteSchema.index({ user: 1, createdAt: -1 });
-noteSchema.index({ type: 1 });
-noteSchema.index({ priority: 1 });
-noteSchema.index({ tags: 1 });
+noteSchema.index({ user: 1, type: 1 });
+noteSchema.index({ user: 1, priority: 1 });
 
 module.exports = mongoose.model('Note', noteSchema);

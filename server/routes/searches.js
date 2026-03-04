@@ -73,7 +73,7 @@ router.post(
 // @route   DELETE /api/searches/:id
 // @desc    Delete a saved search
 // @access  Private
-router.delete('/:id', [validateObjectId, authenticateToken], async (req, res) => {
+router.delete('/:id', [authenticateToken, validateObjectId], async (req, res) => {
   try {
     const result = await SavedSearch.findOneAndDelete({ _id: req.params.id, user: req.user._id });
     if (!result) {

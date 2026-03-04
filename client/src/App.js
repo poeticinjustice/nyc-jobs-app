@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { getProfile } from './store/slices/authSlice';
-import { getJobCategories } from './store/slices/jobsSlice';
 import Layout from './components/Layout/Layout';
 import Home from './pages/Home';
 import JobSearch from './pages/JobSearch';
@@ -22,20 +21,12 @@ function App() {
   const { isAuthenticated, loading, token } = useSelector(
     (state) => state.auth
   );
-  const { categoriesLoaded } = useSelector((state) => state.jobs);
-
   useEffect(() => {
     // Check if user is authenticated on app load
     if (token && !isAuthenticated) {
       dispatch(getProfile());
     }
   }, [dispatch, token, isAuthenticated]);
-
-  useEffect(() => {
-    if (!categoriesLoaded) {
-      dispatch(getJobCategories());
-    }
-  }, [dispatch, categoriesLoaded]);
 
   if (loading) {
     return (

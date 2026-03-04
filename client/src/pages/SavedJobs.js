@@ -24,11 +24,12 @@ import { downloadFile } from '../utils/downloadFile';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
 const STATUS_FILTER_OPTIONS = [{ value: '', label: 'All' }, ...APPLICATION_STATUSES];
+const PAGE_SIZE = 20;
 
 const SavedJobs = () => {
   const dispatch = useDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { savedJobs, savedJobsLoading: loading, savedJobsError: error, savedPagination: pagination, statusFilter } = useSelector(
+  const { savedJobs, savedJobsLoading: loading, savedJobsError: error, saveError, savedPagination: pagination, statusFilter } = useSelector(
     (state) => state.jobs
   );
   const { isAuthenticated } = useSelector((state) => state.auth);
@@ -37,7 +38,6 @@ const SavedJobs = () => {
 
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
-  const pageSize = 20;
 
   // Sync status filter from URL (e.g. /saved?status=applied from Home)
   const urlStatus = searchParams.get('status') || '';
@@ -45,15 +45,16 @@ const SavedJobs = () => {
     if (urlStatus !== statusFilter) {
       dispatch(setStatusFilter(urlStatus));
     }
-  }, [dispatch, urlStatus, statusFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, urlStatus]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      const params = { page: currentPage, limit: pageSize };
+      const params = { page: currentPage, limit: PAGE_SIZE };
       if (statusFilter) params.status = statusFilter;
       dispatch(getSavedJobs(params));
     }
-  }, [dispatch, isAuthenticated, currentPage, pageSize, statusFilter]);
+  }, [dispatch, isAuthenticated, currentPage, PAGE_SIZE, statusFilter]);
 
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
@@ -64,9 +65,16 @@ const SavedJobs = () => {
     window.scrollTo(0, 0);
   };
 
-  const handleUnsaveJob = (job) => {
+  const handleUnsaveJob = async (job) => {
     if (window.confirm('Are you sure you want to remove this bookmark?')) {
-      dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
+      try {
+        await dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
+        const params = { page: currentPage, limit: PAGE_SIZE };
+        if (statusFilter) params.status = statusFilter;
+        dispatch(getSavedJobs(params));
+      } catch {
+        // saveError is displayed in the UI
+      }
     }
   };
 
@@ -150,9 +158,9 @@ const SavedJobs = () => {
         </div>
       </div>
 
-      {error && (
+      {(error || saveError) && (
         <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
-          <p className='text-red-800'>{error}</p>
+          <p className='text-red-800'>{error || saveError}</p>
         </div>
       )}
 
@@ -320,7 +328,7 @@ const SavedJobs = () => {
           currentPage={currentPage}
           totalPages={pagination.pages}
           total={pagination.total}
-          pageSize={pageSize}
+          PAGE_SIZE={PAGE_SIZE}
           onPageChange={handlePageChange}
           label='saved jobs'
         />

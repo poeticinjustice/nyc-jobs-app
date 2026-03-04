@@ -45,7 +45,7 @@ export const renderHtmlContent = (htmlString) => {
         if (part.match(/<br\s*\/?>/i)) {
           return <br key={`br-${index}-${partIndex}`} />;
         }
-        return decodeEntities(part);
+        return decodeEntities(part.replace(/<[^>]+>/g, ''));
       });
 
       return (

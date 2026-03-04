@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout } from '../../store/slices/authSlice';
 import Header from './Header';
@@ -15,8 +15,18 @@ const Layout = ({ children }) => {
   };
 
   const handleMobileMenuToggle = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
+    setMobileMenuOpen((prev) => !prev);
   };
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
 
   return (
     <div className='min-h-screen bg-gray-50'>
@@ -39,7 +49,7 @@ const Layout = ({ children }) => {
 
         {/* Mobile menu */}
         {mobileMenuOpen && (
-          <div className='md:hidden fixed inset-0 z-40'>
+          <div className='md:hidden fixed inset-0 z-40' role='dialog' aria-modal='true' aria-label='Navigation menu'>
             <div
               className='fixed inset-0 bg-gray-600 bg-opacity-75'
               onClick={handleMobileMenuToggle}

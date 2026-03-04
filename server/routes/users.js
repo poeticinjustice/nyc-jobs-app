@@ -116,7 +116,7 @@ router.get(
 // @route   GET /api/users/:id
 // @desc    Get user by ID (admin or self)
 // @access  Private
-router.get('/:id', [validateObjectId, authenticateToken], async (req, res) => {
+router.get('/:id', [authenticateToken, validateObjectId], async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -142,8 +142,8 @@ router.get('/:id', [validateObjectId, authenticateToken], async (req, res) => {
 router.put(
   '/:id',
   [
-    validateObjectId,
     authenticateToken,
+    validateObjectId,
     body('firstName').optional().trim().isLength({ min: 1, max: 50 }),
     body('lastName').optional().trim().isLength({ min: 1, max: 50 }),
     body('email').optional().isEmail().normalizeEmail(),
@@ -207,7 +207,7 @@ router.put(
 // @access  Private (Admin)
 router.delete(
   '/:id',
-  [validateObjectId, authenticateToken, requireRole(['admin'])],
+  [authenticateToken, requireRole(['admin']), validateObjectId],
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -237,7 +237,7 @@ router.delete(
 // @access  Private (Admin)
 router.post(
   '/:id/reactivate',
-  [validateObjectId, authenticateToken, requireRole(['admin'])],
+  [authenticateToken, requireRole(['admin']), validateObjectId],
   async (req, res) => {
     try {
       const { id } = req.params;

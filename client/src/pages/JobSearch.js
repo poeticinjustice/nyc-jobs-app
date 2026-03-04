@@ -211,9 +211,13 @@ const JobSearch = () => {
       sort: localSearchParams.sort || 'date_desc',
       source: localSearchParams.source || 'all',
     };
-    await dispatch(saveSearch({ name: saveSearchName.trim(), criteria }));
-    setSaveSearchName('');
-    setShowSaveSearchModal(false);
+    try {
+      await dispatch(saveSearch({ name: saveSearchName.trim(), criteria })).unwrap();
+      setSaveSearchName('');
+      setShowSaveSearchModal(false);
+    } catch {
+      // Error is in Redux state; keep modal open so user can retry
+    }
   };
 
   const handleLoadSavedSearch = (search) => {
@@ -252,7 +256,7 @@ const JobSearch = () => {
   const hasSearched = searchParams.get('q') ||
     searchParams.get('salary_min') ||
     searchParams.get('salary_max') ||
-    searchParams.get('source');
+    (searchParams.get('source') && searchParams.get('source') !== 'all');
 
   return (
     <div className='space-y-6'>
@@ -441,7 +445,7 @@ const JobSearch = () => {
                         )}
                         {search.criteria.source && search.criteria.source !== 'all' && (
                           <span className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                            {search.criteria.source === 'nyc' ? 'City' : 'Federal'}
+                            {search.criteria.source === 'nyc' ? 'City' : search.criteria.source === 'federal' ? 'Federal' : search.criteria.source}
                           </span>
                         )}
                       </div>

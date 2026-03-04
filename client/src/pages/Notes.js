@@ -27,9 +27,8 @@ const Notes = () => {
     type: filters.type || '',
     priority: filters.priority || '',
   });
-  const [showNoteModal, setShowNoteModal] = useState(false);
-  const [editingNote, setEditingNote] = useState(null);
-  const [viewingNote, setViewingNote] = useState(null);
+  const [modalNote, setModalNote] = useState(null);
+  const [modalMode, setModalMode] = useState(null); // 'edit' | 'view' | null
 
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
@@ -74,31 +73,35 @@ const Notes = () => {
     });
   };
 
-  const handleDeleteNote = (noteId) => {
+  const handleDeleteNote = async (noteId) => {
     if (window.confirm('Are you sure you want to delete this note?')) {
-      dispatch(deleteNote(noteId));
+      try {
+        await dispatch(deleteNote(noteId)).unwrap();
+        dispatch(getNotes({ ...filters, page: currentPage, limit: pageSize }));
+      } catch {
+        // Error displayed via Redux state
+      }
     }
   };
 
   const handleAddNote = () => {
-    setEditingNote(null);
-    setShowNoteModal(true);
+    setModalNote(null);
+    setModalMode('edit');
   };
 
   const handleEditNote = (note) => {
-    setEditingNote(note);
-    setShowNoteModal(true);
+    setModalNote(note);
+    setModalMode('edit');
   };
 
   const handleViewNote = (note) => {
-    setViewingNote(note);
-    setShowNoteModal(true);
+    setModalNote(note);
+    setModalMode('view');
   };
 
   const handleCloseModal = () => {
-    setShowNoteModal(false);
-    setEditingNote(null);
-    setViewingNote(null);
+    setModalMode(null);
+    setModalNote(null);
   };
 
   const handleExportCsv = async () => {
@@ -138,22 +141,6 @@ const Notes = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
-
-  if (loading) {
-    return (
-      <div className='flex justify-center py-8'>
-        <LoadingSpinner size='lg' />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
-        <p className='text-red-800'>{error}</p>
-      </div>
-    );
-  }
 
   return (
     <div className='space-y-6'>
@@ -252,8 +239,18 @@ const Notes = () => {
         )}
       </div>
 
+      {error && (
+        <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
+          <p className='text-red-800'>{error}</p>
+        </div>
+      )}
+
       {/* Notes List */}
-      {notes.length > 0 ? (
+      {loading ? (
+        <div className='flex justify-center py-8'>
+          <LoadingSpinner size='lg' />
+        </div>
+      ) : notes.length > 0 ? (
         <div className='space-y-4'>
           {notes.map((note) => (
             <div
@@ -359,22 +356,13 @@ const Notes = () => {
 
       {/* Note Modal */}
       <NoteModal
-        isOpen={showNoteModal}
+        isOpen={modalMode !== null}
         onClose={handleCloseModal}
-        note={editingNote || viewingNote}
-        jobId={
-          editingNote?.jobId ||
-          viewingNote?.jobId ||
-          editingNote?.job?.jobId ||
-          viewingNote?.job?.jobId
-        }
-        jobTitle={
-          editingNote?.job?.businessTitle || viewingNote?.job?.businessTitle
-        }
-        source={
-          editingNote?.job?.source || viewingNote?.job?.source
-        }
-        isViewMode={!!viewingNote}
+        note={modalNote}
+        jobId={modalNote?.jobId || modalNote?.job?.jobId}
+        jobTitle={modalNote?.job?.businessTitle}
+        source={modalNote?.job?.source}
+        isViewMode={modalMode === 'view'}
       />
 
       {/* Pagination */}

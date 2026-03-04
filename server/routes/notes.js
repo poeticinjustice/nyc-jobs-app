@@ -3,9 +3,7 @@ const { body, validationResult, query } = require('express-validator');
 const Note = require('../models/Note');
 const Job = require('../models/Job');
 const { authenticateToken, validateObjectId } = require('../middleware/auth');
-const axios = require('axios');
-const { transformNycJob, escCsv } = require('../helpers/jobHelpers');
-const { fetchUsaJobById } = require('../helpers/usaJobsApi');
+const { escCsv } = require('../helpers/jobHelpers');
 
 const router = express.Router();
 
@@ -142,49 +140,12 @@ router.post(
 
       const {
         jobId,
-        source: jobSource,
         title,
         content,
         type = 'general',
         priority = 'medium',
         tags = [],
       } = req.body;
-
-      // Auto-fetch and save job if not in database
-      let job = null;
-      if (jobId) {
-        const jobFilter = jobSource ? { jobId, source: jobSource } : { jobId };
-        job = await Job.findOne(jobFilter);
-
-        if (!job) {
-          if (jobSource === 'federal') {
-            try {
-              const federalJob = await fetchUsaJobById(jobId);
-              if (federalJob) {
-                job = new Job({ ...federalJob, source: 'federal' });
-                await job.save();
-              }
-            } catch (usaError) {
-              console.error(`Error auto-saving federal job ${jobId}:`, usaError.message);
-            }
-          } else {
-            try {
-              const response = await axios.get(
-                `${process.env.NYC_JOBS_API_URL}?job_id=${encodeURIComponent(jobId)}`,
-                { timeout: 10000 }
-              );
-
-              const nycJobs = response.data;
-              if (nycJobs && nycJobs.length > 0) {
-                job = new Job({ ...transformNycJob(nycJobs[0], { clean: true }), source: 'nyc' });
-                await job.save();
-              }
-            } catch (error) {
-              console.error(`Error auto-saving job ${jobId}:`, error.message);
-            }
-          }
-        }
-      }
 
       const note = new Note({
         user: req.user._id,
@@ -289,7 +250,7 @@ router.get(
 // @route   GET /api/notes/:id
 // @desc    Get note by ID
 // @access  Private
-router.get('/:id', [validateObjectId, authenticateToken], async (req, res) => {
+router.get('/:id', [authenticateToken, validateObjectId], async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
 
@@ -322,8 +283,8 @@ router.get('/:id', [validateObjectId, authenticateToken], async (req, res) => {
 router.put(
   '/:id',
   [
-    validateObjectId,
     authenticateToken,
+    validateObjectId,
     body('title').optional().trim().isLength({ min: 1, max: 200 }),
     body('content').optional().trim().isLength({ min: 1, max: 5000 }),
     body('type')
@@ -377,7 +338,7 @@ router.put(
 // @route   DELETE /api/notes/:id
 // @desc    Delete note (soft delete)
 // @access  Private
-router.delete('/:id', [validateObjectId, authenticateToken], async (req, res) => {
+router.delete('/:id', [authenticateToken, validateObjectId], async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
     if (!note || note.status === 'deleted') {

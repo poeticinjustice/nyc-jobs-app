@@ -72,7 +72,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/rate-limit-status', (req, res) => {
   const rateLimitInfo = {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    maxRequests: process.env.NODE_ENV === 'development' ? 1000 : 500,
+    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || (process.env.NODE_ENV === 'development' ? 1000 : 500),
     environment: process.env.NODE_ENV || 'development',
     message: 'Check RateLimit-* headers in API responses for current usage',
   };

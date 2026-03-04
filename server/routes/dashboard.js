@@ -19,6 +19,7 @@ router.get('/', authenticateToken, async (req, res) => {
       await Promise.all([
         // Count saved jobs grouped by application status
         Job.aggregate([
+          { $match: { 'savedBy.user': userId } },
           { $unwind: '$savedBy' },
           { $match: { 'savedBy.user': userId } },
           {

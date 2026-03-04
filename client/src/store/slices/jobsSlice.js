@@ -80,20 +80,6 @@ export const getSavedJobs = createAsyncThunk(
   }
 );
 
-export const getJobCategories = createAsyncThunk(
-  'jobs/getJobCategories',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await api.get('/api/jobs/categories');
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || 'Failed to get job categories'
-      );
-    }
-  }
-);
-
 export const updateJobStatus = createAsyncThunk(
   'jobs/updateJobStatus',
   async ({ jobId, status, source }, { rejectWithValue }) => {
@@ -113,8 +99,6 @@ const initialState = {
   searchResults: [],
   currentJob: null,
   savedJobs: [],
-  categories: [],
-  categoriesLoaded: false,
   searchPagination: {
     page: 1,
     limit: 20,
@@ -287,15 +271,6 @@ const jobsSlice = createSlice({
       .addCase(getSavedJobs.rejected, (state, action) => {
         state.savedJobsLoading = false;
         state.savedJobsError = action.payload;
-      })
-
-      // Get Job Categories
-      .addCase(getJobCategories.fulfilled, (state, action) => {
-        state.categories = action.payload.categories;
-        state.categoriesLoaded = true;
-      })
-      .addCase(getJobCategories.rejected, (state) => {
-        state.categoriesLoaded = true; // prevent infinite retry
       })
 
       // Reset user-specific state on logout

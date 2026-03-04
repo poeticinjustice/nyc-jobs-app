@@ -10,6 +10,7 @@ const Profile = () => {
   const { user, profileUpdateLoading, passwordChangeLoading, error } = useSelector((state) => state.auth);
 
   const [activeTab, setActiveTab] = useState('profile');
+  const [successMessage, setSuccessMessage] = useState('');
   const [validationError, setValidationError] = useState('');
   const [profileForm, setProfileForm] = useState({
     firstName: user?.firstName || '',
@@ -33,13 +34,20 @@ const Profile = () => {
     }
   }, [user]);
 
-  const handleProfileSubmit = (e) => {
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
-    dispatch(updateProfile(profileForm));
+    setSuccessMessage('');
+    try {
+      await dispatch(updateProfile(profileForm)).unwrap();
+      setSuccessMessage('Profile updated successfully.');
+    } catch {
+      // Error displayed via Redux state
+    }
   };
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+    setSuccessMessage('');
     setValidationError('');
     dispatch(clearError());
   };
@@ -51,23 +59,28 @@ const Profile = () => {
       return;
     }
     setValidationError('');
-    const result = await dispatch(
-      changePassword({
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword,
-      })
-    );
-    if (changePassword.fulfilled.match(result)) {
+    setSuccessMessage('');
+    try {
+      await dispatch(
+        changePassword({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        })
+      ).unwrap();
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
       });
+      setSuccessMessage('Password changed successfully.');
+    } catch {
+      // Error displayed via Redux state
     }
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (successMessage) setSuccessMessage('');
     if (validationError) setValidationError('');
     if (error) dispatch(clearError());
     if (activeTab === 'profile') {
@@ -151,6 +164,12 @@ const Profile = () => {
                 Profile Information
               </h2>
 
+              {successMessage && (
+                <div className='bg-green-50 border border-green-200 rounded-lg p-4 mb-6'>
+                  <p className='text-green-800'>{successMessage}</p>
+                </div>
+              )}
+
               {displayError && (
                 <div className='bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
                   <p className='text-red-800'>{displayError}</p>
@@ -218,6 +237,12 @@ const Profile = () => {
               <h2 className='text-xl font-semibold text-gray-900 mb-6'>
                 Change Password
               </h2>
+
+              {successMessage && (
+                <div className='bg-green-50 border border-green-200 rounded-lg p-4 mb-6'>
+                  <p className='text-green-800'>{successMessage}</p>
+                </div>
+              )}
 
               {displayError && (
                 <div className='bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>

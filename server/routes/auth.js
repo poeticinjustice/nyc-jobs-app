@@ -159,7 +159,7 @@ router.put(
 
       if (firstName) updates.firstName = firstName;
       if (lastName) updates.lastName = lastName;
-      if (email) {
+      if (email && email !== req.user.email) {
         // Check if email is already taken
         const existingUser = await User.findOne({
           email,
@@ -169,6 +169,10 @@ router.put(
           return res.status(400).json({ message: 'Email already in use' });
         }
         updates.email = email;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: 'No fields to update' });
       }
 
       const updatedUser = await User.findByIdAndUpdate(req.user._id, updates, {
