@@ -7,11 +7,10 @@ const {
   sortJobs,
   transformNycJob,
   transformUsaJob,
-  transformAdzunaJob,
   getUserSaveEntry,
   escCsv,
 } = require('../../helpers/jobHelpers');
-const { nycApiJob, nycApiJobsList, usaJobsSearchResultItem, adzunaApiJob } = require('../helpers/fixtures');
+const { nycApiJob, nycApiJobsList, usaJobsSearchResultItem } = require('../helpers/fixtures');
 
 // decodeHtmlEntities is not exported, but it is exercised through cleanText.
 // We test it indirectly below plus add a focused describe block via cleanText.
@@ -751,74 +750,6 @@ describe('transformUsaJob', () => {
     expect(result.additionalInformation).toBeNull();
     // Falls back to QualificationSummary for description
     expect(result.jobDescription).toBe('Must have IT experience...');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// transformAdzunaJob
-// ---------------------------------------------------------------------------
-describe('transformAdzunaJob', () => {
-  it('maps Adzuna response fields to camelCase', () => {
-    const result = transformAdzunaJob(adzunaApiJob);
-    expect(result.jobId).toBe('4567890123');
-    expect(result.source).toBe('adzuna');
-    expect(result.businessTitle).toBe('Senior Software Engineer');
-    expect(result.agency).toBe('Acme Corp');
-    expect(result.workLocation).toBe('New York, NY');
-    expect(result.salaryRangeFrom).toBe(120000);
-    expect(result.salaryRangeTo).toBe(160000);
-    expect(result.salaryFrequency).toBe('Annual');
-    expect(result.jobCategory).toBe('IT Jobs');
-    expect(result.jobDescription).toBe('We are looking for a senior software engineer to join our team.');
-    expect(result.toApply).toBe('https://www.adzuna.com/details/4567890123');
-    expect(result.externalUrl).toBe('https://www.adzuna.com/details/4567890123');
-    expect(result.postDate).toBe('2025-02-10T12:00:00Z');
-    expect(result.fullTimePartTimeIndicator).toBe('full_time');
-    expect(result.divisionWorkUnit).toBe('Acme Corp');
-  });
-
-  it('returns null when input is null', () => {
-    expect(transformAdzunaJob(null)).toBeNull();
-  });
-
-  it('returns null when input is undefined', () => {
-    expect(transformAdzunaJob(undefined)).toBeNull();
-  });
-
-  it('handles missing nested fields gracefully', () => {
-    const minimalJob = { id: 999, title: 'Minimal' };
-    const result = transformAdzunaJob(minimalJob);
-    expect(result.jobId).toBe('999');
-    expect(result.businessTitle).toBe('Minimal');
-    expect(result.agency).toBeNull();
-    expect(result.workLocation).toBeNull();
-    expect(result.salaryRangeFrom).toBeNull();
-    expect(result.salaryRangeTo).toBeNull();
-    expect(result.jobCategory).toBeNull();
-    expect(result.toApply).toBeNull();
-    expect(result.externalUrl).toBeNull();
-  });
-
-  it('rounds salary values', () => {
-    const job = { ...adzunaApiJob, salary_min: 75432.67, salary_max: 98765.43 };
-    const result = transformAdzunaJob(job);
-    expect(result.salaryRangeFrom).toBe(75433);
-    expect(result.salaryRangeTo).toBe(98765);
-  });
-
-  it('sets NYC-specific fields to null', () => {
-    const result = transformAdzunaJob(adzunaApiJob);
-    expect(result.civilServiceTitle).toBeNull();
-    expect(result.titleCodeNo).toBeNull();
-    expect(result.level).toBeNull();
-    expect(result.minimumQualRequirements).toBeNull();
-    expect(result.preferredSkills).toBeNull();
-    expect(result.additionalInformation).toBeNull();
-    expect(result.hoursShift).toBeNull();
-    expect(result.workLocation1).toBeNull();
-    expect(result.residencyRequirement).toBeNull();
-    expect(result.processDate).toBeNull();
-    expect(result.postUntil).toBeNull();
   });
 });
 

@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
-  getJobCategories,
-  getJobAgencies,
   clearSearchResults,
   saveJob,
   unsaveJob,
@@ -15,7 +13,6 @@ import {
 } from '../store/slices/searchesSlice';
 import {
   HiSearch,
-  HiFilter,
   HiBookmark,
   HiBookmarkAlt,
   HiStar,
@@ -37,22 +34,20 @@ const SORT_OPTIONS = [
   { value: 'salary_asc', label: 'Lowest Salary First' },
 ];
 
-const SOURCE_OPTIONS = [
-  { value: 'nyc', label: 'NYC Jobs' },
-  { value: 'federal', label: 'Federal Jobs' },
-  { value: 'adzuna', label: 'Private Sector' },
+const SOURCE_TABS = [
   { value: 'all', label: 'All Jobs' },
+  { value: 'nyc', label: 'City' },
+  { value: 'federal', label: 'Federal' },
 ];
 
 const JobSearch = () => {
   const dispatch = useDispatch();
-  const { searchResults, categories, agencies, searchLoading, error, searchPagination: pagination } =
+  const { searchResults, searchLoading, error, searchPagination: pagination } =
     useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const { savedSearches } = useSelector((state) => state.searches);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [resultsPerPage, setResultsPerPage] = useState(20);
@@ -63,41 +58,29 @@ const JobSearch = () => {
   // Initialize search params from URL or defaults
   const [localSearchParams, setLocalSearchParams] = useState({
     q: searchParams.get('q') || '',
-    category: searchParams.get('category') || '',
-    location: searchParams.get('location') || '',
-    agency: searchParams.get('agency') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
+    source: searchParams.get('source') || 'all',
     limit: parseInt(searchParams.get('limit')) || 20,
-    source: searchParams.get('source') || 'nyc',
   });
 
   // Track the active search (what's actually being searched for in results)
   const [activeSearchParams, setActiveSearchParams] = useState({
     q: searchParams.get('q') || '',
-    category: searchParams.get('category') || '',
-    location: searchParams.get('location') || '',
-    agency: searchParams.get('agency') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
+    source: searchParams.get('source') || 'all',
     limit: parseInt(searchParams.get('limit')) || 20,
-    source: searchParams.get('source') || 'nyc',
   });
 
-  // Load categories, agencies, and saved searches on component mount
+  // Load saved searches on component mount
   useEffect(() => {
-    if (categories.length === 0) {
-      dispatch(getJobCategories());
-    }
-    if (agencies.length === 0) {
-      dispatch(getJobAgencies());
-    }
     if (isAuthenticated) {
       dispatch(getSavedSearches());
     }
-  }, [dispatch, categories.length, agencies.length, isAuthenticated]);
+  }, [dispatch, isAuthenticated]);
 
   // Single source of truth: URL drives all searches
   useEffect(() => {
@@ -106,12 +89,13 @@ const JobSearch = () => {
     if (hasParams) {
       const urlParams = {};
       searchParams.forEach((value, key) => {
-        if (key === 'sort' || value) {
+        if (key === 'sort' || key === 'source' || value) {
           urlParams[key] = value;
         }
       });
 
       if (!urlParams.sort) urlParams.sort = 'date_desc';
+      if (!urlParams.source) urlParams.source = 'all';
 
       const pageFromUrl = parseInt(urlParams.page) || 1;
       const limitFromUrl = parseInt(urlParams.limit) || 20;
@@ -126,14 +110,11 @@ const JobSearch = () => {
 
       setActiveSearchParams({
         q: urlParams.q || '',
-        category: urlParams.category || '',
-        location: urlParams.location || '',
-        agency: urlParams.agency || '',
         salary_min: urlParams.salary_min || '',
         salary_max: urlParams.salary_max || '',
         sort: urlParams.sort,
+        source: urlParams.source,
         limit: limitFromUrl,
-        source: urlParams.source || 'nyc',
       });
 
       dispatch(searchJobs({
@@ -157,14 +138,11 @@ const JobSearch = () => {
       ) {
         setShowSortDropdown(false);
       }
-      if (showFilters && !event.target.closest('.filters-container')) {
-        setShowFilters(false);
-      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showSortDropdown, showFilters]);
+  }, [showSortDropdown]);
 
   const handleSearch = (page = 1) => {
     // Build URL params - the useEffect will handle dispatching the search
@@ -172,6 +150,7 @@ const JobSearch = () => {
     Object.entries(localSearchParams).forEach(([key, value]) => {
       if (
         key === 'sort' ||
+        key === 'source' ||
         key === 'limit' ||
         (value && String(value).trim() !== '')
       ) {
@@ -179,7 +158,7 @@ const JobSearch = () => {
       }
     });
     newSearchParams.set('sort', localSearchParams.sort || 'date_desc');
-    newSearchParams.set('source', localSearchParams.source || 'nyc');
+    newSearchParams.set('source', localSearchParams.source || 'all');
     newSearchParams.set('page', page.toString());
     newSearchParams.set('limit', resultsPerPage.toString());
 
@@ -194,6 +173,27 @@ const JobSearch = () => {
     }));
   };
 
+  const handleSourceChange = (source) => {
+    setLocalSearchParams((prev) => ({ ...prev, source }));
+    // Immediately trigger search with new source
+    const newSearchParams = new URLSearchParams();
+    Object.entries({ ...localSearchParams, source }).forEach(([key, value]) => {
+      if (
+        key === 'sort' ||
+        key === 'source' ||
+        key === 'limit' ||
+        (value && String(value).trim() !== '')
+      ) {
+        newSearchParams.set(key, String(value).trim() || value);
+      }
+    });
+    newSearchParams.set('sort', localSearchParams.sort || 'date_desc');
+    newSearchParams.set('source', source);
+    newSearchParams.set('page', '1');
+    newSearchParams.set('limit', resultsPerPage.toString());
+    setSearchParams(newSearchParams);
+  };
+
   const handleSaveJob = (job) => {
     if (!isAuthenticated) return;
 
@@ -202,10 +202,7 @@ const JobSearch = () => {
         dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
       }
     } else {
-      const payload = { jobId: job.jobId, source: job.source || 'nyc' };
-      // Adzuna has no single-job fetch API, so send full job data for DB creation
-      if (job.source === 'adzuna') payload.jobData = job;
-      dispatch(saveJob(payload));
+      dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
     }
   };
 
@@ -231,21 +228,14 @@ const JobSearch = () => {
     handleSearch(1);
   };
 
-  const handleFilterSearch = () => {
-    handleSearch(1);
-  };
-
   const handleSaveSearch = async () => {
     if (!saveSearchName.trim()) return;
     const criteria = {
       q: activeSearchParams.q || '',
-      category: activeSearchParams.category || '',
-      location: activeSearchParams.location || '',
-      agency: activeSearchParams.agency || '',
       salary_min: activeSearchParams.salary_min || '',
       salary_max: activeSearchParams.salary_max || '',
       sort: activeSearchParams.sort || 'date_desc',
-      source: activeSearchParams.source || 'nyc',
+      source: activeSearchParams.source || 'all',
     };
     await dispatch(saveSearch({ name: saveSearchName.trim(), criteria }));
     setSaveSearchName('');
@@ -256,25 +246,19 @@ const JobSearch = () => {
     const { criteria } = search;
     const newParams = new URLSearchParams();
     if (criteria.q) newParams.set('q', criteria.q);
-    if (criteria.category) newParams.set('category', criteria.category);
-    if (criteria.location) newParams.set('location', criteria.location);
-    if (criteria.agency) newParams.set('agency', criteria.agency);
     if (criteria.salary_min) newParams.set('salary_min', criteria.salary_min);
     if (criteria.salary_max) newParams.set('salary_max', criteria.salary_max);
     newParams.set('sort', criteria.sort || 'date_desc');
-    newParams.set('source', criteria.source || 'nyc');
+    newParams.set('source', criteria.source || 'all');
     newParams.set('page', '1');
     newParams.set('limit', resultsPerPage.toString());
     setLocalSearchParams({
       q: criteria.q || '',
-      category: criteria.category || '',
-      location: criteria.location || '',
-      agency: criteria.agency || '',
       salary_min: criteria.salary_min || '',
       salary_max: criteria.salary_max || '',
       sort: criteria.sort || 'date_desc',
+      source: criteria.source || 'all',
       limit: resultsPerPage,
-      source: criteria.source || 'nyc',
     });
     setSearchParams(newParams);
     setShowSavedSearches(false);
@@ -284,14 +268,6 @@ const JobSearch = () => {
     e.stopPropagation();
     dispatch(deleteSavedSearch(id));
   };
-
-  const hasActiveSearch =
-    activeSearchParams.q ||
-    activeSearchParams.category ||
-    activeSearchParams.location ||
-    activeSearchParams.agency ||
-    activeSearchParams.salary_min ||
-    activeSearchParams.salary_max;
 
   const totalPages = pagination?.pages || 0;
 
@@ -303,51 +279,8 @@ const JobSearch = () => {
       {/* Search Header */}
       <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
         <h1 className='text-2xl font-bold text-gray-900 mb-4'>
-          {localSearchParams.source === 'federal'
-            ? 'Search Federal Jobs'
-            : localSearchParams.source === 'adzuna'
-              ? 'Search Private Sector Jobs'
-              : localSearchParams.source === 'all'
-                ? 'Search All Jobs'
-                : 'Search NYC Jobs'}
+          Search Jobs
         </h1>
-
-        {/* Source Toggle */}
-        <div className='flex items-center gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit'>
-          {SOURCE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type='button'
-              onClick={() => {
-                const prevSource = localSearchParams.source;
-                const updates = { source: opt.value };
-                // Clear NYC-specific dropdown values when switching away from NYC
-                if (prevSource === 'nyc' && opt.value !== 'nyc') {
-                  updates.category = '';
-                  updates.agency = '';
-                }
-                setLocalSearchParams((prev) => ({ ...prev, ...updates }));
-                if (hasActiveSearch || searchResults.length > 0) {
-                  const newParams = new URLSearchParams(searchParams);
-                  newParams.set('source', opt.value);
-                  newParams.set('page', '1');
-                  if (prevSource === 'nyc' && opt.value !== 'nyc') {
-                    newParams.delete('category');
-                    newParams.delete('agency');
-                  }
-                  setSearchParams(newParams);
-                }
-              }}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                localSearchParams.source === opt.value
-                  ? 'bg-white text-primary-700 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
 
         {/* Search Form */}
         <form onSubmit={handleSearchSubmit} className='space-y-4'>
@@ -376,31 +309,22 @@ const JobSearch = () => {
                 <span className='ml-2 hidden sm:inline'>Search</span>
               </button>
               {(localSearchParams.q ||
-                localSearchParams.category ||
-                localSearchParams.location ||
-                localSearchParams.agency ||
                 localSearchParams.salary_min ||
-                localSearchParams.salary_max) && (
+                localSearchParams.salary_max ||
+                localSearchParams.source !== 'all') && (
                 <button
                   type='button'
                   onClick={() => {
                     setLocalSearchParams({
                       q: '',
-                      category: '',
-                      location: '',
-                      agency: '',
                       salary_min: '',
                       salary_max: '',
                       sort: 'date_desc',
+                      source: 'all',
                       limit: 20,
-                      source: localSearchParams.source,
                     });
                     setResultsPerPage(20);
-                    const clearedParams = new URLSearchParams();
-                    if (localSearchParams.source !== 'nyc') {
-                      clearedParams.set('source', localSearchParams.source);
-                    }
-                    setSearchParams(clearedParams);
+                    setSearchParams(new URLSearchParams());
                     setCurrentPage(1);
                   }}
                   className='p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors'
@@ -421,14 +345,6 @@ const JobSearch = () => {
                   </svg>
                 </button>
               )}
-              <button
-                type='button'
-                onClick={() => setShowFilters(!showFilters)}
-                className='btn btn-outline flex items-center'
-              >
-                <HiFilter className='h-5 w-5' />
-                <span className='ml-2 hidden sm:inline'>Filters</span>
-              </button>
               {isAuthenticated && savedSearches.length > 0 && (
                 <button
                   type='button'
@@ -440,6 +356,46 @@ const JobSearch = () => {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Source Tabs */}
+          <div className='flex gap-2'>
+            {SOURCE_TABS.map((tab) => (
+              <button
+                key={tab.value}
+                type='button'
+                onClick={() => handleSourceChange(tab.value)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  localSearchParams.source === tab.value
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Salary Range */}
+          <div className='flex items-center gap-3'>
+            <span className='text-sm font-medium text-gray-700'>Salary:</span>
+            <input
+              type='number'
+              name='salary_min'
+              placeholder='Min'
+              value={localSearchParams.salary_min}
+              onChange={handleInputChange}
+              className='input w-28'
+            />
+            <span className='text-sm text-gray-500'>to</span>
+            <input
+              type='number'
+              name='salary_max'
+              placeholder='Max'
+              value={localSearchParams.salary_max}
+              onChange={handleInputChange}
+              className='input w-28'
+            />
           </div>
 
           {/* Saved Searches Panel */}
@@ -463,19 +419,9 @@ const JobSearch = () => {
                             {search.criteria.q}
                           </span>
                         )}
-                        {search.criteria.category && (
-                          <span className='px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs'>
-                            {search.criteria.category}
-                          </span>
-                        )}
-                        {search.criteria.agency && (
-                          <span className='px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-xs'>
-                            {search.criteria.agency}
-                          </span>
-                        )}
-                        {search.criteria.location && (
-                          <span className='px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs'>
-                            {search.criteria.location}
+                        {search.criteria.source && search.criteria.source !== 'all' && (
+                          <span className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
+                            {search.criteria.source === 'nyc' ? 'City' : 'Federal'}
                           </span>
                         )}
                       </div>
@@ -492,124 +438,6 @@ const JobSearch = () => {
               </div>
             </div>
           )}
-
-          {/* Advanced Filters */}
-          {showFilters && (
-            <div className='grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg filters-container'>
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>
-                  Category
-                </label>
-                {localSearchParams.source === 'nyc' ? (
-                  <select
-                    name='category'
-                    value={localSearchParams.category}
-                    onChange={handleInputChange}
-                    className='input'
-                  >
-                    <option value=''>All Categories</option>
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type='text'
-                    name='category'
-                    placeholder='Job category keyword...'
-                    value={localSearchParams.category}
-                    onChange={handleInputChange}
-                    className='input'
-                  />
-                )}
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>
-                  Agency
-                </label>
-                {localSearchParams.source === 'nyc' ? (
-                  <select
-                    name='agency'
-                    value={localSearchParams.agency}
-                    onChange={handleInputChange}
-                    className='input'
-                  >
-                    <option value=''>All Agencies</option>
-                    {agencies.map((agency) => (
-                      <option key={agency} value={agency}>
-                        {agency}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type='text'
-                    name='agency'
-                    placeholder='Agency name...'
-                    value={localSearchParams.agency}
-                    onChange={handleInputChange}
-                    className='input'
-                  />
-                )}
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>
-                  Location
-                </label>
-                <input
-                  type='text'
-                  name='location'
-                  placeholder='Work location...'
-                  value={localSearchParams.location}
-                  onChange={handleInputChange}
-                  className='input'
-                />
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>
-                  Min Salary
-                </label>
-                <input
-                  type='number'
-                  name='salary_min'
-                  placeholder='Min salary...'
-                  value={localSearchParams.salary_min}
-                  onChange={handleInputChange}
-                  className='input'
-                />
-              </div>
-
-              <div>
-                <label className='block text-sm font-medium text-gray-700 mb-1'>
-                  Max Salary
-                </label>
-                <input
-                  type='number'
-                  name='salary_max'
-                  placeholder='Max salary...'
-                  value={localSearchParams.salary_max}
-                  onChange={handleInputChange}
-                  className='input'
-                />
-              </div>
-
-              <div className='md:col-span-3'>
-                <button
-                  type='button'
-                  onClick={handleFilterSearch}
-                  disabled={searchLoading}
-                  className='btn btn-primary'
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
-          )}
         </form>
       </div>
 
@@ -621,16 +449,14 @@ const JobSearch = () => {
           </div>
         )}
 
-        {/* No Jobs Found - Show above welcome screen when there are search params but no results */}
+        {/* No Jobs Found */}
         {!searchResults.length &&
           !error &&
           !searchLoading &&
           (searchParams.get('q') ||
-            searchParams.get('category') ||
-            searchParams.get('location') ||
-            searchParams.get('agency') ||
             searchParams.get('salary_min') ||
-            searchParams.get('salary_max')) && (
+            searchParams.get('salary_max') ||
+            searchParams.get('source')) && (
             <div className='bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4'>
               <div className='text-center'>
                 <p className='text-yellow-800 font-medium'>
@@ -640,17 +466,15 @@ const JobSearch = () => {
             </div>
           )}
 
-        {/* Welcome State - Ready to Search */}
+        {/* Welcome State */}
         {!searchResults.length &&
           !error &&
           !searchLoading &&
           !(
             searchParams.get('q') ||
-            searchParams.get('category') ||
-            searchParams.get('location') ||
-            searchParams.get('agency') ||
             searchParams.get('salary_min') ||
-            searchParams.get('salary_max')
+            searchParams.get('salary_max') ||
+            searchParams.get('source')
           ) && (
             <div className='bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center'>
               <div className='mb-6'>
@@ -658,39 +482,33 @@ const JobSearch = () => {
                   <HiSearch className='h-8 w-8 text-blue-600' />
                 </div>
                 <h3 className='text-xl font-bold text-blue-900 mb-2'>
-                  Ready to Search {localSearchParams.source === 'federal' ? 'Federal' : localSearchParams.source === 'adzuna' ? 'Private Sector' : localSearchParams.source === 'all' ? 'All' : 'NYC'} Jobs
+                  Ready to Search Jobs
                 </h3>
                 <p className='text-blue-700 max-w-md mx-auto'>
-                  {localSearchParams.source === 'federal'
-                    ? 'Search through federal government job listings from USAJobs. Enter keywords, job titles, or locations to get started.'
-                    : localSearchParams.source === 'adzuna'
-                      ? 'Search private sector jobs across tech, finance, healthcare, and more. Enter keywords, job titles, or locations to get started.'
-                      : localSearchParams.source === 'all'
-                        ? 'Search across NYC city, federal government, and private sector jobs simultaneously. Enter keywords, job titles, or locations to get started.'
-                        : 'Search through thousands of current job listings from NYC government agencies. Enter keywords, job titles, or browse by category to get started. Or click Search to see all available jobs.'}
+                  Search across NYC city and federal government jobs. Enter keywords, set a salary range, or click Search to see all available jobs.
                 </p>
               </div>
 
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
                 <div className='bg-white/60 rounded-lg p-4'>
                   <div className='text-blue-600 font-medium mb-1'>
-                    ⚡ Instant Search
+                    City + Federal
                   </div>
                   <div className='text-blue-700'>
-                    No waiting - search immediately
+                    NYC and US government jobs in one place
                   </div>
                 </div>
                 <div className='bg-white/60 rounded-lg p-4'>
                   <div className='text-blue-600 font-medium mb-1'>
-                    🔍 Smart Results
+                    Filter by Source
                   </div>
                   <div className='text-blue-700'>
-                    Comprehensive job matching
+                    Browse city or federal jobs separately
                   </div>
                 </div>
                 <div className='bg-white/60 rounded-lg p-4'>
                   <div className='text-blue-600 font-medium mb-1'>
-                    💾 Save Favorites
+                    Save Favorites
                   </div>
                   <div className='text-blue-700'>
                     Bookmark jobs you're interested in
@@ -788,13 +606,11 @@ const JobSearch = () => {
                 </div>
               </div>
 
-              {/* Current Search Parameters - Only show if there are actual search parameters */}
+              {/* Current Search Parameters */}
               {(activeSearchParams.q ||
-                activeSearchParams.category ||
-                activeSearchParams.location ||
-                activeSearchParams.agency ||
                 activeSearchParams.salary_min ||
-                activeSearchParams.salary_max) && (
+                activeSearchParams.salary_max ||
+                (activeSearchParams.source && activeSearchParams.source !== 'all')) && (
                 <div className='mt-3 pt-3 border-t border-gray-200'>
                   <div className='text-xs text-gray-500 mb-2'>
                     Current search:
@@ -805,19 +621,9 @@ const JobSearch = () => {
                         Keywords: {activeSearchParams.q}
                       </span>
                     )}
-                    {activeSearchParams.category && (
-                      <span className='px-2 py-1 bg-green-100 text-green-700 rounded text-xs'>
-                        Category: {activeSearchParams.category}
-                      </span>
-                    )}
-                    {activeSearchParams.agency && (
-                      <span className='px-2 py-1 bg-teal-100 text-teal-700 rounded text-xs'>
-                        Agency: {activeSearchParams.agency}
-                      </span>
-                    )}
-                    {activeSearchParams.location && (
-                      <span className='px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs'>
-                        Location: {activeSearchParams.location}
+                    {activeSearchParams.source && activeSearchParams.source !== 'all' && (
+                      <span className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
+                        {activeSearchParams.source === 'nyc' ? 'City Jobs' : 'Federal Jobs'}
                       </span>
                     )}
                     {activeSearchParams.salary_min && (
@@ -893,9 +699,7 @@ const JobSearch = () => {
                         <h3 className='text-lg font-semibold text-gray-900'>
                           {job.businessTitle}
                         </h3>
-                        {activeSearchParams.source === 'all' && (
-                          <SourceBadge source={job.source} />
-                        )}
+                        <SourceBadge source={job.source} />
                       </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>

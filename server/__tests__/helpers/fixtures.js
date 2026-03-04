@@ -90,32 +90,9 @@ const usaJobsSearchResponse = {
   },
 };
 
-// Realistic Adzuna API response
-const adzunaApiJob = {
-  id: 4567890123,
-  title: 'Senior Software Engineer',
-  description: 'We are looking for a senior software engineer to join our team.',
-  redirect_url: 'https://www.adzuna.com/details/4567890123',
-  created: '2025-02-10T12:00:00Z',
-  category: { label: 'IT Jobs', tag: 'it-jobs' },
-  company: { display_name: 'Acme Corp' },
-  location: { display_name: 'New York, NY', area: ['US', 'New York', 'New York City'] },
-  salary_min: 120000,
-  salary_max: 160000,
-  contract_time: 'full_time',
-};
-
-const adzunaSearchResponse = {
-  results: [adzunaApiJob],
-  count: 150,
-  mean: 140000,
-};
-
 module.exports = {
   nycApiJob,
   nycApiJobsList,
   usaJobsSearchResultItem,
   usaJobsSearchResponse,
-  adzunaApiJob,
-  adzunaSearchResponse,
 };

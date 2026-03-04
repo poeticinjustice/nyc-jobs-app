@@ -167,8 +167,7 @@ router.post(
             } catch (error) {
               console.error(`Error auto-saving federal job ${jobId}:`, error.message);
             }
-          } else if (jobSource !== 'adzuna') {
-            // Adzuna has no single-job fetch endpoint — skip auto-fetch
+          } else {
             try {
               const response = await axios.get(
                 `${process.env.NYC_JOBS_API_URL}?job_id=${encodeURIComponent(jobId)}`,

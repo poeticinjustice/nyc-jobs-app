@@ -53,9 +53,7 @@ const JobDetails = () => {
       if (currentJob.isSaved) {
         await dispatch(unsaveJob({ jobId: currentJob.jobId, source: effectiveSource })).unwrap();
       } else {
-        const payload = { jobId: currentJob.jobId, source: effectiveSource };
-        if (effectiveSource === 'adzuna') payload.jobData = currentJob;
-        await dispatch(saveJob(payload)).unwrap();
+        await dispatch(saveJob({ jobId: currentJob.jobId, source: effectiveSource })).unwrap();
       }
     } catch (error) {
       console.error('Error saving/unsaving job:', error);
@@ -295,9 +293,7 @@ const JobDetails = () => {
               href={
                 effectiveSource === 'federal'
                   ? currentJob.externalUrl || `https://www.usajobs.gov/job/${currentJob.jobId}`
-                  : effectiveSource === 'adzuna'
-                    ? currentJob.externalUrl || currentJob.toApply || '#'
-                    : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
+                  : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
               }
               target='_blank'
               rel='noopener noreferrer'
@@ -305,9 +301,7 @@ const JobDetails = () => {
             >
               {effectiveSource === 'federal'
                 ? 'Apply at USAJobs'
-                : effectiveSource === 'adzuna'
-                  ? 'Apply Now'
-                  : 'Apply at NYC Jobs'}
+                : 'Apply at NYC Jobs'}
               <svg
                 className='ml-2 h-4 w-4'
                 fill='none'

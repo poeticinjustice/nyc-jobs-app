@@ -335,40 +335,6 @@ const getUserSaveEntry = (job, userId) => {
   };
 };
 
-// Transform Adzuna API response item to camelCase model fields
-const transformAdzunaJob = (adzunaItem) => {
-  if (!adzunaItem) return null;
-
-  return {
-    jobId: String(adzunaItem.id),
-    source: 'adzuna',
-    businessTitle: adzunaItem.title || null,
-    civilServiceTitle: null,
-    titleCodeNo: null,
-    level: null,
-    jobCategory: adzunaItem.category?.label || null,
-    fullTimePartTimeIndicator: adzunaItem.contract_time || null,
-    salaryRangeFrom: adzunaItem.salary_min ? Math.round(adzunaItem.salary_min) : null,
-    salaryRangeTo: adzunaItem.salary_max ? Math.round(adzunaItem.salary_max) : null,
-    salaryFrequency: 'Annual',
-    workLocation: adzunaItem.location?.display_name || null,
-    divisionWorkUnit: adzunaItem.company?.display_name || null,
-    jobDescription: adzunaItem.description || null,
-    minimumQualRequirements: null,
-    preferredSkills: null,
-    additionalInformation: null,
-    toApply: adzunaItem.redirect_url || null,
-    externalUrl: adzunaItem.redirect_url || null,
-    hoursShift: null,
-    workLocation1: null,
-    residencyRequirement: null,
-    postDate: adzunaItem.created || null,
-    processDate: null,
-    postUntil: null,
-    agency: adzunaItem.company?.display_name || null,
-  };
-};
-
 // Escape a value for CSV output
 const escCsv = (val) => {
   if (val == null) return '';
@@ -387,7 +353,6 @@ module.exports = {
   sortJobs,
   transformNycJob,
   transformUsaJob,
-  transformAdzunaJob,
   getUserSaveEntry,
   escCsv,
 };

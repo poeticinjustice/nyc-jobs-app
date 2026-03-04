@@ -14,7 +14,6 @@ const {
   escCsv,
 } = require('../helpers/jobHelpers');
 const { fetchUsaJobById, getUsaHeaders } = require('../helpers/usaJobsApi');
-const { fetchAdzunaJobs, getAdzunaJobById, cleanSearchCache: cleanAdzunaCache } = require('../helpers/adzunaApi');
 
 const router = express.Router();
 
@@ -48,7 +47,6 @@ const cleanExpiredCache = (cache, duration) => {
 setInterval(() => {
   cleanExpiredCache(searchResultCache, SEARCH_CACHE_DURATION);
   cleanExpiredCache(usaJobsSearchCache, USA_SEARCH_CACHE_DURATION);
-  cleanAdzunaCache();
 }, 60 * 1000); // every minute
 
 // --- Helpers ---
@@ -213,7 +211,7 @@ const salaryMidpoint = (job) =>
     ? (job.salaryRangeFrom + (job.salaryRangeTo || job.salaryRangeFrom)) / 2
     : null;
 
-// Sort merged camelCase jobs (for 'all' mode where NYC + federal + adzuna are combined)
+// Sort merged camelCase jobs (for 'all' mode where NYC + federal are combined)
 const sortMergedJobs = (jobs, sort) => {
   const sorted = [...jobs];
   switch (sort) {
@@ -320,7 +318,7 @@ router.get(
     query('sort')
       .optional()
       .isIn(['date_desc', 'date_asc', 'title_asc', 'title_desc', 'salary_desc', 'salary_asc']),
-    query('source').optional().isIn(['nyc', 'federal', 'adzuna', 'all']),
+    query('source').optional().isIn(['nyc', 'federal', 'all']),
   ],
   async (req, res) => {
     try {
@@ -339,7 +337,7 @@ router.get(
         page = 1,
         limit = 20,
         sort = 'date_desc',
-        source = 'nyc',
+        source = 'all',
       } = req.query;
 
       const pageNum = parseInt(page) || 1;
@@ -371,22 +369,21 @@ router.get(
       };
 
       if (source === 'all') {
-        // Parallel fetch from all three sources
-        const nycLocation = location || 'New York';
-        const [nycJobs, usaResult, adzunaResult] = await Promise.all([
+        // Fetch one page from each source in parallel, report real combined total
+        const [nycAllJobs, usaResult] = await Promise.all([
           getNycSearchResults(),
-          fetchUsaJobs({ q, category, location: nycLocation, agency, salary_min, salary_max, sort, page: 1, limit: 250 }),
-          fetchAdzunaJobs({ q, location: nycLocation, category, salary_min, salary_max, sort, page: 1, limit: 50 }),
+          fetchUsaJobs({ q, category, location: location || 'New York', agency, salary_min, salary_max, sort, page: pageNum, limit: limitNum }),
         ]);
 
-        const nycTransformed = nycJobs.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
+        // Take current page from NYC (in-memory paginated)
+        const nycStart = (pageNum - 1) * limitNum;
+        const nycPage = nycAllJobs.slice(nycStart, nycStart + limitNum);
+        const nycTransformed = nycPage.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
         const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-        const adzunaJobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
 
-        jobs = sortMergedJobs([...nycTransformed, ...federalJobs, ...adzunaJobs], sort);
-        total = jobs.length;
-        const startIndex = (pageNum - 1) * limitNum;
-        jobs = jobs.slice(startIndex, startIndex + limitNum);
+        // Merge, sort, take one page
+        jobs = sortMergedJobs([...nycTransformed, ...federalJobs], sort).slice(0, limitNum);
+        total = nycAllJobs.length + usaResult.total;
       } else if (source === 'nyc') {
         const nycJobs = await getNycSearchResults();
         total = nycJobs.length;
@@ -412,10 +409,6 @@ router.get(
         const usaResult = await fetchUsaJobs({ q, category, location, agency, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
         jobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
         total = usaResult.total;
-      } else if (source === 'adzuna') {
-        const adzunaResult = await fetchAdzunaJobs({ q, location, category, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
-        jobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
-        total = adzunaResult.total;
       }
 
       // Check saved status for authenticated users (non-nyc modes)
@@ -599,20 +592,6 @@ router.get('/:id', optionalAuth, async (req, res) => {
       }
     }
 
-    // Try Adzuna source — check DB first, then in-memory search cache
-    if (!jobData && jobSource === 'adzuna') {
-      const savedJob = await Job.findOne({ jobId: id, source: 'adzuna' }).lean();
-      if (savedJob) {
-        jobData = { ...savedJob, source: 'adzuna' };
-        fromDb = true;
-      } else {
-        const cachedJob = getAdzunaJobById(id);
-        if (cachedJob) {
-          jobData = { ...cachedJob, source: 'adzuna' };
-        }
-      }
-    }
-
     if (!jobData) {
       return res.status(404).json({ message: 'Job not found' });
     }
@@ -651,32 +630,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
     let job = await Job.findOne({ jobId: id, source });
 
     if (!job) {
-      if (source === 'adzuna') {
-        // Adzuna has no single-job fetch endpoint — create from request body data
-        const jobData = req.body.jobData;
-        if (!jobData || !jobData.businessTitle) {
-          return res.status(404).json({ message: 'Job not found. Please include job data.' });
-        }
-        // Whitelist allowed fields to prevent injection of arbitrary data
-        const allowedFields = [
-          'businessTitle', 'agency', 'jobCategory', 'workLocation',
-          'salaryRangeFrom', 'salaryRangeTo', 'salaryFrequency',
-          'jobDescription', 'toApply', 'externalUrl', 'postDate',
-          'fullTimePartTimeIndicator', 'divisionWorkUnit',
-        ];
-        const numericFields = new Set(['salaryRangeFrom', 'salaryRangeTo']);
-        const sanitized = {};
-        for (const field of allowedFields) {
-          if (jobData[field] === undefined) continue;
-          if (numericFields.has(field)) {
-            const num = Number(jobData[field]);
-            if (!isNaN(num)) sanitized[field] = num;
-          } else {
-            sanitized[field] = String(jobData[field]);
-          }
-        }
-        job = new Job({ ...sanitized, jobId: id, source: 'adzuna' });
-      } else if (source === 'federal') {
+      if (source === 'federal') {
         const federalJob = await fetchUsaJobById(id);
         if (!federalJob) {
           return res.status(404).json({ message: 'Job not found in USAJobs API' });
@@ -729,7 +683,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 router.delete('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const validSources = ['nyc', 'federal', 'adzuna'];
+    const validSources = ['nyc', 'federal'];
     const source = validSources.includes(req.query.source) ? req.query.source : 'nyc';
 
     const job = await Job.findOne({ jobId: id, source });
