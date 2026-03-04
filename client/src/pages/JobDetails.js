@@ -12,6 +12,7 @@ import {
   HiClock,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate } from '../utils/formatUtils';
@@ -33,8 +34,10 @@ const JobDetails = () => {
     }
   }, [dispatch, jobId, source]);
 
+  const effectiveSource = currentJob?.source || source;
+
   const handleStatusChange = (newStatus) => {
-    dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus, source: currentJob.source || source }));
+    dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus, source: effectiveSource }));
   };
 
   const handleSaveJob = async () => {
@@ -45,10 +48,10 @@ const JobDetails = () => {
 
     try {
       if (currentJob.isSaved) {
-        await dispatch(unsaveJob({ jobId: currentJob.jobId, source: currentJob.source || source })).unwrap();
+        await dispatch(unsaveJob({ jobId: currentJob.jobId, source: effectiveSource })).unwrap();
       } else {
-        const payload = { jobId: currentJob.jobId, source: currentJob.source || source };
-        if ((currentJob.source || source) === 'adzuna') payload.jobData = currentJob;
+        const payload = { jobId: currentJob.jobId, source: effectiveSource };
+        if (effectiveSource === 'adzuna') payload.jobData = currentJob;
         await dispatch(saveJob(payload)).unwrap();
       }
     } catch (error) {
@@ -90,19 +93,7 @@ const JobDetails = () => {
               <h1 className='text-3xl font-bold text-gray-900'>
                 {currentJob.businessTitle}
               </h1>
-              {(currentJob.source || source) === 'federal' ? (
-                <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
-                  Federal
-                </span>
-              ) : (currentJob.source || source) === 'adzuna' ? (
-                <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800'>
-                  Private Sector
-                </span>
-              ) : (
-                <span className='px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800'>
-                  NYC
-                </span>
-              )}
+              <SourceBadge source={effectiveSource} />
               {currentJob.isSaved && (
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
@@ -299,9 +290,9 @@ const JobDetails = () => {
             </h3>
             <a
               href={
-                (currentJob.source || source) === 'federal'
+                effectiveSource === 'federal'
                   ? currentJob.externalUrl || `https://www.usajobs.gov/job/${currentJob.jobId}`
-                  : (currentJob.source || source) === 'adzuna'
+                  : effectiveSource === 'adzuna'
                     ? currentJob.externalUrl || currentJob.toApply || '#'
                     : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
               }
@@ -309,9 +300,9 @@ const JobDetails = () => {
               rel='noopener noreferrer'
               className='inline-flex items-center px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors'
             >
-              {(currentJob.source || source) === 'federal'
+              {effectiveSource === 'federal'
                 ? 'Apply at USAJobs'
-                : (currentJob.source || source) === 'adzuna'
+                : effectiveSource === 'adzuna'
                   ? 'Apply Now'
                   : 'Apply at NYC Jobs'}
               <svg
@@ -415,7 +406,7 @@ const JobDetails = () => {
         onClose={() => setShowNoteModal(false)}
         jobId={currentJob?.jobId}
         jobTitle={currentJob?.businessTitle}
-        source={currentJob?.source || source}
+        source={effectiveSource}
       />
     </div>
   );

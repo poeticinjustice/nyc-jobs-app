@@ -15,6 +15,7 @@ import {
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate } from '../utils/formatUtils';
@@ -65,7 +66,7 @@ const SavedJobs = () => {
   };
 
   const handleStatusChange = (job, newStatus) => {
-    dispatch(updateJobStatus({ jobId: job.jobId, status: newStatus, source: job.source }));
+    dispatch(updateJobStatus({ jobId: job.jobId, status: newStatus, source: job.source || 'nyc' }));
   };
 
   const handleStatusFilterChange = (status) => {
@@ -174,19 +175,7 @@ const SavedJobs = () => {
                     <h3 className='text-lg font-semibold text-gray-900'>
                       {job.businessTitle}
                     </h3>
-                    {job.source === 'federal' ? (
-                      <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
-                        Federal
-                      </span>
-                    ) : job.source === 'adzuna' ? (
-                      <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800'>
-                        Private
-                      </span>
-                    ) : (
-                      <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800'>
-                        NYC
-                      </span>
-                    )}
+                    <SourceBadge source={job.source} />
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
                         job.applicationStatus

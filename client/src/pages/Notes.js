@@ -302,7 +302,7 @@ const Notes = () => {
                     <span>Created: {formatDate(note.createdAt)}</span>
                     {note.job && (
                       <Link
-                        to={`/job/${note.job.jobId}`}
+                        to={`/job/${note.job.jobId}?source=${note.job.source || 'nyc'}`}
                         className='text-primary-600 hover:text-primary-700 flex items-center'
                       >
                         <HiExternalLink className='h-4 w-4 mr-1' />
@@ -380,6 +380,9 @@ const Notes = () => {
         }
         jobTitle={
           editingNote?.job?.businessTitle || viewingNote?.job?.businessTitle
+        }
+        source={
+          editingNote?.job?.source || viewingNote?.job?.source
         }
         isViewMode={!!viewingNote}
       />

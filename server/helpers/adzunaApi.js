@@ -6,6 +6,11 @@ const searchCache = new Map();
 const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_SEARCH_CACHE_SIZE = 50;
 
+// Individual job cache (populated from search results)
+const jobCache = new Map();
+const JOB_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const MAX_JOB_CACHE_SIZE = 200;
+
 // Map our sort params to Adzuna sort_by values
 const SORT_MAP = {
   date_desc: 'date',
@@ -62,6 +67,17 @@ const fetchAdzunaJobs = async ({ q, location, category, salary_min, salary_max, 
 
     let jobs = results.map(transformAdzunaJob).filter(Boolean);
 
+    // Cache individual jobs by ID for detail page lookups
+    for (const job of jobs) {
+      if (job.jobId) {
+        if (jobCache.size >= MAX_JOB_CACHE_SIZE) {
+          const oldestKey = jobCache.keys().next().value;
+          jobCache.delete(oldestKey);
+        }
+        jobCache.set(job.jobId, { data: job, timestamp: Date.now() });
+      }
+    }
+
     // Adzuna doesn't support reverse sort — handle client-side for asc variants
     if (sort === 'date_asc') {
       jobs.reverse();
@@ -85,6 +101,16 @@ const fetchAdzunaJobs = async ({ q, location, category, salary_min, salary_max, 
   }
 };
 
+// Look up a single Adzuna job from the in-memory cache
+const getAdzunaJobById = (jobId) => {
+  const cached = jobCache.get(jobId);
+  if (cached && Date.now() - cached.timestamp < JOB_CACHE_TTL) {
+    return cached.data;
+  }
+  if (cached) jobCache.delete(jobId);
+  return null;
+};
+
 // Clean expired cache entries (called from jobs route setInterval)
 const cleanSearchCache = () => {
   const now = Date.now();
@@ -93,6 +119,11 @@ const cleanSearchCache = () => {
       searchCache.delete(key);
     }
   }
+  for (const [key, value] of jobCache.entries()) {
+    if (now - value.timestamp > JOB_CACHE_TTL) {
+      jobCache.delete(key);
+    }
+  }
 };
 
-module.exports = { fetchAdzunaJobs, cleanSearchCache };
+module.exports = { fetchAdzunaJobs, getAdzunaJobById, cleanSearchCache };

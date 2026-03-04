@@ -165,7 +165,8 @@ router.post(
             } catch (error) {
               console.error(`Error auto-saving federal job ${jobId}:`, error.message);
             }
-          } else {
+          } else if (jobSource !== 'adzuna') {
+            // Adzuna has no single-job fetch endpoint — skip auto-fetch
             try {
               const response = await axios.get(
                 `${process.env.NYC_JOBS_API_URL}?job_id=${jobId}`,
@@ -244,7 +245,7 @@ router.get(
       // Enrich notes with job info from MongoDB
       const jobIds = [...new Set(notes.map((n) => n.jobId).filter(Boolean))];
       const jobs = jobIds.length
-        ? await Job.find({ jobId: { $in: jobIds } }).select('jobId businessTitle jobCategory workLocation').lean()
+        ? await Job.find({ jobId: { $in: jobIds } }).select('jobId source businessTitle jobCategory workLocation').lean()
         : [];
       const jobMap = Object.fromEntries(jobs.map((j) => [j.jobId, j]));
 
@@ -284,7 +285,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
 
-    if (!note) {
+    if (!note || note.status === 'deleted') {
       return res.status(404).json({ message: 'Note not found' });
     }
 
@@ -295,7 +296,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const noteObj = note.toObject();
     if (noteObj.jobId) {
       const job = await Job.findOne({ jobId: noteObj.jobId })
-        .select('jobId businessTitle jobCategory workLocation')
+        .select('jobId source businessTitle jobCategory workLocation')
         .lean();
       noteObj.job = job || { jobId: noteObj.jobId, businessTitle: 'Job not saved in database' };
     }
@@ -330,7 +331,7 @@ router.put(
       }
 
       const note = await Note.findById(req.params.id);
-      if (!note) {
+      if (!note || note.status === 'deleted') {
         return res.status(404).json({ message: 'Note not found' });
       }
 
@@ -351,7 +352,7 @@ router.put(
 
       if (updatedNote.jobId) {
         const job = await Job.findOne({ jobId: updatedNote.jobId })
-          .select('jobId businessTitle jobCategory workLocation')
+          .select('jobId source businessTitle jobCategory workLocation')
           .lean();
         updatedNote.job = job || { jobId: updatedNote.jobId, businessTitle: 'Job not saved in database' };
       }
@@ -370,7 +371,7 @@ router.put(
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
-    if (!note) {
+    if (!note || note.status === 'deleted') {
       return res.status(404).json({ message: 'Note not found' });
     }
 

@@ -10,6 +10,7 @@ import {
   HiArrowRight,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import SourceBadge from '../components/UI/SourceBadge';
 import { formatSalary, formatDate } from '../utils/formatUtils';
 import { STATUS_COLORS } from '../utils/statusConstants';
 
@@ -200,15 +201,7 @@ const Home = () => {
                               <p className='text-sm font-medium text-gray-900 truncate'>
                                 {job.businessTitle}
                               </p>
-                              {job.source === 'federal' ? (
-                                <span className='shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800'>
-                                  Fed
-                                </span>
-                              ) : (
-                                <span className='shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800'>
-                                  NYC
-                                </span>
-                              )}
+                              <SourceBadge source={job.source} size='sm' />
                             </div>
                             <p className='text-xs text-gray-500 mt-1'>
                               {job.agency || job.workLocation || 'NYC Government'}
@@ -309,7 +302,7 @@ const Home = () => {
             Welcome to NYC Jobs
           </h1>
           <p className='text-xl text-gray-600 mb-8'>
-            Discover and manage job opportunities in New York City government
+            Discover and manage job opportunities across NYC, federal, and private sector
           </p>
           <div className='space-y-4'>
             <p className='text-lg text-gray-700'>
@@ -345,8 +338,8 @@ const Home = () => {
               Comprehensive Search
             </h3>
             <p className='text-gray-600'>
-              Search through thousands of NYC government job postings with
-              advanced filters
+              Search thousands of job postings from NYC government, federal
+              agencies, and private sector employers
             </p>
           </div>
 

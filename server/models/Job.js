@@ -151,5 +151,6 @@ jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
 jobSchema.index({ postDate: -1 });
 jobSchema.index({ 'savedBy.user': 1 });
+jobSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model('Job', jobSchema);

@@ -14,7 +14,7 @@ const {
   escCsv,
 } = require('../helpers/jobHelpers');
 const { fetchUsaJobById } = require('../helpers/usaJobsApi');
-const { fetchAdzunaJobs, cleanSearchCache: cleanAdzunaCache } = require('../helpers/adzunaApi');
+const { fetchAdzunaJobs, getAdzunaJobById, cleanSearchCache: cleanAdzunaCache } = require('../helpers/adzunaApi');
 
 const router = express.Router();
 
@@ -36,19 +36,18 @@ const usaJobsSearchCache = new Map();
 const USA_SEARCH_CACHE_DURATION = 5 * 60 * 1000;
 const MAX_USA_SEARCH_CACHE_SIZE = 50;
 
+// Evict expired entries from a Map-based cache
+const cleanExpiredCache = (cache, duration) => {
+  const now = Date.now();
+  for (const [key, value] of cache.entries()) {
+    if (now - value.timestamp > duration) cache.delete(key);
+  }
+};
+
 // Periodically clean expired search cache entries
 setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of searchResultCache.entries()) {
-    if (now - value.timestamp > SEARCH_CACHE_DURATION) {
-      searchResultCache.delete(key);
-    }
-  }
-  for (const [key, value] of usaJobsSearchCache.entries()) {
-    if (now - value.timestamp > USA_SEARCH_CACHE_DURATION) {
-      usaJobsSearchCache.delete(key);
-    }
-  }
+  cleanExpiredCache(searchResultCache, SEARCH_CACHE_DURATION);
+  cleanExpiredCache(usaJobsSearchCache, USA_SEARCH_CACHE_DURATION);
   cleanAdzunaCache();
 }, 60 * 1000); // every minute
 
@@ -203,7 +202,13 @@ const fetchUsaJobs = async ({ q, category, location, agency, salary_min, salary_
   }
 };
 
-// Sort merged camelCase jobs (for 'all' mode where NYC + federal are combined)
+// Salary midpoint for sorting (returns null if no salary data)
+const salaryMidpoint = (job) =>
+  job.salaryRangeFrom != null
+    ? (job.salaryRangeFrom + (job.salaryRangeTo || job.salaryRangeFrom)) / 2
+    : null;
+
+// Sort merged camelCase jobs (for 'all' mode where NYC + federal + adzuna are combined)
 const sortMergedJobs = (jobs, sort) => {
   const sorted = [...jobs];
   switch (sort) {
@@ -217,25 +222,18 @@ const sortMergedJobs = (jobs, sort) => {
       sorted.sort((a, b) => (b.businessTitle || '').localeCompare(a.businessTitle || ''));
       break;
     case 'salary_desc':
+    case 'salary_asc': {
+      const dir = sort === 'salary_desc' ? -1 : 1;
       sorted.sort((a, b) => {
-        const sa = a.salaryRangeFrom != null ? (a.salaryRangeFrom + (a.salaryRangeTo || a.salaryRangeFrom)) / 2 : null;
-        const sb = b.salaryRangeFrom != null ? (b.salaryRangeFrom + (b.salaryRangeTo || b.salaryRangeFrom)) / 2 : null;
+        const sa = salaryMidpoint(a);
+        const sb = salaryMidpoint(b);
         if (sa == null && sb == null) return 0;
         if (sa == null) return 1;
         if (sb == null) return -1;
-        return sb - sa;
+        return dir * (sa - sb);
       });
       break;
-    case 'salary_asc':
-      sorted.sort((a, b) => {
-        const sa = a.salaryRangeFrom != null ? (a.salaryRangeFrom + (a.salaryRangeTo || a.salaryRangeFrom)) / 2 : null;
-        const sb = b.salaryRangeFrom != null ? (b.salaryRangeFrom + (b.salaryRangeTo || b.salaryRangeFrom)) / 2 : null;
-        if (sa == null && sb == null) return 0;
-        if (sa == null) return 1;
-        if (sb == null) return -1;
-        return sa - sb;
-      });
-      break;
+    }
     case 'date_desc':
     default:
       sorted.sort((a, b) => new Date(b.postDate || 0) - new Date(a.postDate || 0));
@@ -345,94 +343,74 @@ router.get(
       let jobs = [];
       let total = 0;
 
-      // --- NYC path ---
-      if (source === 'nyc' || source === 'all') {
+      // Helper: fetch and cache NYC search results
+      const getNycSearchResults = async () => {
         const cacheKey = generateSearchCacheKey({ q, category, location, agency, salary_min, salary_max, sort });
         const cachedSearch = searchResultCache.get(cacheKey);
 
-        let nycJobs;
         if (cachedSearch && Date.now() - cachedSearch.timestamp < SEARCH_CACHE_DURATION) {
-          // Move to end for LRU ordering
           searchResultCache.delete(cacheKey);
           searchResultCache.set(cacheKey, cachedSearch);
-          nycJobs = cachedSearch.results;
-        } else {
-          const allJobs = await fetchAllJobs();
-          nycJobs = filterJobs(allJobs, { q, category, location, agency, salary_min, salary_max });
-          nycJobs = sortJobs(nycJobs, sort);
-
-          if (searchResultCache.size >= MAX_SEARCH_CACHE_SIZE) {
-            const oldestKey = searchResultCache.keys().next().value;
-            searchResultCache.delete(oldestKey);
-          }
-          searchResultCache.set(cacheKey, { results: nycJobs, timestamp: Date.now() });
+          return cachedSearch.results;
         }
 
-        if (source === 'nyc') {
-          total = nycJobs.length;
-          const startIndex = (pageNum - 1) * limitNum;
-          const paginatedJobs = nycJobs.slice(startIndex, startIndex + limitNum);
+        const allJobs = await fetchAllJobs();
+        const filtered = sortJobs(filterJobs(allJobs, { q, category, location, agency, salary_min, salary_max }), sort);
 
-          let savedJobIds = [];
-          if (req.user) {
-            const savedJobs = await Job.find({
-              'savedBy.user': req.user._id,
-              jobId: { $in: paginatedJobs.map((job) => job.job_id) },
-              source: 'nyc',
-            });
-            savedJobIds = savedJobs.map((job) => job.jobId);
-          }
-
-          jobs = paginatedJobs.map((job) => ({
-            ...transformNycJob(job),
-            source: 'nyc',
-            isSaved: savedJobIds.includes(job.job_id),
-          }));
-        } else {
-          // 'all' mode: transform for merging (don't paginate yet)
-          jobs = nycJobs.map((job) => ({
-            ...transformNycJob(job),
-            source: 'nyc',
-          }));
+        if (searchResultCache.size >= MAX_SEARCH_CACHE_SIZE) {
+          const oldestKey = searchResultCache.keys().next().value;
+          searchResultCache.delete(oldestKey);
         }
-      }
+        searchResultCache.set(cacheKey, { results: filtered, timestamp: Date.now() });
+        return filtered;
+      };
 
-      // --- Federal path ---
-      if (source === 'federal' || source === 'all') {
-        if (source === 'federal') {
-          const usaResult = await fetchUsaJobs({ q, category, location, agency, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
-          jobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-          total = usaResult.total;
-        } else {
-          // 'all' mode: fetch federal jobs scoped to NYC, merge with city jobs
-          const nycLocation = location || 'New York';
-          const usaResult = await fetchUsaJobs({ q, category, location: nycLocation, agency, salary_min, salary_max, sort, page: 1, limit: 250 });
-          const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-          jobs = [...jobs, ...federalJobs];
-        }
-      }
-
-      // --- Adzuna path ---
-      if (source === 'adzuna' || source === 'all') {
-        if (source === 'adzuna') {
-          const adzunaResult = await fetchAdzunaJobs({ q, location, category, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
-          jobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
-          total = adzunaResult.total;
-        } else {
-          // 'all' mode: fetch Adzuna jobs scoped to NYC, merge with existing
-          const nycLocation = location || 'New York';
-          const adzunaResult = await fetchAdzunaJobs({ q, location: nycLocation, category, salary_min, salary_max, sort, page: 1, limit: 50 });
-          const adzunaJobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
-          jobs = [...jobs, ...adzunaJobs];
-        }
-      }
-
-      // 'all' mode: sort merged results and paginate
       if (source === 'all') {
-        jobs = sortMergedJobs(jobs, sort);
+        // Parallel fetch from all three sources
+        const nycLocation = location || 'New York';
+        const [nycJobs, usaResult, adzunaResult] = await Promise.all([
+          getNycSearchResults(),
+          fetchUsaJobs({ q, category, location: nycLocation, agency, salary_min, salary_max, sort, page: 1, limit: 250 }),
+          fetchAdzunaJobs({ q, location: nycLocation, category, salary_min, salary_max, sort, page: 1, limit: 50 }),
+        ]);
+
+        const nycTransformed = nycJobs.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
+        const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
+        const adzunaJobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
+
+        jobs = sortMergedJobs([...nycTransformed, ...federalJobs, ...adzunaJobs], sort);
         total = jobs.length;
         const startIndex = (pageNum - 1) * limitNum;
         jobs = jobs.slice(startIndex, startIndex + limitNum);
+      } else if (source === 'nyc') {
+        const nycJobs = await getNycSearchResults();
+        total = nycJobs.length;
+        const startIndex = (pageNum - 1) * limitNum;
+        const paginatedJobs = nycJobs.slice(startIndex, startIndex + limitNum);
+
+        let savedJobIds = [];
+        if (req.user) {
+          const savedJobs = await Job.find({
+            'savedBy.user': req.user._id,
+            jobId: { $in: paginatedJobs.map((job) => job.job_id) },
+            source: 'nyc',
+          });
+          savedJobIds = savedJobs.map((job) => job.jobId);
+        }
+
+        jobs = paginatedJobs.map((job) => ({
+          ...transformNycJob(job),
+          source: 'nyc',
+          isSaved: savedJobIds.includes(job.job_id),
+        }));
+      } else if (source === 'federal') {
+        const usaResult = await fetchUsaJobs({ q, category, location, agency, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
+        jobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
+        total = usaResult.total;
+      } else if (source === 'adzuna') {
+        const adzunaResult = await fetchAdzunaJobs({ q, location, category, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
+        jobs = adzunaResult.jobs.map((job) => ({ ...job, source: 'adzuna' }));
+        total = adzunaResult.total;
       }
 
       // Check saved status for authenticated users (non-nyc modes)
@@ -442,10 +420,10 @@ router.get(
           'savedBy.user': req.user._id,
           jobId: { $in: jobIds },
         }).lean();
-        const savedJobIdSet = new Set(savedJobs.map((j) => j.jobId));
+        const savedJobMap = new Set(savedJobs.map((j) => `${j.source}:${j.jobId}`));
         jobs = jobs.map((job) => ({
           ...job,
-          isSaved: job.isSaved || savedJobIdSet.has(job.jobId),
+          isSaved: job.isSaved || savedJobMap.has(`${job.source}:${job.jobId}`),
         }));
       }
 
@@ -614,11 +592,16 @@ router.get('/:id', optionalAuth, async (req, res) => {
       }
     }
 
-    // Try Adzuna source (DB only — Adzuna has no single-job fetch endpoint)
+    // Try Adzuna source — check DB first, then in-memory search cache
     if (!jobData && (jobSource === 'adzuna' || !source)) {
       const savedJob = await Job.findOne({ jobId: id, source: 'adzuna' }).lean();
       if (savedJob) {
         jobData = { ...savedJob, source: 'adzuna' };
+      } else {
+        const cachedJob = getAdzunaJobById(id);
+        if (cachedJob) {
+          jobData = { ...cachedJob, source: 'adzuna' };
+        }
       }
     }
 
@@ -661,7 +644,18 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
         if (!jobData || !jobData.businessTitle) {
           return res.status(404).json({ message: 'Job not found. Please include job data.' });
         }
-        job = new Job({ ...jobData, jobId: id, source: 'adzuna' });
+        // Whitelist allowed fields to prevent injection of arbitrary data
+        const allowedFields = [
+          'businessTitle', 'agency', 'jobCategory', 'workLocation',
+          'salaryRangeFrom', 'salaryRangeTo', 'salaryFrequency',
+          'jobDescription', 'toApply', 'externalUrl', 'postDate',
+          'fullTimePartTimeIndicator', 'divisionWorkUnit',
+        ];
+        const sanitized = {};
+        for (const field of allowedFields) {
+          if (jobData[field] !== undefined) sanitized[field] = jobData[field];
+        }
+        job = new Job({ ...sanitized, jobId: id, source: 'adzuna' });
       } else if (source === 'federal') {
         const federalJob = await fetchUsaJobById(id);
         if (!federalJob) {
@@ -721,7 +715,12 @@ router.delete('/:id/save', authenticateToken, async (req, res) => {
     }
 
     job.savedBy = job.savedBy.filter((s) => s.user.toString() !== req.user._id.toString());
-    await job.save();
+
+    if (job.savedBy.length === 0) {
+      await job.deleteOne();
+    } else {
+      await job.save();
+    }
 
     res.json({ message: 'Job unsaved successfully' });
   } catch (error) {

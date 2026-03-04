@@ -22,9 +22,26 @@ import {
   HiTrash,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import SourceBadge from '../components/UI/SourceBadge';
 import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate } from '../utils/formatUtils';
+
+const SORT_OPTIONS = [
+  { value: 'date_desc', label: 'Most Recent First' },
+  { value: 'date_asc', label: 'Oldest First' },
+  { value: 'title_asc', label: 'Title A-Z' },
+  { value: 'title_desc', label: 'Title Z-A' },
+  { value: 'salary_desc', label: 'Highest Salary First' },
+  { value: 'salary_asc', label: 'Lowest Salary First' },
+];
+
+const SOURCE_OPTIONS = [
+  { value: 'nyc', label: 'NYC Jobs' },
+  { value: 'federal', label: 'Federal Jobs' },
+  { value: 'adzuna', label: 'Private Sector' },
+  { value: 'all', label: 'All Jobs' },
+];
 
 const JobSearch = () => {
   const dispatch = useDispatch();
@@ -266,24 +283,8 @@ const JobSearch = () => {
 
   const totalPages = pagination?.pages || 0;
 
-  const getSortDisplayName = (sortValue) => {
-    switch (sortValue) {
-      case 'date_desc':
-        return 'Most Recent First';
-      case 'date_asc':
-        return 'Oldest First';
-      case 'title_asc':
-        return 'Title A-Z';
-      case 'title_desc':
-        return 'Title Z-A';
-      case 'salary_desc':
-        return 'Highest Salary First';
-      case 'salary_asc':
-        return 'Lowest Salary First';
-      default:
-        return 'Most Recent First';
-    }
-  };
+  const getSortDisplayName = (sortValue) =>
+    SORT_OPTIONS.find((o) => o.value === sortValue)?.label || 'Most Recent First';
 
   return (
     <div className='space-y-6'>
@@ -301,12 +302,7 @@ const JobSearch = () => {
 
         {/* Source Toggle */}
         <div className='flex items-center gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit'>
-          {[
-            { value: 'nyc', label: 'NYC Jobs' },
-            { value: 'federal', label: 'Federal Jobs' },
-            { value: 'adzuna', label: 'Private Sector' },
-            { value: 'all', label: 'All Jobs' },
-          ].map((opt) => (
+          {SOURCE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type='button'
@@ -732,20 +728,7 @@ const JobSearch = () => {
                     {showSortDropdown && (
                       <div className='absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10'>
                         <div className='py-1'>
-                          {[
-                            { value: 'date_desc', label: 'Most Recent First' },
-                            { value: 'date_asc', label: 'Oldest First' },
-                            { value: 'title_asc', label: 'Title A-Z' },
-                            { value: 'title_desc', label: 'Title Z-A' },
-                            {
-                              value: 'salary_desc',
-                              label: 'Highest Salary First',
-                            },
-                            {
-                              value: 'salary_asc',
-                              label: 'Lowest Salary First',
-                            },
-                          ].map((option) => (
+                          {SORT_OPTIONS.map((option) => (
                             <button
                               key={option.value}
                               onClick={() => {
@@ -884,17 +867,7 @@ const JobSearch = () => {
                           {job.businessTitle}
                         </h3>
                         {activeSearchParams.source === 'all' && (
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              job.source === 'federal'
-                                ? 'bg-blue-100 text-blue-800'
-                                : job.source === 'adzuna'
-                                  ? 'bg-orange-100 text-orange-800'
-                                  : 'bg-green-100 text-green-800'
-                            }`}
-                          >
-                            {job.source === 'federal' ? 'Federal' : job.source === 'adzuna' ? 'Private' : 'NYC'}
-                          </span>
+                          <SourceBadge source={job.source} />
                         )}
                       </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
