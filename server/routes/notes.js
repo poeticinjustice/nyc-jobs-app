@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const Note = require('../models/Note');
 const Job = require('../models/Job');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, validateObjectId } = require('../middleware/auth');
 const axios = require('axios');
 const { transformNycJob, escCsv } = require('../helpers/jobHelpers');
 const { fetchUsaJobById } = require('../helpers/usaJobsApi');
@@ -164,8 +164,8 @@ router.post(
                 job = new Job({ ...federalJob, source: 'federal' });
                 await job.save();
               }
-            } catch (error) {
-              console.error(`Error auto-saving federal job ${jobId}:`, error.message);
+            } catch (usaError) {
+              console.error(`Error auto-saving federal job ${jobId}:`, usaError.message);
             }
           } else {
             try {
@@ -289,7 +289,7 @@ router.get(
 // @route   GET /api/notes/:id
 // @desc    Get note by ID
 // @access  Private
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', [validateObjectId, authenticateToken], async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
 
@@ -322,6 +322,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.put(
   '/:id',
   [
+    validateObjectId,
     authenticateToken,
     body('title').optional().trim().isLength({ min: 1, max: 200 }),
     body('content').optional().trim().isLength({ min: 1, max: 5000 }),
@@ -376,7 +377,7 @@ router.put(
 // @route   DELETE /api/notes/:id
 // @desc    Delete note (soft delete)
 // @access  Private
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', [validateObjectId, authenticateToken], async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
     if (!note || note.status === 'deleted') {

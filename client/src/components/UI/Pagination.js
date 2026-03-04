@@ -16,6 +16,7 @@ const Pagination = ({ currentPage, totalPages, total, pageSize, onPageChange, la
           <button
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
+            aria-label='Previous page'
             className={`p-2 rounded-lg border transition-colors ${
               currentPage <= 1
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -42,6 +43,8 @@ const Pagination = ({ currentPage, totalPages, total, pageSize, onPageChange, la
                 <button
                   key={pageNum}
                   onClick={() => onPageChange(pageNum)}
+                  aria-label={`Page ${pageNum}`}
+                  aria-current={pageNum === currentPage ? 'page' : undefined}
                   className={`px-3 py-2 rounded-lg border transition-colors ${
                     pageNum === currentPage
                       ? 'bg-primary-600 text-white border-primary-600'
@@ -57,6 +60,7 @@ const Pagination = ({ currentPage, totalPages, total, pageSize, onPageChange, la
           <button
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
+            aria-label='Next page'
             className={`p-2 rounded-lg border transition-colors ${
               currentPage >= totalPages
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'

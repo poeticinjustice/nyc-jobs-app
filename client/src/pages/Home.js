@@ -309,7 +309,7 @@ const Home = () => {
             Welcome to NYC Jobs
           </h1>
           <p className='text-xl text-gray-600 mb-8'>
-            Discover and manage job opportunities across NYC, federal, and private sector
+            Discover and manage job opportunities across NYC and federal government
           </p>
           <div className='space-y-4'>
             <p className='text-lg text-gray-700'>
@@ -345,8 +345,8 @@ const Home = () => {
               Comprehensive Search
             </h3>
             <p className='text-gray-600'>
-              Search thousands of job postings from NYC government, federal
-              agencies, and private sector employers
+              Search thousands of job postings from NYC government and federal
+              agencies
             </p>
           </div>
 

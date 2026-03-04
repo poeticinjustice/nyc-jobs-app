@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const SavedSearch = require('../models/SavedSearch');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, validateObjectId } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -73,7 +73,7 @@ router.post(
 // @route   DELETE /api/searches/:id
 // @desc    Delete a saved search
 // @access  Private
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', [validateObjectId, authenticateToken], async (req, res) => {
   try {
     const result = await SavedSearch.findOneAndDelete({ _id: req.params.id, user: req.user._id });
     if (!result) {

@@ -174,11 +174,11 @@ router.put(
       const updatedUser = await User.findByIdAndUpdate(req.user._id, updates, {
         new: true,
         runValidators: true,
-      }).select('-password');
+      });
 
       res.json({
         message: 'Profile updated successfully',
-        user: updatedUser,
+        user: updatedUser.getProfile(),
       });
     } catch (error) {
       console.error('Update profile error:', error);

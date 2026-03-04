@@ -10,7 +10,7 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/,
+        /^[\w.+\-]+@[\w.\-]+\.\w{2,}$/,
         'Please enter a valid email',
       ],
     },
@@ -68,11 +68,10 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Method to get user profile (without password)
+// Method to get user profile (whitelist of safe fields)
 userSchema.methods.getProfile = function () {
-  const userObject = this.toObject();
-  delete userObject.password;
-  return userObject;
+  const { _id, email, firstName, lastName, role, isActive, lastLogin, createdAt, updatedAt } = this.toObject();
+  return { _id, email, firstName, lastName, role, isActive, lastLogin, createdAt, updatedAt };
 };
 
 module.exports = mongoose.model('User', userSchema);

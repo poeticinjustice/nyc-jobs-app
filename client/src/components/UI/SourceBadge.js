@@ -6,7 +6,7 @@ const SOURCE_CONFIG = {
 };
 
 const SourceBadge = ({ source, size = 'md' }) => {
-  const config = SOURCE_CONFIG[source] || SOURCE_CONFIG.nyc;
+  const config = SOURCE_CONFIG[source] || { label: source, shortLabel: source, className: 'bg-gray-100 text-gray-800' };
   const isSmall = size === 'sm';
 
   return (

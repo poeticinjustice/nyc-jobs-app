@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 
 // Middleware to verify JWT token
@@ -68,13 +69,26 @@ const optionalAuth = async (req, res, next) => {
 
     next();
   } catch (error) {
-    // Don't fail the request, just continue without user
+    // Swallow JWT errors (invalid/expired token) — continue without user
+    // Log unexpected errors (DB failures, etc.) but don't block the request
+    if (error.name !== 'JsonWebTokenError' && error.name !== 'TokenExpiredError') {
+      console.error('Optional auth unexpected error:', error.message);
+    }
     next();
   }
+};
+
+// Validate that :id param is a valid MongoDB ObjectId
+const validateObjectId = (req, res, next) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ message: 'Invalid ID format' });
+  }
+  next();
 };
 
 module.exports = {
   authenticateToken,
   requireRole,
   optionalAuth,
+  validateObjectId,
 };

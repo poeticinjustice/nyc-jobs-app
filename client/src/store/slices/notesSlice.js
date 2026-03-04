@@ -31,20 +31,6 @@ export const getNotes = createAsyncThunk(
   }
 );
 
-export const getNoteById = createAsyncThunk(
-  'notes/getNoteById',
-  async (noteId, { rejectWithValue }) => {
-    try {
-      const response = await api.get(`/api/notes/${noteId}`);
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || 'Failed to get note'
-      );
-    }
-  }
-);
-
 export const updateNote = createAsyncThunk(
   'notes/updateNote',
   async ({ noteId, noteData }, { rejectWithValue }) => {
@@ -73,41 +59,9 @@ export const deleteNote = createAsyncThunk(
   }
 );
 
-export const getJobNotes = createAsyncThunk(
-  'notes/getJobNotes',
-  async ({ jobId, params = {} }, { rejectWithValue }) => {
-    try {
-      const response = await api.get(`/api/notes/job/${jobId}`, { params });
-      return { jobId, ...response.data };
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || 'Failed to get job notes'
-      );
-    }
-  }
-);
-
-export const getNoteStats = createAsyncThunk(
-  'notes/getNoteStats',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await api.get('/api/notes/stats');
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || 'Failed to get note statistics'
-      );
-    }
-  }
-);
-
 const initialState = {
   notes: [],
-  currentNote: null,
-  jobNotes: {},
-  stats: null,
   filters: {
-    jobId: '',
     type: '',
     priority: '',
   },
@@ -131,13 +85,6 @@ const notesSlice = createSlice({
     setFilters: (state, action) => {
       state.filters = { ...state.filters, ...action.payload };
       state.pagination.page = 1;
-    },
-    clearNotes: (state) => {
-      state.notes = [];
-      state.pagination = initialState.pagination;
-    },
-    clearCurrentNote: (state) => {
-      state.currentNote = null;
     },
     clearError: (state) => {
       state.error = null;
@@ -185,21 +132,6 @@ const notesSlice = createSlice({
         state.error = action.payload;
       })
 
-      // Get Note By ID
-      .addCase(getNoteById.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(getNoteById.fulfilled, (state, action) => {
-        state.loading = false;
-        state.currentNote = action.payload.note;
-        state.error = null;
-      })
-      .addCase(getNoteById.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
-
       // Update Note
       .addCase(updateNote.pending, (state) => {
         state.updateLoading = true;
@@ -207,7 +139,6 @@ const notesSlice = createSlice({
       })
       .addCase(updateNote.fulfilled, (state, action) => {
         state.updateLoading = false;
-        state.currentNote = action.payload.note;
         const index = state.notes.findIndex(
           (note) => note._id === action.payload.note._id
         );
@@ -230,21 +161,6 @@ const notesSlice = createSlice({
         state.deleteLoading = false;
         const { noteId } = action.payload;
         state.notes = state.notes.filter((note) => note._id !== noteId);
-        if (state.currentNote && state.currentNote._id === noteId) {
-          state.currentNote = null;
-        }
-        // Clean up jobNotes cache
-        for (const jid of Object.keys(state.jobNotes)) {
-          const cached = state.jobNotes[jid];
-          if (cached) {
-            const before = cached.notes.length;
-            cached.notes = cached.notes.filter((n) => n._id !== noteId);
-            if (cached.notes.length < before && cached.pagination) {
-              cached.pagination.total = Math.max(0, cached.pagination.total - 1);
-              cached.pagination.pages = Math.ceil(cached.pagination.total / cached.pagination.limit);
-            }
-          }
-        }
         if (state.pagination.total > 0) {
           state.pagination.total -= 1;
           state.pagination.pages = Math.ceil(
@@ -258,37 +174,6 @@ const notesSlice = createSlice({
         state.error = action.payload;
       })
 
-      // Get Job Notes
-      .addCase(getJobNotes.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(getJobNotes.fulfilled, (state, action) => {
-        state.loading = false;
-        const { jobId, notes, pagination } = action.payload;
-        state.jobNotes[jobId] = { notes, pagination };
-        state.error = null;
-      })
-      .addCase(getJobNotes.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
-
-      // Get Note Stats
-      .addCase(getNoteStats.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(getNoteStats.fulfilled, (state, action) => {
-        state.loading = false;
-        state.stats = action.payload;
-        state.error = null;
-      })
-      .addCase(getNoteStats.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
-
       // Reset on logout
       .addCase(logout, () => initialState);
   },
@@ -296,8 +181,6 @@ const notesSlice = createSlice({
 
 export const {
   setFilters,
-  clearNotes,
-  clearCurrentNote,
   clearError,
 } = notesSlice.actions;
 

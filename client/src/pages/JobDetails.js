@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { getJobDetails, saveJob, unsaveJob, updateJobStatus, clearCurrentJob } from '../store/slices/jobsSlice';
+import { getJobDetails, saveJob, unsaveJob, updateJobStatus } from '../store/slices/jobsSlice';
 import {
   HiBookmark,
   HiBookmarkAlt,
@@ -23,13 +23,12 @@ const JobDetails = () => {
   const [searchParams] = useSearchParams();
   const source = searchParams.get('source') || 'nyc';
   const dispatch = useDispatch();
-  const { currentJob, loading, error } = useSelector((state) => state.jobs);
+  const { currentJob, detailsLoading: loading, detailsError: error } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    dispatch(clearCurrentJob());
     if (jobId) {
       dispatch(getJobDetails({ jobId, source }));
     }

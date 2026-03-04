@@ -1,7 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { createNote, updateNote } from '../../store/slices/notesSlice';
 import { HiX, HiSave, HiPencil } from 'react-icons/hi';
+
+const INITIAL_FORM_DATA = {
+  title: '',
+  content: '',
+  type: 'general',
+  priority: 'medium',
+  tags: '',
+};
 
 const NoteModal = ({
   isOpen,
@@ -13,13 +21,11 @@ const NoteModal = ({
   isViewMode = false,
 }) => {
   const dispatch = useDispatch();
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    type: 'general',
-    priority: 'medium',
-    tags: '',
-  });
+  const { createLoading, updateLoading, error } = useSelector((state) => state.notes);
+  const submitting = createLoading || updateLoading;
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
+  const modalRef = useRef(null);
+  const firstFocusRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -32,18 +38,53 @@ const NoteModal = ({
         tags: note.tags ? note.tags.join(', ') : '',
       });
     } else {
-      setFormData({
-        title: '',
-        content: '',
-        type: 'general',
-        priority: 'medium',
-        tags: '',
-      });
+      setFormData(INITIAL_FORM_DATA);
     }
   }, [note, isOpen]);
 
-  const handleSubmit = async (e) => {
+  // Focus trap and Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Focus the first focusable element
+    const timer = setTimeout(() => {
+      firstFocusRef.current?.focus();
+    }, 0);
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      // Trap focus within modal
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
+    if (submitting) return;
 
     const noteData = {
       ...formData,
@@ -62,10 +103,10 @@ const NoteModal = ({
         await dispatch(createNote(noteData)).unwrap();
       }
       onClose();
-    } catch (error) {
-      console.error('Error saving note:', error);
+    } catch {
+      // Error is stored in Redux state and displayed in the modal
     }
-  };
+  }, [submitting, formData, jobId, source, note, dispatch, onClose]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -78,19 +119,33 @@ const NoteModal = ({
   if (!isOpen) return null;
 
   return (
-    <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
-      <div className='bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto'>
+    <div
+      className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'
+      role='dialog'
+      aria-modal='true'
+      aria-labelledby='note-modal-title'
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div ref={modalRef} className='bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto'>
         <div className='flex justify-between items-center p-6 border-b border-gray-200'>
-          <h2 className='text-xl font-semibold text-gray-900'>
+          <h2 id='note-modal-title' className='text-xl font-semibold text-gray-900'>
             {isViewMode ? 'View Note' : note ? 'Edit Note' : 'Create Note'}
           </h2>
           <button
+            ref={isViewMode ? firstFocusRef : null}
             onClick={onClose}
             className='text-gray-400 hover:text-gray-600'
+            aria-label='Close modal'
           >
             <HiX className='h-6 w-6' />
           </button>
         </div>
+
+        {error && (
+          <div className='mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg'>
+            <p className='text-sm text-red-800'>{error}</p>
+          </div>
+        )}
 
         {isViewMode ? (
           <div className='p-6 space-y-6'>
@@ -103,50 +158,34 @@ const NoteModal = ({
             )}
 
             <div>
-              <label className='block text-sm font-medium text-gray-700 mb-2'>
-                Title
-              </label>
+              <p className='block text-sm font-medium text-gray-700 mb-2'>Title</p>
               <p className='text-gray-900 font-medium'>{note?.title}</p>
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-700 mb-2'>
-                Content
-              </label>
+              <p className='block text-sm font-medium text-gray-700 mb-2'>Content</p>
               <div className='bg-gray-50 border border-gray-200 rounded-lg p-4'>
-                <p className='text-gray-900 whitespace-pre-wrap'>
-                  {note?.content}
-                </p>
+                <p className='text-gray-900 whitespace-pre-wrap'>{note?.content}</p>
               </div>
             </div>
 
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               <div>
-                <label className='block text-sm font-medium text-gray-700 mb-2'>
-                  Type
-                </label>
+                <p className='block text-sm font-medium text-gray-700 mb-2'>Type</p>
                 <p className='text-gray-900 capitalize'>{note?.type}</p>
               </div>
-
               <div>
-                <label className='block text-sm font-medium text-gray-700 mb-2'>
-                  Priority
-                </label>
+                <p className='block text-sm font-medium text-gray-700 mb-2'>Priority</p>
                 <p className='text-gray-900 capitalize'>{note?.priority}</p>
               </div>
             </div>
 
             {note?.tags && note.tags.length > 0 && (
               <div>
-                <label className='block text-sm font-medium text-gray-700 mb-2'>
-                  Tags
-                </label>
+                <p className='block text-sm font-medium text-gray-700 mb-2'>Tags</p>
                 <div className='flex flex-wrap gap-2'>
                   {note.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className='px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full'
-                    >
+                    <span key={index} className='px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full'>
                       {tag}
                     </span>
                   ))}
@@ -155,11 +194,7 @@ const NoteModal = ({
             )}
 
             <div className='flex justify-end pt-4 border-t border-gray-200'>
-              <button
-                type='button'
-                onClick={onClose}
-                className='btn btn-outline'
-              >
+              <button type='button' onClick={onClose} className='btn btn-outline'>
                 Close
               </button>
             </div>
@@ -175,10 +210,12 @@ const NoteModal = ({
             )}
 
             <div>
-              <label className='block text-sm font-medium text-gray-700 mb-2'>
+              <label htmlFor='note-title' className='block text-sm font-medium text-gray-700 mb-2'>
                 Title *
               </label>
               <input
+                ref={firstFocusRef}
+                id='note-title'
                 type='text'
                 name='title'
                 value={formData.title}
@@ -190,10 +227,11 @@ const NoteModal = ({
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-700 mb-2'>
+              <label htmlFor='note-content' className='block text-sm font-medium text-gray-700 mb-2'>
                 Content *
               </label>
               <textarea
+                id='note-content'
                 name='content'
                 value={formData.content}
                 onChange={handleChange}
@@ -206,15 +244,10 @@ const NoteModal = ({
 
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               <div>
-                <label className='block text-sm font-medium text-gray-700 mb-2'>
+                <label htmlFor='note-type' className='block text-sm font-medium text-gray-700 mb-2'>
                   Type
                 </label>
-                <select
-                  name='type'
-                  value={formData.type}
-                  onChange={handleChange}
-                  className='input w-full'
-                >
+                <select id='note-type' name='type' value={formData.type} onChange={handleChange} className='input w-full'>
                   <option value='general'>General</option>
                   <option value='interview'>Interview</option>
                   <option value='application'>Application</option>
@@ -224,15 +257,10 @@ const NoteModal = ({
               </div>
 
               <div>
-                <label className='block text-sm font-medium text-gray-700 mb-2'>
+                <label htmlFor='note-priority' className='block text-sm font-medium text-gray-700 mb-2'>
                   Priority
                 </label>
-                <select
-                  name='priority'
-                  value={formData.priority}
-                  onChange={handleChange}
-                  className='input w-full'
-                >
+                <select id='note-priority' name='priority' value={formData.priority} onChange={handleChange} className='input w-full'>
                   <option value='low'>Low</option>
                   <option value='medium'>Medium</option>
                   <option value='high'>High</option>
@@ -242,10 +270,11 @@ const NoteModal = ({
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-700 mb-2'>
+              <label htmlFor='note-tags' className='block text-sm font-medium text-gray-700 mb-2'>
                 Tags
               </label>
               <input
+                id='note-tags'
                 type='text'
                 name='tags'
                 value={formData.tags}
@@ -256,23 +285,12 @@ const NoteModal = ({
             </div>
 
             <div className='flex justify-end space-x-3 pt-4 border-t border-gray-200'>
-              <button
-                type='button'
-                onClick={onClose}
-                className='btn btn-outline'
-              >
+              <button type='button' onClick={onClose} className='btn btn-outline' disabled={submitting}>
                 Cancel
               </button>
-              <button
-                type='submit'
-                className='btn btn-primary flex items-center'
-              >
-                {note ? (
-                  <HiPencil className='h-4 w-4 mr-2' />
-                ) : (
-                  <HiSave className='h-4 w-4 mr-2' />
-                )}
-                {note ? 'Update Note' : 'Create Note'}
+              <button type='submit' className='btn btn-primary flex items-center' disabled={submitting}>
+                {note ? <HiPencil className='h-4 w-4 mr-2' /> : <HiSave className='h-4 w-4 mr-2' />}
+                {submitting ? 'Saving...' : note ? 'Update Note' : 'Create Note'}
               </button>
             </div>
           </form>

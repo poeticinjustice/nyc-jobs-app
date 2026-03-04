@@ -109,26 +109,12 @@ export const updateJobStatus = createAsyncThunk(
   }
 );
 
-export const getJobAgencies = createAsyncThunk(
-  'jobs/getJobAgencies',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await api.get('/api/jobs/agencies');
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || 'Failed to get agencies'
-      );
-    }
-  }
-);
-
 const initialState = {
   searchResults: [],
   currentJob: null,
   savedJobs: [],
   categories: [],
-  agencies: [],
+  categoriesLoaded: false,
   searchPagination: {
     page: 1,
     limit: 20,
@@ -142,11 +128,15 @@ const initialState = {
     pages: 0,
   },
   statusFilter: '',
-  loading: false,
-  error: null,
   searchLoading: false,
+  detailsLoading: false,
+  savedJobsLoading: false,
   saveLoading: false,
   statusLoading: false,
+  searchError: null,
+  detailsError: null,
+  savedJobsError: null,
+  saveError: null,
 };
 
 const jobsSlice = createSlice({
@@ -157,12 +147,6 @@ const jobsSlice = createSlice({
       state.searchResults = [];
       state.searchPagination = initialState.searchPagination;
     },
-    clearCurrentJob: (state) => {
-      state.currentJob = null;
-    },
-    clearError: (state) => {
-      state.error = null;
-    },
     setStatusFilter: (state, action) => {
       state.statusFilter = action.payload;
     },
@@ -172,42 +156,40 @@ const jobsSlice = createSlice({
       // Search Jobs
       .addCase(searchJobs.pending, (state) => {
         state.searchLoading = true;
-        state.error = null;
+        state.searchError = null;
       })
       .addCase(searchJobs.fulfilled, (state, action) => {
         state.searchLoading = false;
         state.searchResults = action.payload.jobs;
         state.searchPagination = action.payload.pagination;
-        state.error = null;
       })
       .addCase(searchJobs.rejected, (state, action) => {
         state.searchLoading = false;
-        state.error = action.payload;
+        state.searchError = action.payload;
       })
 
-      // Get Job Details
+      // Get Job Details — clear currentJob in pending to avoid flash
       .addCase(getJobDetails.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+        state.detailsLoading = true;
+        state.detailsError = null;
+        state.currentJob = null;
       })
       .addCase(getJobDetails.fulfilled, (state, action) => {
-        state.loading = false;
+        state.detailsLoading = false;
         state.currentJob = action.payload;
-        state.error = null;
       })
       .addCase(getJobDetails.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
+        state.detailsLoading = false;
+        state.detailsError = action.payload;
       })
 
       // Save Job
       .addCase(saveJob.pending, (state) => {
         state.saveLoading = true;
-        state.error = null;
+        state.saveError = null;
       })
       .addCase(saveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
-        state.error = null;
         const { jobId, source, applicationStatus, statusHistory } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
@@ -224,17 +206,16 @@ const jobsSlice = createSlice({
       })
       .addCase(saveJob.rejected, (state, action) => {
         state.saveLoading = false;
-        state.error = action.payload;
+        state.saveError = action.payload;
       })
 
       // Unsave Job
       .addCase(unsaveJob.pending, (state) => {
         state.saveLoading = true;
-        state.error = null;
+        state.saveError = null;
       })
       .addCase(unsaveJob.fulfilled, (state, action) => {
         state.saveLoading = false;
-        state.error = null;
         const { jobId, source } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
@@ -260,17 +241,16 @@ const jobsSlice = createSlice({
       })
       .addCase(unsaveJob.rejected, (state, action) => {
         state.saveLoading = false;
-        state.error = action.payload;
+        state.saveError = action.payload;
       })
 
       // Update Job Status
       .addCase(updateJobStatus.pending, (state) => {
         state.statusLoading = true;
-        state.error = null;
+        state.saveError = null;
       })
       .addCase(updateJobStatus.fulfilled, (state, action) => {
         state.statusLoading = false;
-        state.error = null;
         const { jobId, source, applicationStatus, statusHistory } = action.payload;
         const savedJob = state.savedJobs.find(
           (job) => job.jobId === jobId && (!source || job.source === source)
@@ -291,39 +271,31 @@ const jobsSlice = createSlice({
       })
       .addCase(updateJobStatus.rejected, (state, action) => {
         state.statusLoading = false;
-        state.error = action.payload;
+        state.saveError = action.payload;
       })
 
       // Get Saved Jobs
       .addCase(getSavedJobs.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+        state.savedJobsLoading = true;
+        state.savedJobsError = null;
       })
       .addCase(getSavedJobs.fulfilled, (state, action) => {
-        state.loading = false;
+        state.savedJobsLoading = false;
         state.savedJobs = action.payload.jobs;
         state.savedPagination = action.payload.pagination;
-        state.error = null;
       })
       .addCase(getSavedJobs.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
+        state.savedJobsLoading = false;
+        state.savedJobsError = action.payload;
       })
 
       // Get Job Categories
       .addCase(getJobCategories.fulfilled, (state, action) => {
         state.categories = action.payload.categories;
+        state.categoriesLoaded = true;
       })
-      .addCase(getJobCategories.rejected, (state, action) => {
-        state.error = action.payload;
-      })
-
-      // Get Job Agencies
-      .addCase(getJobAgencies.fulfilled, (state, action) => {
-        state.agencies = action.payload.agencies;
-      })
-      .addCase(getJobAgencies.rejected, (state, action) => {
-        state.error = action.payload;
+      .addCase(getJobCategories.rejected, (state) => {
+        state.categoriesLoaded = true; // prevent infinite retry
       })
 
       // Reset user-specific state on logout
@@ -332,15 +304,16 @@ const jobsSlice = createSlice({
         state.savedJobs = [];
         state.savedPagination = initialState.savedPagination;
         state.statusFilter = '';
-        state.error = null;
+        state.searchError = null;
+        state.detailsError = null;
+        state.savedJobsError = null;
+        state.saveError = null;
       });
   },
 });
 
 export const {
   clearSearchResults,
-  clearCurrentJob,
-  clearError,
   setStatusFilter,
 } = jobsSlice.actions;
 

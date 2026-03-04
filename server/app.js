@@ -46,8 +46,17 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Stricter rate limiting for auth routes (disabled in test to avoid flaky tests)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 10000 : 20,
+  message: 'Too many authentication attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // API Routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/notes', noteRoutes);
@@ -75,9 +84,9 @@ if (process.env.NODE_ENV !== 'test') {
   // Serve static files from the React app
   app.use(express.static(path.join(__dirname, '../client/build')));
 
-  // The "catchall" handler: for any request that doesn't
+  // The "catchall" handler: for any non-API request that doesn't
   // match one above, send back React's index.html file.
-  app.get('*', (req, res) => {
+  app.get(/^(?!\/api\/).*$/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/build/index.html'));
   });
 }

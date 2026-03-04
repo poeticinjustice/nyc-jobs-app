@@ -23,7 +23,7 @@ import SourceBadge from '../components/UI/SourceBadge';
 import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate } from '../utils/formatUtils';
-import { stripHtml } from '../utils/textUtils';
+import { truncateText } from '../utils/textUtils';
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Most Recent First' },
@@ -40,39 +40,54 @@ const SOURCE_TABS = [
   { value: 'federal', label: 'Federal' },
 ];
 
+const DEFAULT_PARAMS = {
+  q: '',
+  salary_min: '',
+  salary_max: '',
+  sort: 'date_desc',
+  source: 'all',
+};
+
+// Build URLSearchParams from a params object, always including sort/source
+const buildUrlParams = (params, page = 1, limit = 20) => {
+  const newParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === 'page' || key === 'limit') continue;
+    if (value && String(value).trim() !== '') {
+      newParams.set(key, String(value).trim());
+    }
+  }
+  if (!newParams.has('sort')) newParams.set('sort', 'date_desc');
+  if (!newParams.has('source')) newParams.set('source', 'all');
+  newParams.set('page', String(page));
+  newParams.set('limit', String(limit));
+  return newParams;
+};
+
 const JobSearch = () => {
   const dispatch = useDispatch();
-  const { searchResults, searchLoading, error, searchPagination: pagination } =
+  const { searchResults, searchLoading, searchError: error, searchPagination: pagination } =
     useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const { savedSearches } = useSelector((state) => state.searches);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [currentPage, setCurrentPage] = useState(1);
+  // Derive page and limit from URL (single source of truth)
+  const currentPage = parseInt(searchParams.get('page')) || 1;
+  const resultsPerPage = parseInt(searchParams.get('limit')) || 20;
+
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [resultsPerPage, setResultsPerPage] = useState(20);
   const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState('');
   const [showSavedSearches, setShowSavedSearches] = useState(false);
 
-  // Initialize search params from URL or defaults
+  // Local form state for inputs before submitting
   const [localSearchParams, setLocalSearchParams] = useState({
     q: searchParams.get('q') || '',
     salary_min: searchParams.get('salary_min') || '',
     salary_max: searchParams.get('salary_max') || '',
     sort: searchParams.get('sort') || 'date_desc',
     source: searchParams.get('source') || 'all',
-    limit: parseInt(searchParams.get('limit')) || 20,
-  });
-
-  // Track the active search (what's actually being searched for in results)
-  const [activeSearchParams, setActiveSearchParams] = useState({
-    q: searchParams.get('q') || '',
-    salary_min: searchParams.get('salary_min') || '',
-    salary_max: searchParams.get('salary_max') || '',
-    sort: searchParams.get('sort') || 'date_desc',
-    source: searchParams.get('source') || 'all',
-    limit: parseInt(searchParams.get('limit')) || 20,
   });
 
   // Load saved searches on component mount
@@ -99,23 +114,15 @@ const JobSearch = () => {
 
       const pageFromUrl = parseInt(urlParams.page) || 1;
       const limitFromUrl = parseInt(urlParams.limit) || 20;
-      setCurrentPage(pageFromUrl);
-      setResultsPerPage(limitFromUrl);
 
       setLocalSearchParams((prev) => ({
         ...prev,
-        ...urlParams,
-        limit: limitFromUrl,
-      }));
-
-      setActiveSearchParams({
         q: urlParams.q || '',
         salary_min: urlParams.salary_min || '',
         salary_max: urlParams.salary_max || '',
         sort: urlParams.sort,
         source: urlParams.source,
-        limit: limitFromUrl,
-      });
+      }));
 
       dispatch(searchJobs({
         ...urlParams,
@@ -124,45 +131,23 @@ const JobSearch = () => {
       }));
     } else {
       dispatch(clearSearchResults());
-      setActiveSearchParams({});
-      setCurrentPage(1);
     }
   }, [searchParams, dispatch]);
 
   // Handle clicking outside sort dropdown to close it
   useEffect(() => {
+    if (!showSortDropdown) return;
     const handleClickOutside = (event) => {
-      if (
-        showSortDropdown &&
-        !event.target.closest('.sort-dropdown-container')
-      ) {
+      if (!event.target.closest('.sort-dropdown-container')) {
         setShowSortDropdown(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSortDropdown]);
 
   const handleSearch = (page = 1) => {
-    // Build URL params - the useEffect will handle dispatching the search
-    const newSearchParams = new URLSearchParams();
-    Object.entries(localSearchParams).forEach(([key, value]) => {
-      if (
-        key === 'sort' ||
-        key === 'source' ||
-        key === 'limit' ||
-        (value && String(value).trim() !== '')
-      ) {
-        newSearchParams.set(key, String(value).trim() || value);
-      }
-    });
-    newSearchParams.set('sort', localSearchParams.sort || 'date_desc');
-    newSearchParams.set('source', localSearchParams.source || 'all');
-    newSearchParams.set('page', page.toString());
-    newSearchParams.set('limit', resultsPerPage.toString());
-
-    setSearchParams(newSearchParams);
+    setSearchParams(buildUrlParams(localSearchParams, page, resultsPerPage));
   };
 
   const handleInputChange = (e) => {
@@ -174,24 +159,16 @@ const JobSearch = () => {
   };
 
   const handleSourceChange = (source) => {
-    setLocalSearchParams((prev) => ({ ...prev, source }));
-    // Immediately trigger search with new source
-    const newSearchParams = new URLSearchParams();
-    Object.entries({ ...localSearchParams, source }).forEach(([key, value]) => {
-      if (
-        key === 'sort' ||
-        key === 'source' ||
-        key === 'limit' ||
-        (value && String(value).trim() !== '')
-      ) {
-        newSearchParams.set(key, String(value).trim() || value);
-      }
-    });
-    newSearchParams.set('sort', localSearchParams.sort || 'date_desc');
-    newSearchParams.set('source', source);
-    newSearchParams.set('page', '1');
-    newSearchParams.set('limit', resultsPerPage.toString());
-    setSearchParams(newSearchParams);
+    const updated = { ...localSearchParams, source };
+    setLocalSearchParams(updated);
+    setSearchParams(buildUrlParams(updated, 1, resultsPerPage));
+  };
+
+  const handleSortChange = (sortValue) => {
+    const updated = { ...localSearchParams, sort: sortValue };
+    setLocalSearchParams(updated);
+    setShowSortDropdown(false);
+    setSearchParams(buildUrlParams(updated, 1, resultsPerPage));
   };
 
   const handleSaveJob = (job) => {
@@ -207,7 +184,6 @@ const JobSearch = () => {
   };
 
   const handlePageChange = (newPage) => {
-    setCurrentPage(newPage);
     const newParams = new URLSearchParams(searchParams);
     newParams.set('page', newPage.toString());
     setSearchParams(newParams);
@@ -215,8 +191,6 @@ const JobSearch = () => {
   };
 
   const handleResultsPerPageChange = (newLimit) => {
-    setResultsPerPage(newLimit);
-    setCurrentPage(1);
     const newParams = new URLSearchParams(searchParams);
     newParams.set('limit', newLimit.toString());
     newParams.set('page', '1');
@@ -231,11 +205,11 @@ const JobSearch = () => {
   const handleSaveSearch = async () => {
     if (!saveSearchName.trim()) return;
     const criteria = {
-      q: activeSearchParams.q || '',
-      salary_min: activeSearchParams.salary_min || '',
-      salary_max: activeSearchParams.salary_max || '',
-      sort: activeSearchParams.sort || 'date_desc',
-      source: activeSearchParams.source || 'all',
+      q: localSearchParams.q || '',
+      salary_min: localSearchParams.salary_min || '',
+      salary_max: localSearchParams.salary_max || '',
+      sort: localSearchParams.sort || 'date_desc',
+      source: localSearchParams.source || 'all',
     };
     await dispatch(saveSearch({ name: saveSearchName.trim(), criteria }));
     setSaveSearchName('');
@@ -244,23 +218,14 @@ const JobSearch = () => {
 
   const handleLoadSavedSearch = (search) => {
     const { criteria } = search;
-    const newParams = new URLSearchParams();
-    if (criteria.q) newParams.set('q', criteria.q);
-    if (criteria.salary_min) newParams.set('salary_min', criteria.salary_min);
-    if (criteria.salary_max) newParams.set('salary_max', criteria.salary_max);
-    newParams.set('sort', criteria.sort || 'date_desc');
-    newParams.set('source', criteria.source || 'all');
-    newParams.set('page', '1');
-    newParams.set('limit', resultsPerPage.toString());
     setLocalSearchParams({
       q: criteria.q || '',
       salary_min: criteria.salary_min || '',
       salary_max: criteria.salary_max || '',
       sort: criteria.sort || 'date_desc',
       source: criteria.source || 'all',
-      limit: resultsPerPage,
     });
-    setSearchParams(newParams);
+    setSearchParams(buildUrlParams(criteria, 1, resultsPerPage));
     setShowSavedSearches(false);
   };
 
@@ -269,10 +234,25 @@ const JobSearch = () => {
     dispatch(deleteSavedSearch(id));
   };
 
+  const handleClearSearch = () => {
+    setLocalSearchParams({ ...DEFAULT_PARAMS });
+    setSearchParams(new URLSearchParams());
+  };
+
   const totalPages = pagination?.pages || 0;
 
   const getSortDisplayName = (sortValue) =>
     SORT_OPTIONS.find((o) => o.value === sortValue)?.label || 'Most Recent First';
+
+  const hasActiveFilters = localSearchParams.q ||
+    localSearchParams.salary_min ||
+    localSearchParams.salary_max ||
+    localSearchParams.source !== 'all';
+
+  const hasSearched = searchParams.get('q') ||
+    searchParams.get('salary_min') ||
+    searchParams.get('salary_max') ||
+    searchParams.get('source');
 
   return (
     <div className='space-y-6'>
@@ -308,25 +288,10 @@ const JobSearch = () => {
                 )}
                 <span className='ml-2 hidden sm:inline'>Search</span>
               </button>
-              {(localSearchParams.q ||
-                localSearchParams.salary_min ||
-                localSearchParams.salary_max ||
-                localSearchParams.source !== 'all') && (
+              {hasActiveFilters && (
                 <button
                   type='button'
-                  onClick={() => {
-                    setLocalSearchParams({
-                      q: '',
-                      salary_min: '',
-                      salary_max: '',
-                      sort: 'date_desc',
-                      source: 'all',
-                      limit: 20,
-                    });
-                    setResultsPerPage(20);
-                    setSearchParams(new URLSearchParams());
-                    setCurrentPage(1);
-                  }}
+                  onClick={handleClearSearch}
                   className='p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors'
                   title='Clear all search filters'
                 >
@@ -386,6 +351,7 @@ const JobSearch = () => {
                   type='number'
                   name='salary_min'
                   placeholder='Min salary'
+                  min='0'
                   value={localSearchParams.salary_min}
                   onChange={handleInputChange}
                   className='input w-24 text-sm py-1.5'
@@ -395,6 +361,7 @@ const JobSearch = () => {
                   type='number'
                   name='salary_max'
                   placeholder='Max salary'
+                  min='0'
                   value={localSearchParams.salary_max}
                   onChange={handleInputChange}
                   className='input w-24 text-sm py-1.5'
@@ -407,6 +374,8 @@ const JobSearch = () => {
               <button
                 type='button'
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
+                aria-expanded={showSortDropdown}
+                aria-haspopup='listbox'
                 className='flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500'
               >
                 <span>{getSortDisplayName(localSearchParams.sort || 'date_desc')}</span>
@@ -426,22 +395,14 @@ const JobSearch = () => {
               </button>
 
               {showSortDropdown && (
-                <div className='absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10'>
+                <div className='absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10' role='listbox'>
                   <div className='py-1'>
                     {SORT_OPTIONS.map((option) => (
                       <button
                         key={option.value}
-                        onClick={() => {
-                          setLocalSearchParams((prev) => ({
-                            ...prev,
-                            sort: option.value,
-                          }));
-                          setShowSortDropdown(false);
-                          const newParams = new URLSearchParams(searchParams);
-                          newParams.set('sort', option.value);
-                          newParams.set('page', '1');
-                          setSearchParams(newParams);
-                        }}
+                        role='option'
+                        aria-selected={(localSearchParams.sort || 'date_desc') === option.value}
+                        onClick={() => handleSortChange(option.value)}
                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
                           (localSearchParams.sort || 'date_desc') === option.value
                             ? 'bg-primary-50 text-primary-700'
@@ -509,73 +470,59 @@ const JobSearch = () => {
         )}
 
         {/* No Jobs Found */}
-        {!searchResults.length &&
-          !error &&
-          !searchLoading &&
-          (searchParams.get('q') ||
-            searchParams.get('salary_min') ||
-            searchParams.get('salary_max') ||
-            searchParams.get('source')) && (
-            <div className='bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4'>
-              <div className='text-center'>
-                <p className='text-yellow-800 font-medium'>
-                  No jobs found for your search criteria
-                </p>
-              </div>
+        {!searchResults.length && !error && !searchLoading && hasSearched && (
+          <div className='bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4'>
+            <div className='text-center'>
+              <p className='text-yellow-800 font-medium'>
+                No jobs found for your search criteria
+              </p>
             </div>
-          )}
+          </div>
+        )}
 
         {/* Welcome State */}
-        {!searchResults.length &&
-          !error &&
-          !searchLoading &&
-          !(
-            searchParams.get('q') ||
-            searchParams.get('salary_min') ||
-            searchParams.get('salary_max') ||
-            searchParams.get('source')
-          ) && (
-            <div className='bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center'>
-              <div className='mb-6'>
-                <div className='mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4'>
-                  <HiSearch className='h-8 w-8 text-blue-600' />
-                </div>
-                <h3 className='text-xl font-bold text-blue-900 mb-2'>
-                  Ready to Search Jobs
-                </h3>
-                <p className='text-blue-700 max-w-md mx-auto'>
-                  Search across NYC city and federal government jobs. Enter keywords, set a salary range, or click Search to see all available jobs.
-                </p>
+        {!searchResults.length && !error && !searchLoading && !hasSearched && (
+          <div className='bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center'>
+            <div className='mb-6'>
+              <div className='mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4'>
+                <HiSearch className='h-8 w-8 text-blue-600' />
               </div>
+              <h3 className='text-xl font-bold text-blue-900 mb-2'>
+                Ready to Search Jobs
+              </h3>
+              <p className='text-blue-700 max-w-md mx-auto'>
+                Search across NYC city and federal government jobs. Enter keywords, set a salary range, or click Search to see all available jobs.
+              </p>
+            </div>
 
-              <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
-                <div className='bg-white/60 rounded-lg p-4'>
-                  <div className='text-blue-600 font-medium mb-1'>
-                    City + Federal
-                  </div>
-                  <div className='text-blue-700'>
-                    NYC and US government jobs in one place
-                  </div>
+            <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
+              <div className='bg-white/60 rounded-lg p-4'>
+                <div className='text-blue-600 font-medium mb-1'>
+                  City + Federal
                 </div>
-                <div className='bg-white/60 rounded-lg p-4'>
-                  <div className='text-blue-600 font-medium mb-1'>
-                    Filter by Source
-                  </div>
-                  <div className='text-blue-700'>
-                    Browse city or federal jobs separately
-                  </div>
+                <div className='text-blue-700'>
+                  NYC and US government jobs in one place
                 </div>
-                <div className='bg-white/60 rounded-lg p-4'>
-                  <div className='text-blue-600 font-medium mb-1'>
-                    Save Favorites
-                  </div>
-                  <div className='text-blue-700'>
-                    Bookmark jobs you're interested in
-                  </div>
+              </div>
+              <div className='bg-white/60 rounded-lg p-4'>
+                <div className='text-blue-600 font-medium mb-1'>
+                  Filter by Source
+                </div>
+                <div className='text-blue-700'>
+                  Browse city or federal jobs separately
+                </div>
+              </div>
+              <div className='bg-white/60 rounded-lg p-4'>
+                <div className='text-blue-600 font-medium mb-1'>
+                  Save Favorites
+                </div>
+                <div className='text-blue-700'>
+                  Bookmark jobs you're interested in
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
         {searchLoading ? (
           <div className='flex justify-center py-8'>
@@ -599,33 +546,30 @@ const JobSearch = () => {
               </div>
 
               {/* Current Search Parameters */}
-              {(activeSearchParams.q ||
-                activeSearchParams.salary_min ||
-                activeSearchParams.salary_max ||
-                (activeSearchParams.source && activeSearchParams.source !== 'all')) && (
+              {hasActiveFilters && (
                 <div className='mt-3 pt-3 border-t border-gray-200'>
                   <div className='text-xs text-gray-500 mb-2'>
                     Current search:
                   </div>
                   <div className='flex flex-wrap gap-2'>
-                    {activeSearchParams.q && (
+                    {localSearchParams.q && (
                       <span className='px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs'>
-                        Keywords: {activeSearchParams.q}
+                        Keywords: {localSearchParams.q}
                       </span>
                     )}
-                    {activeSearchParams.source && activeSearchParams.source !== 'all' && (
+                    {localSearchParams.source && localSearchParams.source !== 'all' && (
                       <span className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                        {activeSearchParams.source === 'nyc' ? 'City Jobs' : 'Federal Jobs'}
+                        {localSearchParams.source === 'nyc' ? 'City Jobs' : 'Federal Jobs'}
                       </span>
                     )}
-                    {activeSearchParams.salary_min && (
+                    {localSearchParams.salary_min && (
                       <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
-                        Min Salary: ${activeSearchParams.salary_min}
+                        Min Salary: ${localSearchParams.salary_min}
                       </span>
                     )}
-                    {activeSearchParams.salary_max && (
+                    {localSearchParams.salary_max && (
                       <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
-                        Max Salary: ${activeSearchParams.salary_max}
+                        Max Salary: ${localSearchParams.salary_max}
                       </span>
                     )}
                     {isAuthenticated && (
@@ -644,7 +588,7 @@ const JobSearch = () => {
             {/* Save Search Modal */}
             {showSaveSearchModal && (
               <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
-                <div className='bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4'>
+                <div className='bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4' role='dialog' aria-modal='true' aria-label='Save search'>
                   <h3 className='text-lg font-semibold text-gray-900 mb-4'>
                     Save Search
                   </h3>
@@ -719,20 +663,17 @@ const JobSearch = () => {
                           </p>
                           <p>
                             <strong>Post Until:</strong>{' '}
-                            {formatDate(job.postUntil) || 'Not specified'}
+                            {formatDate(job.postUntil)}
                           </p>
                           <p>
                             <strong>Process Date:</strong>{' '}
-                            {formatDate(job.processDate) || 'Not specified'}
+                            {formatDate(job.processDate)}
                           </p>
                         </div>
                       </div>
                       {job.jobDescription && (
                         <p className='mt-3 text-gray-700 line-clamp-2'>
-                          {(() => {
-                            const text = stripHtml(job.jobDescription);
-                            return text.length > 200 ? text.substring(0, 200) + '...' : text;
-                          })()}
+                          {truncateText(job.jobDescription)}
                         </p>
                       )}
                     </div>

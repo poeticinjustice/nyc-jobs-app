@@ -19,8 +19,8 @@ import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate } from '../utils/formatUtils';
-import { stripHtml } from '../utils/textUtils';
-import api from '../utils/api';
+import { truncateText } from '../utils/textUtils';
+import { downloadFile } from '../utils/downloadFile';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
 const STATUS_FILTER_OPTIONS = [{ value: '', label: 'All' }, ...APPLICATION_STATUSES];
@@ -28,7 +28,7 @@ const STATUS_FILTER_OPTIONS = [{ value: '', label: 'All' }, ...APPLICATION_STATU
 const SavedJobs = () => {
   const dispatch = useDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { savedJobs, loading, error, savedPagination: pagination, statusFilter } = useSelector(
+  const { savedJobs, savedJobsLoading: loading, savedJobsError: error, savedPagination: pagination, statusFilter } = useSelector(
     (state) => state.jobs
   );
   const { isAuthenticated } = useSelector((state) => state.auth);
@@ -39,13 +39,13 @@ const SavedJobs = () => {
   const currentPage = parseInt(searchParams.get('page') || '1');
   const pageSize = 20;
 
-  // Sync status filter from URL on mount (e.g. /saved?status=applied from Home)
+  // Sync status filter from URL (e.g. /saved?status=applied from Home)
+  const urlStatus = searchParams.get('status') || '';
   useEffect(() => {
-    const urlStatus = searchParams.get('status') || '';
     if (urlStatus !== statusFilter) {
       dispatch(setStatusFilter(urlStatus));
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dispatch, urlStatus, statusFilter]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -96,17 +96,7 @@ const SavedJobs = () => {
   const handleExportCsv = async () => {
     try {
       const params = statusFilter ? `?status=${statusFilter}` : '';
-      const response = await api.get(`/api/jobs/saved/export${params}`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'saved-jobs.csv');
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await downloadFile(`/api/jobs/saved/export${params}`, 'saved-jobs.csv');
     } catch (error) {
       console.error('Export failed:', error);
     }
@@ -229,10 +219,7 @@ const SavedJobs = () => {
 
                   {job.jobDescription && (
                     <p className='mt-3 text-gray-700 line-clamp-2'>
-                      {(() => {
-                        const text = stripHtml(job.jobDescription);
-                        return text.length > 200 ? text.substring(0, 200) + '...' : text;
-                      })()}
+                      {truncateText(job.jobDescription)}
                     </p>
                   )}
                 </div>

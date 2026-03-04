@@ -3,7 +3,7 @@ const { body, validationResult, query } = require('express-validator');
 const User = require('../models/User');
 const Note = require('../models/Note');
 const Job = require('../models/Job');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, validateObjectId } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -116,7 +116,7 @@ router.get(
 // @route   GET /api/users/:id
 // @desc    Get user by ID (admin or self)
 // @access  Private
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', [validateObjectId, authenticateToken], async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -142,6 +142,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.put(
   '/:id',
   [
+    validateObjectId,
     authenticateToken,
     body('firstName').optional().trim().isLength({ min: 1, max: 50 }),
     body('lastName').optional().trim().isLength({ min: 1, max: 50 }),
@@ -206,7 +207,7 @@ router.put(
 // @access  Private (Admin)
 router.delete(
   '/:id',
-  [authenticateToken, requireRole(['admin'])],
+  [validateObjectId, authenticateToken, requireRole(['admin'])],
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -236,7 +237,7 @@ router.delete(
 // @access  Private (Admin)
 router.post(
   '/:id/reactivate',
-  [authenticateToken, requireRole(['admin'])],
+  [validateObjectId, authenticateToken, requireRole(['admin'])],
   async (req, res) => {
     try {
       const { id } = req.params;

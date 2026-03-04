@@ -274,7 +274,7 @@ describe('deduplicateJobs', () => {
     expect(result[1].title).toBe('Second');
   });
 
-  it('keeps jobs without job_id (does not filter them out)', () => {
+  it('excludes jobs without job_id', () => {
     const jobs = [
       { job_id: '1', title: 'Has ID' },
       { title: 'No ID' },
@@ -283,7 +283,8 @@ describe('deduplicateJobs', () => {
       { job_id: '', title: 'Empty ID' },
     ];
     const result = deduplicateJobs(jobs);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe('Has ID');
   });
 
   it('returns empty array for empty input', () => {
@@ -374,16 +375,18 @@ describe('filterJobs', () => {
     expect(result[0].agency).toBe('Dept of Health');
   });
 
-  it('filters by salary_min', () => {
-    const result = filterJobs(jobs, { salary_min: '70000' });
-    // salary_range_from >= 70000: only job 12347 has 80000
-    expect(result).toHaveLength(1);
-    expect(result[0].job_id).toBe('12347');
+  it('filters by salary_min (range overlap)', () => {
+    const result = filterJobs(jobs, { salary_min: '90000' });
+    // Jobs whose range reaches >= 90000: 12345 (to=95000), 12347 (to=110000)
+    expect(result).toHaveLength(2);
+    const ids = result.map((j) => j.job_id);
+    expect(ids).toContain('12345');
+    expect(ids).toContain('12347');
   });
 
-  it('filters by salary_max', () => {
-    const result = filterJobs(jobs, { salary_max: '80000' });
-    // salary_range_to <= 80000: 12346 (75000)
+  it('filters by salary_max (range overlap)', () => {
+    const result = filterJobs(jobs, { salary_max: '60000' });
+    // Jobs whose range starts <= 60000: 12346 (from=55000)
     expect(result).toHaveLength(1);
     expect(result[0].job_id).toBe('12346');
   });

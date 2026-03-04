@@ -9,6 +9,15 @@ import {
   HiCog,
 } from 'react-icons/hi';
 
+const NAVIGATION = [
+  { name: 'Home', href: '/', icon: HiHome, requiresAuth: false },
+  { name: 'Search Jobs', href: '/search', icon: HiSearch, requiresAuth: false },
+  { name: 'Saved Jobs', href: '/saved', icon: HiBookmark, requiresAuth: true },
+  { name: 'Notes', href: '/notes', icon: HiDocumentText, requiresAuth: true },
+  { name: 'Profile', href: '/profile', icon: HiUser, requiresAuth: true },
+  { name: 'Admin', href: '/admin', icon: HiCog, requiresAuth: true, requiresAdmin: true },
+];
+
 const Sidebar = ({
   onNavigate,
   user,
@@ -16,31 +25,6 @@ const Sidebar = ({
   isMobile = false,
 }) => {
   const location = useLocation();
-
-  const navigation = [
-    { name: 'Home', href: '/', icon: HiHome, requiresAuth: false },
-    {
-      name: 'Search Jobs',
-      href: '/search',
-      icon: HiSearch,
-      requiresAuth: false,
-    },
-    {
-      name: 'Saved Jobs',
-      href: '/saved',
-      icon: HiBookmark,
-      requiresAuth: true,
-    },
-    { name: 'Notes', href: '/notes', icon: HiDocumentText, requiresAuth: true },
-    { name: 'Profile', href: '/profile', icon: HiUser, requiresAuth: true },
-    {
-      name: 'Admin',
-      href: '/admin',
-      icon: HiCog,
-      requiresAuth: true,
-      requiresAdmin: true,
-    },
-  ];
 
   const isCurrentPath = (href) => {
     if (href === '/') {
@@ -78,7 +62,7 @@ const Sidebar = ({
 
       {/* Navigation */}
       <nav className='flex-1 px-2 py-4 space-y-1'>
-        {navigation.map((item) => {
+        {NAVIGATION.map((item) => {
           // Skip items that require auth but user is not authenticated
           if (item.requiresAuth && !isAuthenticated) return null;
 

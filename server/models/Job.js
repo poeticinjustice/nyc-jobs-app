@@ -146,7 +146,7 @@ const jobSchema = new mongoose.Schema(
 
 // Indexes for better query performance
 jobSchema.index({ jobId: 1, source: 1 }, { unique: true });
-jobSchema.index({ businessTitle: 'text', jobDescription: 'text' });
+jobSchema.index({ 'savedBy.user': 1, jobId: 1 });
 jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
 jobSchema.index({ postDate: -1 });

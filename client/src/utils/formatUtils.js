@@ -9,6 +9,8 @@ export const formatSalary = (from, to, frequency) => {
     return `$${numFrom.toLocaleString()} - $${numTo.toLocaleString()} ${frequency || ''}`.trim();
   } else if (hasFrom) {
     return `$${numFrom.toLocaleString()} ${frequency || ''}`.trim();
+  } else if (hasTo) {
+    return `Up to $${numTo.toLocaleString()} ${frequency || ''}`.trim();
   }
   return 'Salary not specified';
 };
@@ -17,5 +19,5 @@ export const formatDate = (dateString) => {
   if (!dateString) return 'Date not specified';
   const d = new Date(dateString);
   if (isNaN(d)) return 'Date not specified';
-  return d.toLocaleDateString();
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };

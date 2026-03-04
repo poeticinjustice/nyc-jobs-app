@@ -30,7 +30,7 @@ const Layout = ({ children }) => {
 
       <div className='flex'>
         {/* Sidebar - Desktop */}
-        <div className='hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0'>
+        <div className='hidden md:flex md:w-64 md:flex-col md:fixed md:top-16 md:bottom-0'>
           <Sidebar
             user={user}
             isAuthenticated={isAuthenticated}
@@ -50,6 +50,7 @@ const Layout = ({ children }) => {
                   type='button'
                   className='ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white'
                   onClick={handleMobileMenuToggle}
+                  aria-label='Close navigation menu'
                 >
                   <HiX className='h-6 w-6 text-white' />
                 </button>

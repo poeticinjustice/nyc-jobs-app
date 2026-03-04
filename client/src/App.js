@@ -22,7 +22,7 @@ function App() {
   const { isAuthenticated, loading, token } = useSelector(
     (state) => state.auth
   );
-  const { categories } = useSelector((state) => state.jobs);
+  const { categoriesLoaded } = useSelector((state) => state.jobs);
 
   useEffect(() => {
     // Check if user is authenticated on app load
@@ -32,11 +32,10 @@ function App() {
   }, [dispatch, token, isAuthenticated]);
 
   useEffect(() => {
-    // Load job categories on app start
-    if (categories.length === 0) {
+    if (!categoriesLoaded) {
       dispatch(getJobCategories());
     }
-  }, [dispatch, categories.length]);
+  }, [dispatch, categoriesLoaded]);
 
   if (loading) {
     return (

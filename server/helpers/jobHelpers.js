@@ -98,11 +98,11 @@ const cleanJobFields = (job) => {
   return cleaned;
 };
 
-// Remove duplicate jobs by job_id
+// Remove duplicate jobs by job_id (jobs without an ID are excluded)
 const deduplicateJobs = (jobs) => {
   const seen = new Set();
   return jobs.filter((job) => {
-    if (!job.job_id) return true;
+    if (!job.job_id) return false;
     if (seen.has(job.job_id)) return false;
     seen.add(job.job_id);
     return true;
@@ -154,7 +154,10 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
     const min = parseInt(salary_min, 10);
     if (!isNaN(min)) {
       filtered = filtered.filter((job) => {
+        const to = parseInt(job.salary_range_to, 10);
         const from = parseInt(job.salary_range_from, 10);
+        // Include if the job's range overlaps with the minimum
+        if (!isNaN(to)) return to >= min;
         return !isNaN(from) && from >= min;
       });
     }
@@ -164,7 +167,10 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
     const max = parseInt(salary_max, 10);
     if (!isNaN(max)) {
       filtered = filtered.filter((job) => {
+        const from = parseInt(job.salary_range_from, 10);
         const to = parseInt(job.salary_range_to, 10);
+        // Include if the job's range overlaps with the maximum
+        if (!isNaN(from)) return from <= max;
         return !isNaN(to) && to <= max;
       });
     }
@@ -174,67 +180,56 @@ const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_ma
 };
 
 // Get salary midpoint for sorting (returns null when missing)
-const getSalaryValue = (job) => {
-  const from = parseInt(job.salary_range_from);
+const getSalaryMidpoint = (job, fields) => {
+  const from = parseFloat(job[fields.salaryFrom]);
   if (isNaN(from)) return null;
-  const to = parseInt(job.salary_range_to);
-  return Math.round((from + (isNaN(to) ? from : to)) / 2);
+  const to = parseFloat(job[fields.salaryTo]);
+  return (from + (isNaN(to) ? from : to)) / 2;
 };
 
-// Sort jobs by the given sort parameter
-const sortJobs = (jobs, sort) => {
-  const sorted = [...jobs];
+// Field name maps for snake_case (NYC raw) and camelCase (transformed) data
+const SNAKE_FIELDS = { date: 'posting_date', title: 'business_title', salaryFrom: 'salary_range_from', salaryTo: 'salary_range_to' };
+const CAMEL_FIELDS = { date: 'postDate', title: 'businessTitle', salaryFrom: 'salaryRangeFrom', salaryTo: 'salaryRangeTo' };
 
+// Generic sort function that works with any field name map
+const sortJobsByFields = (jobs, sort, fields) => {
+  const sorted = [...jobs];
   switch (sort) {
     case 'date_asc':
-      sorted.sort((a, b) => {
-        const dateA = a.posting_date ? new Date(a.posting_date) : new Date(0);
-        const dateB = b.posting_date ? new Date(b.posting_date) : new Date(0);
-        return dateA - dateB;
-      });
+      sorted.sort((a, b) => new Date(a[fields.date] || 0) - new Date(b[fields.date] || 0));
       break;
     case 'title_asc':
-      sorted.sort((a, b) =>
-        (a.business_title || '').toLowerCase().localeCompare((b.business_title || '').toLowerCase())
-      );
+      sorted.sort((a, b) => (a[fields.title] || '').localeCompare(b[fields.title] || ''));
       break;
     case 'title_desc':
-      sorted.sort((a, b) =>
-        (b.business_title || '').toLowerCase().localeCompare((a.business_title || '').toLowerCase())
-      );
+      sorted.sort((a, b) => (b[fields.title] || '').localeCompare(a[fields.title] || ''));
       break;
     case 'salary_desc':
+    case 'salary_asc': {
+      const dir = sort === 'salary_desc' ? -1 : 1;
       sorted.sort((a, b) => {
-        const sa = getSalaryValue(a);
-        const sb = getSalaryValue(b);
-        if (sa === null && sb === null) return 0;
-        if (sa === null) return 1;
-        if (sb === null) return -1;
-        return sb - sa;
+        const sa = getSalaryMidpoint(a, fields);
+        const sb = getSalaryMidpoint(b, fields);
+        if (sa == null && sb == null) return 0;
+        if (sa == null) return 1;
+        if (sb == null) return -1;
+        return dir * (sa - sb);
       });
       break;
-    case 'salary_asc':
-      sorted.sort((a, b) => {
-        const sa = getSalaryValue(a);
-        const sb = getSalaryValue(b);
-        if (sa === null && sb === null) return 0;
-        if (sa === null) return 1;
-        if (sb === null) return -1;
-        return sa - sb;
-      });
-      break;
+    }
     case 'date_desc':
     default:
-      sorted.sort((a, b) => {
-        const dateA = a.posting_date ? new Date(a.posting_date) : new Date(0);
-        const dateB = b.posting_date ? new Date(b.posting_date) : new Date(0);
-        return dateB - dateA;
-      });
+      sorted.sort((a, b) => new Date(b[fields.date] || 0) - new Date(a[fields.date] || 0));
       break;
   }
-
   return sorted;
 };
+
+// Sort raw NYC API jobs (snake_case)
+const sortJobs = (jobs, sort) => sortJobsByFields(jobs, sort, SNAKE_FIELDS);
+
+// Sort transformed camelCase jobs (for 'all' mode where NYC + federal are combined)
+const sortMergedJobs = (jobs, sort) => sortJobsByFields(jobs, sort, CAMEL_FIELDS);
 
 // Transform NYC API snake_case fields to camelCase model fields
 const transformNycJob = (nycJob, { clean = false } = {}) => {
@@ -335,10 +330,14 @@ const getUserSaveEntry = (job, userId) => {
   };
 };
 
-// Escape a value for CSV output
+// Escape a value for CSV output (protects against formula injection)
 const escCsv = (val) => {
   if (val == null) return '';
-  const s = String(val);
+  let s = String(val);
+  // Prefix formula-triggering characters to prevent spreadsheet injection
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = "'" + s;
+  }
   return s.includes(',') || s.includes('"') || s.includes('\n')
     ? `"${s.replace(/"/g, '""')}"`
     : s;
@@ -351,6 +350,7 @@ module.exports = {
   deduplicateJobs,
   filterJobs,
   sortJobs,
+  sortMergedJobs,
   transformNycJob,
   transformUsaJob,
   getUserSaveEntry,

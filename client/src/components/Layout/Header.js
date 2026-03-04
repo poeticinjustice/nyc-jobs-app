@@ -6,7 +6,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
-  // Close user menu when clicking outside
+  // Close user menu when clicking outside or pressing Escape
   useEffect(() => {
     if (!userMenuOpen) return;
     const handleClickOutside = (event) => {
@@ -14,8 +14,17 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
         setUserMenuOpen(false);
       }
     };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setUserMenuOpen(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [userMenuOpen]);
 
   const toggleUserMenu = () => {
@@ -32,6 +41,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
               type='button'
               className='md:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500'
               onClick={onMenuToggle}
+              aria-label='Open navigation menu'
             >
               <HiMenu className='h-6 w-6' />
             </button>
@@ -57,6 +67,9 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                   type='button'
                   className='flex items-center space-x-2 p-2 text-gray-400 hover:text-gray-500 hover:bg-gray-100 rounded-md'
                   onClick={toggleUserMenu}
+                  aria-expanded={userMenuOpen}
+                  aria-haspopup='true'
+                  aria-label='User menu'
                 >
                   <div className='w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center'>
                     <span className='text-white text-sm font-medium'>
@@ -69,11 +82,12 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                 </button>
 
                 {userMenuOpen && (
-                  <div className='absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50'>
+                  <div className='absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50' role='menu'>
                     <Link
                       to='/profile'
                       className='flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
                       onClick={() => setUserMenuOpen(false)}
+                      role='menuitem'
                     >
                       <HiUser className='mr-3 h-4 w-4' />
                       Profile
@@ -82,6 +96,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                       to='/saved'
                       className='flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
                       onClick={() => setUserMenuOpen(false)}
+                      role='menuitem'
                     >
                       <HiBookmark className='mr-3 h-4 w-4' />
                       Saved Jobs
@@ -91,6 +106,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                         to='/admin'
                         className='flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
                         onClick={() => setUserMenuOpen(false)}
+                        role='menuitem'
                       >
                         <HiCog className='mr-3 h-4 w-4' />
                         Admin
@@ -102,6 +118,7 @@ const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
                         setUserMenuOpen(false);
                       }}
                       className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
+                      role='menuitem'
                     >
                       <HiLogout className='mr-3 h-4 w-4' />
                       Logout

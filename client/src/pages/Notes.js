@@ -14,7 +14,7 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatDate } from '../utils/formatUtils';
-import api from '../utils/api';
+import { downloadFile } from '../utils/downloadFile';
 
 const Notes = () => {
   const dispatch = useDispatch();
@@ -24,8 +24,8 @@ const Notes = () => {
   );
   const [showFilters, setShowFilters] = useState(false);
   const [localFilters, setLocalFilters] = useState({
-    type: '',
-    priority: '',
+    type: filters.type || '',
+    priority: filters.priority || '',
   });
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
@@ -103,17 +103,7 @@ const Notes = () => {
 
   const handleExportCsv = async () => {
     try {
-      const response = await api.get('/api/notes/export', {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'notes.csv');
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await downloadFile('/api/notes/export', 'notes.csv');
     } catch (error) {
       console.error('Export failed:', error);
     }
