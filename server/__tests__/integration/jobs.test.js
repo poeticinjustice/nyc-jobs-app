@@ -1,31 +1,84 @@
 const request = require('supertest');
 const { setupDB } = require('../setup');
 const { createTestUser, createTestJob, createSavedJob, createTestNote, authHeader } = require('../helpers/testHelpers');
-const { nycApiJobsList, usaJobsSearchResponse } = require('../helpers/fixtures');
+const Job = require('../../models/Job');
 
-jest.mock('axios');
-const axios = require('axios');
-
-// Import app AFTER mocking axios
 const app = require('../../app');
 
 setupDB();
 
-beforeEach(() => {
-  axios.get.mockReset();
-  axios.get.mockImplementation((url) => {
-    if (url.includes('data.cityofnewyork.us')) {
-      return Promise.resolve({ data: nycApiJobsList });
-    }
-    if (url.includes('data.usajobs.gov')) {
-      return Promise.resolve({ data: usaJobsSearchResponse });
-    }
-    return Promise.reject(new Error(`Unmocked URL: ${url}`));
-  });
-});
+// Seed a set of jobs into MongoDB before each test that needs searchable data
+const seedJobs = async () => {
+  await Job.insertMany([
+    {
+      jobId: '12345',
+      source: 'nyc',
+      businessTitle: 'Software Developer',
+      civilServiceTitle: 'Computer Specialist',
+      jobCategory: 'Technology, Data & Innovation',
+      agency: 'Dept of Info Tech & Telecomm',
+      workLocation: 'Manhattan',
+      workLocation1: '100 Church St., New York, NY',
+      salaryRangeFrom: 65000,
+      salaryRangeTo: 95000,
+      salaryFrequency: 'Annual',
+      jobDescription: 'We are looking for a developer to build applications.',
+      postDate: new Date('2025-01-15'),
+      coordinates: { lat: 40.7132, lng: -74.0079 },
+      lastRefreshedAt: new Date(),
+    },
+    {
+      jobId: '12346',
+      source: 'nyc',
+      businessTitle: 'Data Analyst',
+      jobCategory: 'Policy, Research & Analysis',
+      agency: 'Dept of Health',
+      workLocation: 'Brooklyn',
+      salaryRangeFrom: 55000,
+      salaryRangeTo: 75000,
+      salaryFrequency: 'Annual',
+      jobDescription: 'Analyze public health data and produce reports.',
+      postDate: new Date('2025-02-01'),
+      coordinates: { lat: 40.6782, lng: -73.9442 },
+      lastRefreshedAt: new Date(),
+    },
+    {
+      jobId: '12347',
+      source: 'nyc',
+      businessTitle: 'Project Manager',
+      jobCategory: 'Administration & Human Resources',
+      agency: 'Dept of Education',
+      workLocation: 'Queens',
+      salaryRangeFrom: 80000,
+      salaryRangeTo: 110000,
+      salaryFrequency: 'Annual',
+      jobDescription: 'Manage educational technology projects.',
+      postDate: new Date('2025-01-10'),
+      coordinates: { lat: 40.7282, lng: -73.7949 },
+      lastRefreshedAt: new Date(),
+    },
+    {
+      jobId: 'USA-12345',
+      source: 'federal',
+      businessTitle: 'IT Specialist',
+      jobCategory: 'Information Technology',
+      agency: 'TSA',
+      workLocation: 'New York, New York',
+      salaryRangeFrom: 78000,
+      salaryRangeTo: 101000,
+      salaryFrequency: 'Annual',
+      jobDescription: 'Responsible for IT systems and infrastructure.',
+      postDate: new Date('2025-01-20'),
+      coordinates: { lat: 40.7128, lng: -74.006 },
+      lastRefreshedAt: new Date(),
+    },
+  ]);
+};
 
 describe('GET /api/jobs/search', () => {
-  it('returns paginated NYC jobs with pagination metadata', async () => {
+  beforeEach(seedJobs);
+
+  it('returns paginated jobs with pagination metadata', async () => {
     const res = await request(app)
       .get('/api/jobs/search')
       .query({ source: 'nyc' });
@@ -33,30 +86,76 @@ describe('GET /api/jobs/search', () => {
     expect(res.status).toBe(200);
     expect(res.body.jobs).toBeDefined();
     expect(Array.isArray(res.body.jobs)).toBe(true);
+    expect(res.body.jobs.length).toBe(3);
     expect(res.body.pagination).toBeDefined();
-    expect(res.body.pagination).toHaveProperty('page');
+    expect(res.body.pagination).toHaveProperty('page', 1);
     expect(res.body.pagination).toHaveProperty('limit');
-    expect(res.body.pagination).toHaveProperty('total');
+    expect(res.body.pagination).toHaveProperty('total', 3);
     expect(res.body.pagination).toHaveProperty('pages');
     expect(res.body.source).toBe('nyc');
   });
 
-  it('filters by keyword q', async () => {
+  it('filters by keyword q using text search', async () => {
     const res = await request(app)
       .get('/api/jobs/search')
       .query({ source: 'nyc', q: 'Data Analyst' });
 
     expect(res.status).toBe(200);
-    // The fixture has a "Data Analyst" job so at least one result should match
     expect(res.body.jobs.length).toBeGreaterThanOrEqual(1);
     const titles = res.body.jobs.map((j) => j.businessTitle);
     expect(titles.some((t) => t.includes('Data Analyst'))).toBe(true);
   });
 
+  it('filters by category', async () => {
+    const res = await request(app)
+      .get('/api/jobs/search')
+      .query({ source: 'nyc', category: 'Technology, Data & Innovation' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobs.length).toBe(1);
+    expect(res.body.jobs[0].jobCategory).toBe('Technology, Data & Innovation');
+  });
+
+  it('filters by salary range', async () => {
+    const res = await request(app)
+      .get('/api/jobs/search')
+      .query({ source: 'nyc', salary_min: '90000' });
+
+    expect(res.status).toBe(200);
+    // Only Software Developer (95k max) and Project Manager (110k max) overlap >=90k
+    expect(res.body.jobs.length).toBe(2);
+  });
+
+  it('returns all sources when source=all', async () => {
+    const res = await request(app)
+      .get('/api/jobs/search')
+      .query({ source: 'all' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobs.length).toBe(4);
+    const sources = [...new Set(res.body.jobs.map((j) => j.source))];
+    expect(sources).toContain('nyc');
+    expect(sources).toContain('federal');
+  });
+
+  it('paginates correctly', async () => {
+    const res = await request(app)
+      .get('/api/jobs/search')
+      .query({ source: 'nyc', page: 2, limit: 2 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.pagination.page).toBe(2);
+    expect(res.body.pagination.limit).toBe(2);
+    expect(res.body.jobs.length).toBe(1); // 3 total, page 2 with limit 2 = 1 remaining
+  });
+
   it('returns isSaved status when authenticated', async () => {
     const { user, token } = await createTestUser();
-    // Save a job that matches one of the NYC fixture job IDs
-    await createSavedJob(user._id, { jobId: '12345', source: 'nyc' });
+    // Mark one of the seeded jobs as saved
+    await Job.updateOne(
+      { jobId: '12345', source: 'nyc' },
+      { $push: { savedBy: { user: user._id, savedAt: new Date(), applicationStatus: 'interested', statusUpdatedAt: new Date(), statusHistory: [{ status: 'interested', changedAt: new Date() }] } } }
+    );
 
     const res = await request(app)
       .get('/api/jobs/search')
@@ -65,19 +164,18 @@ describe('GET /api/jobs/search', () => {
 
     expect(res.status).toBe(200);
     const savedJob = res.body.jobs.find((j) => j.jobId === '12345');
-    if (savedJob) {
-      expect(savedJob.isSaved).toBe(true);
-    }
+    expect(savedJob).toBeDefined();
+    expect(savedJob.isSaved).toBe(true);
   });
 
-  it('returns isSaved as false when unauthenticated', async () => {
+  it('does not include savedBy in response', async () => {
     const res = await request(app)
       .get('/api/jobs/search')
       .query({ source: 'nyc' });
 
     expect(res.status).toBe(200);
     res.body.jobs.forEach((job) => {
-      expect(job.isSaved).toBe(false);
+      expect(job.savedBy).toBeUndefined();
     });
   });
 });
@@ -93,13 +191,15 @@ describe('GET /api/jobs/search (source validation)', () => {
 });
 
 describe('GET /api/jobs/categories', () => {
+  beforeEach(seedJobs);
+
   it('returns sorted categories array', async () => {
     const res = await request(app).get('/api/jobs/categories');
 
     expect(res.status).toBe(200);
     expect(res.body.categories).toBeDefined();
     expect(Array.isArray(res.body.categories)).toBe(true);
-    // Verify sorted order
+    expect(res.body.categories.length).toBeGreaterThanOrEqual(3);
     const categories = res.body.categories;
     const sorted = [...categories].sort();
     expect(categories).toEqual(sorted);
@@ -107,13 +207,15 @@ describe('GET /api/jobs/categories', () => {
 });
 
 describe('GET /api/jobs/agencies', () => {
+  beforeEach(seedJobs);
+
   it('returns sorted agencies array', async () => {
     const res = await request(app).get('/api/jobs/agencies');
 
     expect(res.status).toBe(200);
     expect(res.body.agencies).toBeDefined();
     expect(Array.isArray(res.body.agencies)).toBe(true);
-    // Verify sorted order
+    expect(res.body.agencies.length).toBeGreaterThanOrEqual(3);
     const agencies = res.body.agencies;
     const sorted = [...agencies].sort();
     expect(agencies).toEqual(sorted);
@@ -168,10 +270,9 @@ describe('GET /api/jobs/saved', () => {
 });
 
 describe('GET /api/jobs/:id', () => {
-  it('returns NYC job from cache', async () => {
-    // First call to /search populates the in-memory cache
-    await request(app).get('/api/jobs/search').query({ source: 'nyc' });
+  beforeEach(seedJobs);
 
+  it('returns job from database', async () => {
     const res = await request(app)
       .get('/api/jobs/12345')
       .query({ source: 'nyc' });
@@ -179,26 +280,20 @@ describe('GET /api/jobs/:id', () => {
     expect(res.status).toBe(200);
     expect(res.body.jobId).toBe('12345');
     expect(res.body.source).toBe('nyc');
-    expect(res.body.businessTitle).toBeDefined();
+    expect(res.body.businessTitle).toBe('Software Developer');
+  });
+
+  it('returns federal job from database', async () => {
+    const res = await request(app)
+      .get('/api/jobs/USA-12345')
+      .query({ source: 'federal' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobId).toBe('USA-12345');
+    expect(res.body.source).toBe('federal');
   });
 
   it('returns 404 for non-existent job', async () => {
-    // Populate cache first
-    await request(app).get('/api/jobs/search').query({ source: 'nyc' });
-
-    // Mock the NYC API to return empty for the specific job lookup
-    axios.get.mockImplementation((url) => {
-      if (url.includes('data.cityofnewyork.us')) {
-        return Promise.resolve({ data: [] });
-      }
-      if (url.includes('data.usajobs.gov')) {
-        return Promise.resolve({
-          data: { SearchResult: { SearchResultCountAll: '0', SearchResultItems: [] } },
-        });
-      }
-      return Promise.reject(new Error(`Unmocked URL: ${url}`));
-    });
-
     const res = await request(app)
       .get('/api/jobs/nonexistent-id-999')
       .query({ source: 'nyc' });
@@ -206,19 +301,22 @@ describe('GET /api/jobs/:id', () => {
     expect(res.status).toBe(404);
     expect(res.body.message).toBe('Job not found');
   });
+
+  it('does not include savedBy in response', async () => {
+    const res = await request(app)
+      .get('/api/jobs/12345')
+      .query({ source: 'nyc' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.savedBy).toBeUndefined();
+  });
 });
 
 describe('POST /api/jobs/:id/save', () => {
+  beforeEach(seedJobs);
+
   it('saves a job', async () => {
     const { token } = await createTestUser();
-
-    // Mock returns a single NYC job when fetched by job_id
-    axios.get.mockImplementation((url) => {
-      if (url.includes('data.cityofnewyork.us')) {
-        return Promise.resolve({ data: nycApiJobsList });
-      }
-      return Promise.reject(new Error(`Unmocked URL: ${url}`));
-    });
 
     const res = await request(app)
       .post('/api/jobs/12345/save')
@@ -233,15 +331,31 @@ describe('POST /api/jobs/:id/save', () => {
 
   it('returns 400 when already saved', async () => {
     const { user, token } = await createTestUser();
-    await createSavedJob(user._id, { jobId: 'already-saved-1', source: 'nyc' });
+    // Mark the seeded job as saved
+    await Job.updateOne(
+      { jobId: '12345', source: 'nyc' },
+      { $push: { savedBy: { user: user._id, savedAt: new Date(), applicationStatus: 'interested', statusUpdatedAt: new Date(), statusHistory: [{ status: 'interested', changedAt: new Date() }] } } }
+    );
 
     const res = await request(app)
-      .post('/api/jobs/already-saved-1/save')
+      .post('/api/jobs/12345/save')
       .set('Authorization', authHeader(token))
       .send({ source: 'nyc' });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Job already saved');
+  });
+
+  it('returns 404 for non-existent job', async () => {
+    const { token } = await createTestUser();
+
+    const res = await request(app)
+      .post('/api/jobs/does-not-exist/save')
+      .set('Authorization', authHeader(token))
+      .send({ source: 'nyc' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe('Job not found');
   });
 
   it('returns 401 without token', async () => {
@@ -303,7 +417,6 @@ describe('PUT /api/jobs/:id/status', () => {
     expect(res.body.applicationStatus).toBe('applied');
     expect(res.body.statusHistory).toBeDefined();
     expect(Array.isArray(res.body.statusHistory)).toBe(true);
-    // Should have at least 2 entries: initial 'interested' + new 'applied'
     expect(res.body.statusHistory.length).toBeGreaterThanOrEqual(2);
     const lastEntry = res.body.statusHistory[res.body.statusHistory.length - 1];
     expect(lastEntry.status).toBe('applied');
@@ -324,7 +437,6 @@ describe('PUT /api/jobs/:id/status', () => {
 
   it('returns 400 when job not saved by user', async () => {
     const { token } = await createTestUser();
-    // Create a job that is NOT saved by this user
     await createTestJob({ jobId: 'not-saved-job', source: 'nyc' });
 
     const res = await request(app)
@@ -505,6 +617,8 @@ describe('GET /api/jobs/saved (note counts)', () => {
 });
 
 describe('GET /api/jobs/map', () => {
+  beforeEach(seedJobs);
+
   it('returns GeoJSON FeatureCollection with correct structure', async () => {
     const res = await request(app)
       .get('/api/jobs/map')
@@ -524,7 +638,7 @@ describe('GET /api/jobs/map', () => {
       .query({ source: 'nyc' });
 
     expect(res.status).toBe(200);
-    expect(res.body.features.length).toBeGreaterThan(0);
+    expect(res.body.features.length).toBe(3);
 
     const feature = res.body.features[0];
     expect(feature.type).toBe('Feature');
@@ -550,12 +664,21 @@ describe('GET /api/jobs/map', () => {
   it('filters by keyword', async () => {
     const res = await request(app)
       .get('/api/jobs/map')
-      .query({ source: 'nyc', keyword: 'analyst' });
+      .query({ source: 'nyc', keyword: 'developer' });
 
     expect(res.status).toBe(200);
     expect(res.body.type).toBe('FeatureCollection');
-    // Results should be filtered (fewer than unfiltered)
     expect(res.body.features.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('filters by source', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map')
+      .query({ source: 'federal' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.features.length).toBe(1);
+    expect(res.body.features[0].properties.source).toBe('federal');
   });
 
   it('works without authentication (public endpoint)', async () => {
@@ -564,17 +687,37 @@ describe('GET /api/jobs/map', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.type).toBe('FeatureCollection');
+    expect(res.body.features.length).toBe(4); // all 4 seeded jobs
   });
 
-  it('returns metadata with total and geocoded counts', async () => {
+  it('excludes jobs without coordinates', async () => {
+    // Insert a job with no coordinates
+    await Job.create({
+      jobId: 'no-coords',
+      source: 'nyc',
+      businessTitle: 'No Location Job',
+      agency: 'Test',
+      postDate: new Date(),
+      coordinates: { lat: null, lng: null },
+    });
+
     const res = await request(app)
       .get('/api/jobs/map')
       .query({ source: 'nyc' });
 
     expect(res.status).toBe(200);
-    expect(typeof res.body.metadata.total).toBe('number');
-    expect(typeof res.body.metadata.geocoded).toBe('number');
-    expect(res.body.metadata.geocoded).toBeLessThanOrEqual(res.body.metadata.total);
-    expect(res.body.metadata.geocoded).toBe(res.body.features.length);
+    const ids = res.body.features.map((f) => f.properties.jobId);
+    expect(ids).not.toContain('no-coords');
+  });
+});
+
+describe('GET /api/jobs/health', () => {
+  it('returns job count', async () => {
+    await seedJobs();
+    const res = await request(app).get('/api/jobs/health');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(typeof res.body.jobsInDatabase).toBe('number');
   });
 });

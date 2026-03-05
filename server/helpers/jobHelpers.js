@@ -350,6 +350,9 @@ const escCsv = (val) => {
     : s;
 };
 
+// Escape special regex characters for safe use in RegExp constructors
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 module.exports = {
   cleanText,
   cleanJobFields,
@@ -362,4 +365,5 @@ module.exports = {
   transformUsaJob,
   getUserSaveEntry,
   escCsv,
+  escapeRegex,
 };

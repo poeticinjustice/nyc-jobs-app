@@ -1,195 +1,100 @@
 const express = require('express');
-const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
 const Note = require('../models/Note');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
-const {
-  cleanJobFields,
-  deduplicateJobs,
-  filterJobs,
-  sortJobs,
-  sortMergedJobs,
-  transformNycJob,
-  transformUsaJob,
-  getUserSaveEntry,
-  escCsv,
-} = require('../helpers/jobHelpers');
-const { fetchUsaJobById, getUsaHeaders } = require('../helpers/usaJobsApi');
-const { geocodeLocation } = require('../helpers/geocoding');
-const LRUCache = require('../helpers/LRUCache');
+const { getUserSaveEntry, escCsv, escapeRegex } = require('../helpers/jobHelpers');
+const { geocodeLocationBase } = require('../helpers/geocoding');
 
 const router = express.Router();
 
 const VALID_SOURCES = ['nyc', 'federal'];
 
-// --- In-memory caches ---
-
-let jobsCache = null;
-let jobIdMap = null; // Map<job_id, job> for O(1) lookups
-let cacheTimestamp = null;
-let categoriesCache = null;
-let agenciesCache = null;
-const CACHE_DURATION = 60 * 60 * 1000; // 60 minutes
-const MAX_NYC_API_OFFSET = 50000;
-
-const searchResultCache = new LRUCache(100, 5 * 60 * 1000);
-const usaJobsSearchCache = new LRUCache(50, 5 * 60 * 1000);
-const mapCache = new LRUCache(20, 10 * 60 * 1000);
-
-// Periodically clean expired search cache entries (skip in test to avoid open handles)
-if (process.env.NODE_ENV !== 'test') {
-  setInterval(() => {
-    searchResultCache.cleanExpired();
-    usaJobsSearchCache.cleanExpired();
-    mapCache.cleanExpired();
-  }, 60 * 1000);
-}
-
 // --- Helpers ---
 
-const generateSearchCacheKey = (params) => {
-  const { q, category, location, agency, salary_min, salary_max, sort } = params;
-  return JSON.stringify([q || '', category || '', location || '', agency || '', salary_min ?? '', salary_max ?? '', sort || '']);
+// Build Mongoose sort from query param
+const buildSort = (sort) => {
+  switch (sort) {
+    case 'date_asc': return { postDate: 1 };
+    case 'title_asc': return { businessTitle: 1 };
+    case 'title_desc': return { businessTitle: -1 };
+    case 'salary_desc': return { salaryRangeFrom: -1 };
+    case 'salary_asc': return { salaryRangeFrom: 1 };
+    case 'date_desc':
+    default: return { postDate: -1 };
+  }
 };
 
-// Fetch all jobs from NYC API with caching and retry
-let fetchPromise = null;
-const fetchAllJobs = async () => {
-  const now = Date.now();
+// Build Mongoose filter from search params
+const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_max, source }) => {
+  const filter = {};
 
-  if (jobsCache && cacheTimestamp && now - cacheTimestamp < CACHE_DURATION) {
-    return jobsCache;
+  if (source && source !== 'all') {
+    filter.source = source;
   }
 
-  // Prevent concurrent fetches from hammering the API
-  if (fetchPromise) return fetchPromise;
-  fetchPromise = _fetchAllJobsImpl();
-  try { return await fetchPromise; } finally { fetchPromise = null; }
-};
+  if (q) {
+    filter.$text = { $search: q };
+  }
 
-const _fetchAllJobsImpl = async () => {
-  const now = Date.now();
-  let allJobs = [];
-  let offset = 0;
-  const batchSize = 1000;
-  const maxRetries = 3;
-  const baseDelay = 1000;
+  if (category) {
+    filter.jobCategory = new RegExp(`^${escapeRegex(category)}$`, 'i');
+  }
 
-  let fetchFailed = false;
-  let hasMoreData = true;
-  while (hasMoreData) {
-    const params = new URLSearchParams();
-    params.append('$limit', batchSize);
-    params.append('$offset', offset);
+  if (location) {
+    const locRegex = new RegExp(escapeRegex(location), 'i');
+    filter.$or = [
+      { workLocation: locRegex },
+      { workLocation1: locRegex },
+    ];
+  }
 
-    let batchJobs = null;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const response = await axios.get(
-          `${process.env.NYC_JOBS_API_URL}?${params.toString()}`,
-          { timeout: 30000 }
-        );
-        batchJobs = response.data;
-        break;
-      } catch (error) {
-        if (attempt < maxRetries - 1) {
-          await new Promise((r) => setTimeout(r, baseDelay * Math.pow(2, attempt)));
-        }
+  if (agency) {
+    filter.agency = new RegExp(escapeRegex(agency), 'i');
+  }
+
+  // Salary overlap: job range overlaps with [salary_min, salary_max]
+  if (salary_min || salary_max) {
+    const salaryConditions = [];
+    if (salary_min) {
+      const min = parseInt(salary_min, 10);
+      if (!isNaN(min)) {
+        // Job's upper bound >= min (or lower bound if no upper)
+        salaryConditions.push({
+          $or: [
+            { salaryRangeTo: { $gte: min } },
+            { salaryRangeTo: null, salaryRangeFrom: { $gte: min } },
+          ],
+        });
       }
     }
-
-    if (!batchJobs) {
-      fetchFailed = true;
-      hasMoreData = false;
-    } else if (batchJobs.length === 0) {
-      hasMoreData = false;
-    } else {
-      allJobs = allJobs.concat(batchJobs);
-      offset += batchSize;
-      if (offset > MAX_NYC_API_OFFSET) hasMoreData = false;
+    if (salary_max) {
+      const max = parseInt(salary_max, 10);
+      if (!isNaN(max)) {
+        // Job's lower bound <= max (or upper bound if no lower)
+        salaryConditions.push({
+          $or: [
+            { salaryRangeFrom: { $lte: max } },
+            { salaryRangeFrom: null, salaryRangeTo: { $lte: max } },
+          ],
+        });
+      }
+    }
+    if (salaryConditions.length > 0) {
+      // Combine with any existing $or (location) using $and
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, ...salaryConditions];
+        delete filter.$or;
+      } else if (salaryConditions.length === 1) {
+        Object.assign(filter, salaryConditions[0]);
+      } else {
+        filter.$and = salaryConditions;
+      }
     }
   }
 
-  // Don't cache partial results from a failed fetch — serve stale cache if available
-  if (fetchFailed) {
-    if (jobsCache) return jobsCache;
-    if (allJobs.length === 0) return [];
-    // No stale cache and we got partial data — use it but with a short TTL
-    allJobs = deduplicateJobs(allJobs).map(cleanJobFields);
-    jobsCache = allJobs;
-    cacheTimestamp = now - CACHE_DURATION + 5 * 60 * 1000; // expire in 5 min
-    jobIdMap = new Map(allJobs.map((j) => [j.job_id, j]));
-    categoriesCache = [...new Set(allJobs.map((j) => j.job_category).filter(Boolean))].sort();
-    agenciesCache = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
-    return allJobs;
-  }
-
-  allJobs = deduplicateJobs(allJobs).map(cleanJobFields);
-  jobsCache = allJobs;
-  cacheTimestamp = now;
-
-  // Pre-compute derived caches
-  jobIdMap = new Map(allJobs.map((j) => [j.job_id, j]));
-  categoriesCache = [...new Set(allJobs.map((j) => j.job_category).filter(Boolean))].sort();
-  agenciesCache = [...new Set(allJobs.map((j) => j.agency).filter(Boolean))].sort();
-
-  return allJobs;
-}; // end _fetchAllJobsImpl
-
-// Map our sort params to USAJobs SortField/SortDirection
-const USA_SORT_MAP = {
-  date_desc: { SortField: 'opendate', SortDirection: 'Desc' },
-  date_asc: { SortField: 'opendate', SortDirection: 'Asc' },
-  title_asc: { SortField: 'jobtitle', SortDirection: 'Asc' },
-  title_desc: { SortField: 'jobtitle', SortDirection: 'Desc' },
-  salary_desc: { SortField: 'salary', SortDirection: 'Desc' },
-  salary_asc: { SortField: 'salary', SortDirection: 'Asc' },
-};
-
-// Fetch jobs from USAJobs API with caching
-const fetchUsaJobs = async ({ q, category, location, agency, salary_min, salary_max, sort = 'date_desc', page = 1, limit = 20 }) => {
-  const cacheKey = JSON.stringify(['usa', q || '', category || '', location || '', agency || '', salary_min || '', salary_max || '', sort, page, limit]);
-  const cached = usaJobsSearchCache.get(cacheKey);
-  if (cached) return cached;
-
-  const params = new URLSearchParams();
-
-  // Combine keyword, category, and agency into Keyword
-  const keywordParts = [q, category, agency].filter(Boolean);
-  if (keywordParts.length > 0) {
-    params.append('Keyword', keywordParts.join(' '));
-  }
-  params.append('LocationName', location || 'New York City, NY');
-  if (salary_min) params.append('RemunerationMinimumAmount', salary_min);
-  if (salary_max) params.append('RemunerationMaximumAmount', salary_max);
-
-  const sortConfig = USA_SORT_MAP[sort] || USA_SORT_MAP.date_desc;
-  params.append('SortField', sortConfig.SortField);
-  params.append('SortDirection', sortConfig.SortDirection);
-  params.append('ResultsPerPage', String(Math.min(parseInt(limit) || 20, 250)));
-  params.append('Page', String(page));
-  params.append('Fields', 'Full');
-
-  try {
-    const response = await axios.get(`${process.env.USAJOBS_BASE_URL}?${params.toString()}`, {
-      headers: getUsaHeaders(),
-      timeout: 15000,
-    });
-
-    const searchResult = response.data.SearchResult;
-    const items = searchResult.SearchResultItems || [];
-    const totalCount = parseInt(searchResult.SearchResultCountAll) || 0;
-    const jobs = items.map(transformUsaJob).filter(Boolean);
-
-    const result = { jobs, total: totalCount };
-    usaJobsSearchCache.set(cacheKey, result);
-    return result;
-  } catch (error) {
-    console.error('USAJobs API error:', error.message);
-    return { jobs: [], total: 0 };
-  }
+  return filter;
 };
 
 // Build query filter for a user's saved jobs, optionally filtered by status
@@ -229,7 +134,7 @@ const mapMonthlyLimit = (req, res, next) => {
 
 // --- Routes ---
 
-// Map data — returns GeoJSON FeatureCollection of geocoded jobs
+// Map data — returns GeoJSON FeatureCollection from pre-geocoded jobs
 router.get(
   '/map',
   [
@@ -254,45 +159,29 @@ router.get(
         salary_max,
       } = req.query;
 
-      const cacheKey = JSON.stringify(['map', source, keyword, salary_min || '', salary_max || '']);
-      const cached = mapCache.get(cacheKey);
-      if (cached) return res.json(cached);
+      // Build filter: only jobs with coordinates
+      const filter = buildSearchFilter({
+        q: keyword || undefined,
+        salary_min,
+        salary_max,
+        source,
+      });
+      filter['coordinates.lat'] = { $ne: null };
+      filter['coordinates.lng'] = { $ne: null };
 
-      let allJobs = [];
+      const jobs = await Job.find(filter)
+        .select('jobId businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency source postDate jobCategory coordinates')
+        .sort({ postDate: -1 })
+        .limit(2000)
+        .lean();
 
-      if (source === 'nyc' || source === 'all') {
-        const nycRaw = await fetchAllJobs();
-        const filtered = filterJobs(nycRaw, { q: keyword, salary_min, salary_max });
-        const transformed = filtered.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
-        allJobs = allJobs.concat(transformed);
-      }
-
-      if (source === 'federal' || source === 'all') {
-        try {
-          const usaResult = await fetchUsaJobs({
-            q: keyword,
-            location: 'New York',
-            salary_min,
-            salary_max,
-            page: 1,
-            limit: 250,
-          });
-          const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-          allJobs = allJobs.concat(federalJobs);
-        } catch (usaError) {
-          console.error('USAJobs API error during map fetch:', usaError.message);
-          // Continue with NYC data only
-        }
-      }
-
-      const features = [];
-      for (const job of allJobs) {
-        if (features.length >= 2000) break;
-        const coords = geocodeLocation(job.workLocation, job.workLocation1, job.source);
-        if (!coords) continue;
-        features.push({
+      const features = jobs.map((job) => {
+        // Add jitter at read time so stacked markers spread out
+        const lat = job.coordinates.lat + (Math.random() - 0.5) * 0.01;
+        const lng = job.coordinates.lng + (Math.random() - 0.5) * 0.01;
+        return {
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: [coords.lng, coords.lat] },
+          geometry: { type: 'Point', coordinates: [lng, lat] },
           properties: {
             jobId: job.jobId,
             businessTitle: job.businessTitle,
@@ -305,17 +194,14 @@ router.get(
             postDate: job.postDate,
             jobCategory: job.jobCategory,
           },
-        });
-      }
+        };
+      });
 
-      const result = {
+      res.json({
         type: 'FeatureCollection',
         features,
-        metadata: { total: allJobs.length, geocoded: features.length },
-      };
-
-      mapCache.set(cacheKey, result);
-      res.json(result);
+        metadata: { total: features.length, geocoded: features.length },
+      });
     } catch (error) {
       console.error('Map data error:', error);
       res.status(500).json({ message: 'Error fetching map data' });
@@ -324,39 +210,15 @@ router.get(
 );
 
 // Health check
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    cacheStatus: jobsCache ? 'cached' : 'not cached',
-    cacheSize: jobsCache ? jobsCache.length : 0,
-    cacheTimestamp: cacheTimestamp ? new Date(cacheTimestamp).toISOString() : null,
-    cacheAge: cacheTimestamp ? Math.round((Date.now() - cacheTimestamp) / 1000) : null,
-    searchCacheSize: searchResultCache.size,
-  });
-});
-
-// NYC API health check
-router.get('/nyc-api-health', async (req, res) => {
+router.get('/health', async (req, res) => {
   try {
-    const startTime = Date.now();
-    const response = await axios.get(`${process.env.NYC_JOBS_API_URL}?$limit=1`, {
-      timeout: 10000,
-    });
+    const count = await Job.estimatedDocumentCount();
     res.json({
       status: 'ok',
-      responseTime: `${Date.now() - startTime}ms`,
-      nycApiStatus: response.status,
-      nycApiWorking: true,
-      sampleData: response.data.length > 0 ? 'Available' : 'No data',
+      jobsInDatabase: count,
     });
   } catch (error) {
-    res.status(503).json({
-      status: 'error',
-      nycApiWorking: false,
-      error: error.message,
-      errorCode: error.code,
-      responseStatus: error.response?.status,
-    });
+    res.json({ status: 'ok', jobsInDatabase: 'unknown' });
   }
 });
 
@@ -413,65 +275,33 @@ router.get(
       const pageNum = parseInt(page) || 1;
       const limitNum = Math.min(parseInt(limit) || 20, 100);
 
-      let jobs = [];
-      let total = 0;
+      const filter = buildSearchFilter({
+        q: q || undefined,
+        category: category || undefined,
+        location: location || undefined,
+        agency: agency || undefined,
+        salary_min,
+        salary_max,
+        source,
+      });
 
-      // Helper: fetch and cache NYC search results
-      const getNycSearchResults = async () => {
-        const cacheKey = generateSearchCacheKey({ q, category, location, agency, salary_min, salary_max, sort });
-        const cached = searchResultCache.get(cacheKey);
-        if (cached) return cached;
+      const mongoSort = buildSort(sort);
+      // When using $text search, add text score for relevance
+      const projection = q ? { score: { $meta: 'textScore' } } : {};
+      const finalSort = q ? { score: { $meta: 'textScore' }, ...mongoSort } : mongoSort;
 
-        const allJobs = await fetchAllJobs();
-        const filtered = sortJobs(filterJobs(allJobs, { q, category, location, agency, salary_min, salary_max }), sort);
-        searchResultCache.set(cacheKey, filtered);
-        return filtered;
-      };
+      const [total, jobs] = await Promise.all([
+        Job.countDocuments(filter),
+        Job.find(filter, projection)
+          .sort(finalSort)
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .lean(),
+      ]);
 
-      if (source === 'all') {
-        // Fetch NYC (full in-memory set) and one page of federal in parallel
-        const [nycAllJobs, usaResult] = await Promise.all([
-          getNycSearchResults(),
-          fetchUsaJobs({ q, category, location: location || 'New York', agency, salary_min, salary_max, sort, page: 1, limit: 250 }),
-        ]);
-
-        // Transform and merge all available jobs, then sort and paginate the combined set
-        const nycTransformed = nycAllJobs.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
-        const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-        const allMerged = sortMergedJobs([...nycTransformed, ...federalJobs], sort);
-
-        total = allMerged.length;
-        const start = (pageNum - 1) * limitNum;
-        jobs = allMerged.slice(start, start + limitNum);
-      } else if (source === 'nyc') {
-        const nycJobs = await getNycSearchResults();
-        total = nycJobs.length;
-        const startIndex = (pageNum - 1) * limitNum;
-        const paginatedJobs = nycJobs.slice(startIndex, startIndex + limitNum);
-
-        let savedJobIdSet = new Set();
-        if (req.user) {
-          const savedJobs = await Job.find({
-            'savedBy.user': req.user._id,
-            jobId: { $in: paginatedJobs.map((job) => String(job.job_id)) },
-            source: 'nyc',
-          }).lean();
-          savedJobIdSet = new Set(savedJobs.map((job) => String(job.jobId)));
-        }
-
-        jobs = paginatedJobs.map((job) => ({
-          ...transformNycJob(job),
-          source: 'nyc',
-          isSaved: savedJobIdSet.has(String(job.job_id)),
-        }));
-      } else if (source === 'federal') {
-        const usaResult = await fetchUsaJobs({ q, category, location, agency, salary_min, salary_max, sort, page: pageNum, limit: limitNum });
-        jobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
-        total = usaResult.total;
-      }
-
-      // Check saved status for authenticated users (non-nyc modes)
-      if (req.user && source !== 'nyc') {
+      // Check saved status for authenticated users
+      let jobsWithStatus = jobs;
+      if (req.user) {
         const jobIds = jobs.map((j) => j.jobId);
         const savedJobs = await Job.find({
           'savedBy.user': req.user._id,
@@ -479,14 +309,17 @@ router.get(
           source: { $in: VALID_SOURCES },
         }).lean();
         const savedJobMap = new Set(savedJobs.map((j) => `${j.source}:${j.jobId}`));
-        jobs = jobs.map((job) => ({
+        jobsWithStatus = jobs.map((job) => ({
           ...job,
-          isSaved: job.isSaved || savedJobMap.has(`${job.source}:${job.jobId}`),
+          isSaved: savedJobMap.has(`${job.source}:${job.jobId}`),
         }));
       }
 
+      // Strip savedBy from response
+      const sanitized = jobsWithStatus.map(({ savedBy, __v, score, ...rest }) => rest);
+
       res.json({
-        jobs,
+        jobs: sanitized,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -505,8 +338,8 @@ router.get(
 // Get job categories
 router.get('/categories', async (req, res) => {
   try {
-    await fetchAllJobs(); // ensure cache is populated
-    res.json({ categories: categoriesCache });
+    const categories = await Job.distinct('jobCategory', { jobCategory: { $ne: null } });
+    res.json({ categories: categories.sort() });
   } catch (error) {
     console.error('Get categories error:', error);
     res.status(500).json({ message: 'Error fetching categories' });
@@ -516,8 +349,8 @@ router.get('/categories', async (req, res) => {
 // Get agencies list
 router.get('/agencies', async (req, res) => {
   try {
-    await fetchAllJobs(); // ensure cache is populated
-    res.json({ agencies: agenciesCache });
+    const agencies = await Job.distinct('agency', { agency: { $ne: null } });
+    res.json({ agencies: agencies.sort() });
   } catch (error) {
     console.error('Get agencies error:', error);
     res.status(500).json({ message: 'Error fetching agencies' });
@@ -645,58 +478,17 @@ router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { source } = req.query;
-
-    let jobData = null;
-    let fromDb = false;
     const jobSource = source || 'nyc';
 
-    // Try NYC source
-    if (jobSource === 'nyc') {
-      await fetchAllJobs(); // ensure cache is populated
-      const nycJob = jobIdMap?.get(id);
-      if (nycJob) {
-        jobData = { ...transformNycJob(nycJob), source: 'nyc' };
-      }
-    }
-
-    // Try federal source
-    if (!jobData && jobSource === 'federal') {
-      const savedJob = await Job.findOne({ jobId: id, source: 'federal' }).lean();
-      if (savedJob) {
-        jobData = { ...savedJob, source: 'federal' };
-        fromDb = true;
-      } else {
-        try {
-          const federalJob = await fetchUsaJobById(id);
-          if (federalJob) {
-            jobData = { ...federalJob, source: 'federal' };
-          }
-        } catch (usaError) {
-          console.error('USAJobs API error during detail fetch:', usaError.message);
-          return res.status(502).json({ message: 'Failed to fetch job from USAJobs API' });
-        }
-      }
-    }
-
-    if (!jobData) {
+    const job = await Job.findOne({ jobId: id, source: jobSource }).lean();
+    if (!job) {
       return res.status(404).json({ message: 'Job not found' });
     }
 
-    // Check saved status — reuse DB data if we already have it, otherwise query
+    // Check saved status
     let saveEntry = { isSaved: false, applicationStatus: null, statusHistory: [] };
     if (req.user) {
-      if (fromDb) {
-        saveEntry = getUserSaveEntry(jobData, req.user._id);
-      } else {
-        const savedJob = await Job.findOne({
-          jobId: id,
-          source: jobData.source,
-          'savedBy.user': req.user._id,
-        }).lean();
-        if (savedJob) {
-          saveEntry = getUserSaveEntry(savedJob, req.user._id);
-        }
-      }
+      saveEntry = getUserSaveEntry(job, req.user._id);
     }
 
     let noteCount = 0;
@@ -708,7 +500,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
       });
     }
 
-    const { savedBy, __v, ...safeJobData } = jobData;
+    const { savedBy, __v, ...safeJobData } = job;
     res.json({ ...safeJobData, ...saveEntry, noteCount });
   } catch (error) {
     console.error('Get job details error:', error);
@@ -722,39 +514,9 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const source = VALID_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
 
-    let job = await Job.findOne({ jobId: id, source });
-
+    const job = await Job.findOne({ jobId: id, source });
     if (!job) {
-      if (source === 'federal') {
-        try {
-          const federalJob = await fetchUsaJobById(id);
-          if (!federalJob) {
-            return res.status(404).json({ message: 'Job not found in USAJobs API' });
-          }
-          job = new Job({ ...federalJob, source: 'federal' });
-        } catch (usaError) {
-          console.error('USAJobs API error during save:', usaError.message);
-          return res.status(502).json({ message: 'Failed to fetch job from USAJobs API' });
-        }
-      } else {
-        try {
-          const response = await axios.get(`${process.env.NYC_JOBS_API_URL}?job_id=${encodeURIComponent(id)}`, {
-            timeout: 10000,
-          });
-
-          const nycJobs = response.data;
-          if (!nycJobs || nycJobs.length === 0) {
-            return res.status(404).json({ message: 'Job not found in NYC API' });
-          }
-
-          job = new Job({ ...transformNycJob(nycJobs[0], { clean: true }), source: 'nyc' });
-        } catch (fetchError) {
-          console.error('NYC API fetch error during save:', fetchError.message);
-          return res.status(502).json({
-            message: 'Failed to fetch job from NYC API',
-          });
-        }
-      }
+      return res.status(404).json({ message: 'Job not found' });
     }
 
     if (job.savedBy.some((s) => s.user.toString() === req.user._id.toString())) {
@@ -791,12 +553,7 @@ router.delete('/:id/save', authenticateToken, async (req, res) => {
     }
 
     job.savedBy = job.savedBy.filter((s) => s.user.toString() !== req.user._id.toString());
-
-    if (job.savedBy.length === 0) {
-      await job.deleteOne();
-    } else {
-      await job.save();
-    }
+    await job.save();
 
     res.json({ message: 'Job unsaved successfully' });
   } catch (error) {

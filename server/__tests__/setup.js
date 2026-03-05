@@ -8,6 +8,10 @@ const setupDB = () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
 
+    // Ensure all model indexes (including text indexes) are created
+    const Job = require('../models/Job');
+    await Job.createIndexes();
+
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing';
     process.env.NYC_JOBS_API_URL = 'https://data.cityofnewyork.us/resource/kpav-sd4t.json';
     process.env.USAJOBS_API_KEY = 'test-api-key';

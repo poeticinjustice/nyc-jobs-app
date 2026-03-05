@@ -1,5 +1,3 @@
-jest.mock('axios');
-const axios = require('axios');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { setupDB } = require('../setup');
@@ -12,11 +10,6 @@ const {
 } = require('../helpers/testHelpers');
 
 setupDB();
-
-beforeEach(() => {
-  axios.get.mockReset();
-  axios.get.mockResolvedValue({ data: [] });
-});
 
 describe('POST /api/notes', () => {
   it('creates a note and returns 201', async () => {

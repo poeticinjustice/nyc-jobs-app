@@ -104,6 +104,18 @@ const jobSchema = new mongoose.Schema(
       type: Date,
     },
 
+    // Pre-computed geocoded coordinates (set by refresh script)
+    coordinates: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+    },
+
+    // Timestamp of last refresh script update
+    lastRefreshedAt: {
+      type: Date,
+      default: null,
+    },
+
     // App-specific fields
     savedBy: [
       {
@@ -177,5 +189,10 @@ jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
 jobSchema.index({ postDate: -1 });
 jobSchema.index({ updatedAt: -1 });
+jobSchema.index({ source: 1, postDate: -1 });
+jobSchema.index(
+  { businessTitle: 'text', jobDescription: 'text', agency: 'text', jobCategory: 'text', workLocation: 'text' },
+  { weights: { businessTitle: 10, agency: 5, jobCategory: 5, workLocation: 3, jobDescription: 1 } }
+);
 
 module.exports = mongoose.model('Job', jobSchema);

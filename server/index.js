@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const cron = require('node-cron');
 require('dotenv').config();
 
 // Validate required environment variables
@@ -16,14 +17,32 @@ if (missingOptional.length > 0) {
 }
 
 const app = require('./app');
+const Job = require('./models/Job');
+const { refreshAllJobs } = require('./scripts/refreshJobs');
 
 const PORT = process.env.PORT || 8000;
 
 // Start server only after MongoDB connects
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('Connected to MongoDB');
+
+    // Seed on startup if database is empty
+    const count = await Job.estimatedDocumentCount();
+    if (count === 0) {
+      console.log('Database is empty — triggering initial seed...');
+      refreshAllJobs().catch((err) => console.error('Initial seed failed:', err));
+    } else {
+      console.log(`Database has ~${count} jobs`);
+    }
+
+    // Schedule refresh every 6 hours
+    cron.schedule('0 0,6,12,18 * * *', () => {
+      console.log('Cron: starting scheduled job refresh');
+      refreshAllJobs().catch((err) => console.error('Scheduled refresh failed:', err));
+    });
+
     const server = app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

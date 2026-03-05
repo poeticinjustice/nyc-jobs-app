@@ -97,18 +97,19 @@ const addJitter = (coords) => ({
 });
 
 /**
- * Geocode a job's location using static lookup.
+ * Geocode a job's location using static lookup (no jitter).
+ * Use this for storing coordinates in the database.
  * @param {string} workLocation - Primary location (e.g., "Manhattan")
  * @param {string} [workLocation1] - Secondary address (e.g., "100 Church St., New York, NY")
  * @param {string} [source] - Job source ('nyc', 'federal') — NYC jobs default to NYC center
  * @returns {{ lat: number, lng: number } | null}
  */
-const geocodeLocation = (workLocation, workLocation1, source) => {
+const geocodeLocationBase = (workLocation, workLocation1, source) => {
   // Try exact match on workLocation
   if (workLocation) {
     const key = workLocation.toLowerCase().trim();
     if (LOCATION_COORDS[key]) {
-      return addJitter(LOCATION_COORDS[key]);
+      return { ...LOCATION_COORDS[key] };
     }
   }
 
@@ -116,7 +117,7 @@ const geocodeLocation = (workLocation, workLocation1, source) => {
   if (workLocation1) {
     const key1 = workLocation1.toLowerCase().trim();
     if (LOCATION_COORDS[key1]) {
-      return addJitter(LOCATION_COORDS[key1]);
+      return { ...LOCATION_COORDS[key1] };
     }
   }
 
@@ -124,23 +125,31 @@ const geocodeLocation = (workLocation, workLocation1, source) => {
   const combined = `${workLocation || ''} ${workLocation1 || ''}`.toLowerCase();
   for (const { pattern, coords } of ADDRESS_COORDS) {
     if (combined.includes(pattern)) {
-      return addJitter(coords);
+      return { ...coords };
     }
   }
 
   // Try fuzzy matching — look for borough keywords in either location field
   for (const { keyword, lat, lng } of BOROUGH_KEYWORDS) {
     if (combined.includes(keyword)) {
-      return addJitter({ lat, lng });
+      return { lat, lng };
     }
   }
 
   // For NYC-source jobs, default to NYC center rather than dropping them
   if (source === 'nyc') {
-    return addJitter(NYC_DEFAULT);
+    return { ...NYC_DEFAULT };
   }
 
   return null;
 };
 
-module.exports = { geocodeLocation };
+/**
+ * Geocode with jitter — for runtime use (e.g., map display).
+ */
+const geocodeLocation = (workLocation, workLocation1, source) => {
+  const coords = geocodeLocationBase(workLocation, workLocation1, source);
+  return coords ? addJitter(coords) : null;
+};
+
+module.exports = { geocodeLocation, geocodeLocationBase };
