@@ -13,8 +13,22 @@ const userRoutes = require('./routes/users');
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware — configure CSP for Mapbox GL JS
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:', '*.mapbox.com'],
+        connectSrc: ["'self'", 'api.mapbox.com', 'events.mapbox.com', '*.tiles.mapbox.com'],
+        workerSrc: ["'self'", 'blob:'],
+        childSrc: ["'self'", 'blob:'],
+      },
+    },
+  })
+);
 
 // Trust proxy for rate limiting (only trust localhost for development)
 app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : 'loopback');
