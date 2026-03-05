@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const rateLimit = require('express-rate-limit');
 const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
 const Note = require('../models/Note');
@@ -196,12 +197,43 @@ const buildSavedJobsFilter = (userId, status) =>
     ? { savedBy: { $elemMatch: { user: userId, applicationStatus: status } } }
     : { 'savedBy.user': userId };
 
+// --- Map rate limiting ---
+
+const mapRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: process.env.NODE_ENV === 'test' ? 10000 : 30,
+  message: 'Too many map requests, please try again shortly.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Monthly request counter (resets on 1st of each month)
+let mapMonthlyCount = 0;
+let mapMonthlyReset = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime();
+const MAP_MONTHLY_LIMIT = 25000;
+
+const mapMonthlyLimit = (req, res, next) => {
+  const now = Date.now();
+  if (now >= mapMonthlyReset) {
+    mapMonthlyCount = 0;
+    const d = new Date();
+    mapMonthlyReset = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+  }
+  if (mapMonthlyCount >= MAP_MONTHLY_LIMIT) {
+    return res.status(429).json({ message: 'Monthly map request limit reached. Please try again next month.' });
+  }
+  mapMonthlyCount++;
+  next();
+};
+
 // --- Routes ---
 
 // Map data — returns GeoJSON FeatureCollection of geocoded jobs
 router.get(
   '/map',
   [
+    mapRateLimit,
+    mapMonthlyLimit,
     query('source').optional().isIn(['nyc', 'federal', 'all']),
     query('category').optional().trim(),
     query('salary_min').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_min must be a number'),
