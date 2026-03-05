@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
+const { NAME_MAX, PASSWORD_MIN } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -18,9 +19,9 @@ router.post(
   '/register',
   [
     body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 6 }),
-    body('firstName').trim().isLength({ min: 1, max: 50 }),
-    body('lastName').trim().isLength({ min: 1, max: 50 }),
+    body('password').isLength({ min: PASSWORD_MIN }),
+    body('firstName').trim().isLength({ min: 1, max: NAME_MAX }),
+    body('lastName').trim().isLength({ min: 1, max: NAME_MAX }),
   ],
   async (req, res) => {
     try {
@@ -140,8 +141,8 @@ router.put(
   '/profile',
   [
     authenticateToken,
-    body('firstName').optional().trim().isLength({ min: 1, max: 50 }),
-    body('lastName').optional().trim().isLength({ min: 1, max: 50 }),
+    body('firstName').optional().trim().isLength({ min: 1, max: NAME_MAX }),
+    body('lastName').optional().trim().isLength({ min: 1, max: NAME_MAX }),
     body('email').optional().isEmail().normalizeEmail(),
   ],
   async (req, res) => {
@@ -199,7 +200,7 @@ router.put(
   [
     authenticateToken,
     body('currentPassword').notEmpty(),
-    body('newPassword').isLength({ min: 6 }),
+    body('newPassword').isLength({ min: PASSWORD_MIN }),
   ],
   async (req, res) => {
     try {

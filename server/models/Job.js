@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { APPLICATION_STATUS_VALUES, JOB_SOURCES } = require('../../shared/constants');
 
 const jobSchema = new mongoose.Schema(
   {
@@ -8,7 +9,7 @@ const jobSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['nyc', 'federal'],
+      enum: JOB_SOURCES,
       default: 'nyc',
     },
     externalUrl: {
@@ -129,7 +130,7 @@ const jobSchema = new mongoose.Schema(
         },
         applicationStatus: {
           type: String,
-          enum: ['interested', 'applied', 'interviewing', 'offered', 'rejected'],
+          enum: APPLICATION_STATUS_VALUES,
           default: 'interested',
         },
         statusUpdatedAt: {
@@ -140,7 +141,7 @@ const jobSchema = new mongoose.Schema(
           {
             status: {
               type: String,
-              enum: ['interested', 'applied', 'interviewing', 'offered', 'rejected'],
+              enum: APPLICATION_STATUS_VALUES,
             },
             changedAt: {
               type: Date,

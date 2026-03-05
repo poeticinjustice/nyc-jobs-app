@@ -1,11 +1,19 @@
-// Canonical list of application statuses (no "All" filter entry)
-export const APPLICATION_STATUSES = [
-  { value: 'interested', label: 'Interested', color: 'bg-gray-100 text-gray-800' },
-  { value: 'applied', label: 'Applied', color: 'bg-blue-100 text-blue-800' },
-  { value: 'interviewing', label: 'Interviewing', color: 'bg-purple-100 text-purple-800' },
-  { value: 'offered', label: 'Offered', color: 'bg-green-100 text-green-800' },
-  { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-800' },
-];
+import { APPLICATION_STATUSES as SHARED_STATUSES } from 'nyc-jobs-shared/constants';
+
+// Tailwind color classes are UI-specific — not in shared
+const STATUS_COLOR_MAP = {
+  interested: 'bg-gray-100 text-gray-800',
+  applied: 'bg-blue-100 text-blue-800',
+  interviewing: 'bg-purple-100 text-purple-800',
+  offered: 'bg-green-100 text-green-800',
+  rejected: 'bg-red-100 text-red-800',
+};
+
+// Merge shared status data with client-side colors
+export const APPLICATION_STATUSES = SHARED_STATUSES.map((s) => ({
+  ...s,
+  color: STATUS_COLOR_MAP[s.value] || 'bg-gray-100 text-gray-800',
+}));
 
 // Extended colors used on Home dashboard (includes bar color for progress indicators)
 export const STATUS_COLORS = {

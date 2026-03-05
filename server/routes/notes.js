@@ -4,6 +4,7 @@ const Note = require('../models/Note');
 const Job = require('../models/Job');
 const { authenticateToken, validateObjectId } = require('../middleware/auth');
 const { escCsv } = require('../helpers/jobHelpers');
+const { NOTE_TITLE_MAX, NOTE_CONTENT_MAX, NOTE_TYPE_VALUES, NOTE_PRIORITY_VALUES } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -123,12 +124,12 @@ router.post(
   [
     authenticateToken,
     body('jobId').optional(),
-    body('title').trim().isLength({ min: 1, max: 200 }),
-    body('content').trim().isLength({ min: 1, max: 5000 }),
+    body('title').trim().isLength({ min: 1, max: NOTE_TITLE_MAX }),
+    body('content').trim().isLength({ min: 1, max: NOTE_CONTENT_MAX }),
     body('type')
       .optional()
-      .isIn(['general', 'interview', 'application', 'followup', 'research']),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
+      .isIn(NOTE_TYPE_VALUES),
+    body('priority').optional().isIn(NOTE_PRIORITY_VALUES),
     body('tags').optional().isArray(),
   ],
   async (req, res) => {
@@ -285,12 +286,12 @@ router.put(
   [
     authenticateToken,
     validateObjectId,
-    body('title').optional().trim().isLength({ min: 1, max: 200 }),
-    body('content').optional().trim().isLength({ min: 1, max: 5000 }),
+    body('title').optional().trim().isLength({ min: 1, max: NOTE_TITLE_MAX }),
+    body('content').optional().trim().isLength({ min: 1, max: NOTE_CONTENT_MAX }),
     body('type')
       .optional()
-      .isIn(['general', 'interview', 'application', 'followup', 'research']),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
+      .isIn(NOTE_TYPE_VALUES),
+    body('priority').optional().isIn(NOTE_PRIORITY_VALUES),
     body('tags').optional().isArray(),
   ],
   async (req, res) => {

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { USER_ROLE_VALUES, NAME_MAX, PASSWORD_MIN } = require('../../shared/constants');
 
 const userSchema = new mongoose.Schema(
   {
@@ -17,23 +18,23 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true,
-      minlength: 6,
+      minlength: PASSWORD_MIN,
     },
     firstName: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 50,
+      maxlength: NAME_MAX,
     },
     lastName: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 50,
+      maxlength: NAME_MAX,
     },
     role: {
       type: String,
-      enum: ['user', 'admin', 'moderator'],
+      enum: USER_ROLE_VALUES,
       default: 'user',
     },
     isActive: {

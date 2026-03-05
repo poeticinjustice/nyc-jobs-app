@@ -1,36 +1,9 @@
-// Decode common HTML entities
-const decodeEntities = (text) =>
-  text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&mdash;/g, '\u2014')
-    .replace(/&ndash;/g, '\u2013')
-    .replace(/&hellip;/g, '\u2026');
+// JSX-based function stays client-side (requires React)
+import { decodeEntities as decode } from 'nyc-jobs-shared/utils/textUtils';
 
-// Strip HTML tags, decode entities, and collapse whitespace into a plain-text preview
-export const stripHtml = (html) => {
-  if (!html) return '';
-  return decodeEntities(
-    html
-      .replace(/<br\s*\/?>/gi, ' ')
-      .replace(/<[^>]+>/g, '')
-  )
-    .replace(/\s+/g, ' ')
-    .trim();
-};
+// Re-export platform-agnostic text utilities from shared
+export { decodeEntities, stripHtml, truncateText } from 'nyc-jobs-shared/utils/textUtils';
 
-// Truncate text to maxLen characters with ellipsis
-export const truncateText = (text, maxLen = 200) => {
-  if (!text) return '';
-  const stripped = stripHtml(text);
-  return stripped.length > maxLen ? stripped.substring(0, maxLen) + '...' : stripped;
-};
-
-// Safely render HTML content by converting <br><br> to paragraphs
 export const renderHtmlContent = (htmlString) => {
   if (!htmlString) return null;
 
@@ -45,7 +18,7 @@ export const renderHtmlContent = (htmlString) => {
         if (part.match(/<br\s*\/?>/i)) {
           return <br key={`br-${index}-${partIndex}`} />;
         }
-        return decodeEntities(part.replace(/<[^>]+>/g, ''));
+        return decode(part.replace(/<[^>]+>/g, ''));
       });
 
       return (

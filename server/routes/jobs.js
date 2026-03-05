@@ -6,10 +6,16 @@ const Note = require('../models/Note');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { getUserSaveEntry, escCsv, escapeRegex } = require('../helpers/jobHelpers');
 const { geocodeLocationBase } = require('../helpers/geocoding');
+const {
+  JOB_SOURCES,
+  VALID_SOURCE_FILTERS,
+  APPLICATION_STATUS_VALUES,
+  SORT_VALUES,
+  DOC_LINK_MAX,
+  DOC_LABEL_MAX,
+} = require('../../shared/constants');
 
 const router = express.Router();
-
-const VALID_SOURCES = ['nyc', 'federal'];
 
 // --- Helpers ---
 
@@ -140,7 +146,7 @@ router.get(
   [
     mapRateLimit,
     mapMonthlyLimit,
-    query('source').optional().isIn(['nyc', 'federal', 'all']),
+    query('source').optional().isIn(VALID_SOURCE_FILTERS),
     query('keyword').optional().trim(),
     query('salary_min').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_min must be a number'),
     query('salary_max').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_max must be a number'),
@@ -249,8 +255,8 @@ router.get(
     query('limit').optional().isNumeric(),
     query('sort')
       .optional()
-      .isIn(['date_desc', 'date_asc', 'title_asc', 'title_desc', 'salary_desc', 'salary_asc']),
-    query('source').optional().isIn(['nyc', 'federal', 'all']),
+      .isIn(SORT_VALUES),
+    query('source').optional().isIn(VALID_SOURCE_FILTERS),
   ],
   async (req, res) => {
     try {
@@ -306,7 +312,7 @@ router.get(
         const savedJobs = await Job.find({
           'savedBy.user': req.user._id,
           jobId: { $in: jobIds },
-          source: { $in: VALID_SOURCES },
+          source: { $in: JOB_SOURCES },
         }).lean();
         const savedJobMap = new Set(savedJobs.map((j) => `${j.source}:${j.jobId}`));
         jobsWithStatus = jobs.map((job) => ({
@@ -512,7 +518,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.post('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const source = VALID_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+    const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
 
     const job = await Job.findOne({ jobId: id, source });
     if (!job) {
@@ -545,7 +551,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 router.delete('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const source = VALID_SOURCES.includes(req.query.source) ? req.query.source : 'nyc';
+    const source = JOB_SOURCES.includes(req.query.source) ? req.query.source : 'nyc';
 
     const job = await Job.findOne({ jobId: id, source });
     if (!job) {
@@ -570,8 +576,8 @@ router.put(
     body('applicationDate').optional({ nullable: true }).isISO8601().toDate(),
     body('interviewDate').optional({ nullable: true }).isISO8601().toDate(),
     body('followUpDate').optional({ nullable: true }).isISO8601().toDate(),
-    body('documentLinks').optional().isArray({ max: 5 }),
-    body('documentLinks.*.label').trim().isLength({ min: 1, max: 100 }),
+    body('documentLinks').optional().isArray({ max: DOC_LINK_MAX }),
+    body('documentLinks.*.label').trim().isLength({ min: 1, max: DOC_LABEL_MAX }),
     body('documentLinks.*.url').trim().isURL({ protocols: ['http', 'https'] }),
   ],
   async (req, res) => {
@@ -583,7 +589,7 @@ router.put(
 
       const { id } = req.params;
       const { applicationDate, interviewDate, followUpDate, documentLinks } = req.body;
-      const source = VALID_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+      const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
 
       const job = await Job.findOne({ jobId: id, source });
       if (!job) {
@@ -623,7 +629,7 @@ router.put(
   '/:id/status',
   [
     authenticateToken,
-    body('status').isIn(['interested', 'applied', 'interviewing', 'offered', 'rejected']),
+    body('status').isIn(APPLICATION_STATUS_VALUES),
   ],
   async (req, res) => {
     try {
@@ -634,7 +640,7 @@ router.put(
 
       const { id } = req.params;
       const { status } = req.body;
-      const source = VALID_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+      const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
 
       const job = await Job.findOne({ jobId: id, source });
       if (!job) {

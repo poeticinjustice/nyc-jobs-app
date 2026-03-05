@@ -25,21 +25,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
 import { SEARCH_NAME_MAX } from '../utils/validation';
+import { SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
-const SORT_OPTIONS = [
-  { value: 'date_desc', label: 'Most Recent First' },
-  { value: 'date_asc', label: 'Oldest First' },
-  { value: 'title_asc', label: 'Title A-Z' },
-  { value: 'title_desc', label: 'Title Z-A' },
-  { value: 'salary_desc', label: 'Highest Salary First' },
-  { value: 'salary_asc', label: 'Lowest Salary First' },
-];
-
-const SOURCE_TABS = [
-  { value: 'all', label: 'All Jobs' },
-  { value: 'nyc', label: 'City' },
-  { value: 'federal', label: 'Federal' },
-];
+const SOURCE_TABS = SOURCE_OPTIONS;
 
 const DEFAULT_PARAMS = {
   q: '',

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { NOTE_TYPE_VALUES, NOTE_PRIORITY_VALUES, NOTE_TITLE_MAX, NOTE_CONTENT_MAX } = require('../../shared/constants');
 
 const noteSchema = new mongoose.Schema(
   {
@@ -16,22 +17,22 @@ const noteSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      maxlength: 200,
+      maxlength: NOTE_TITLE_MAX,
     },
     content: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 5000,
+      maxlength: NOTE_CONTENT_MAX,
     },
     type: {
       type: String,
-      enum: ['general', 'interview', 'application', 'followup', 'research'],
+      enum: NOTE_TYPE_VALUES,
       default: 'general',
     },
     priority: {
       type: String,
-      enum: ['low', 'medium', 'high', 'urgent'],
+      enum: NOTE_PRIORITY_VALUES,
       default: 'medium',
     },
     tags: [

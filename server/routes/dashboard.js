@@ -4,6 +4,7 @@ const Note = require('../models/Note');
 const SavedSearch = require('../models/SavedSearch');
 const { authenticateToken } = require('../middleware/auth');
 const { getUserSaveEntry } = require('../helpers/jobHelpers');
+const { APPLICATION_STATUS_VALUES } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -52,13 +53,9 @@ router.get('/', authenticateToken, async (req, res) => {
       ]);
 
     // Build status counts map with defaults
-    const statusMap = {
-      interested: 0,
-      applied: 0,
-      interviewing: 0,
-      offered: 0,
-      rejected: 0,
-    };
+    const statusMap = Object.fromEntries(
+      APPLICATION_STATUS_VALUES.map((s) => [s, 0])
+    );
     let totalSavedJobs = 0;
     for (const { _id, count } of statusCounts) {
       if (_id && statusMap[_id] !== undefined) {

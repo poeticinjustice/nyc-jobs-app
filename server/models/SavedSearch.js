@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { VALID_SOURCE_FILTERS } = require('../../shared/constants');
 
 const savedSearchSchema = new mongoose.Schema(
   {
@@ -21,7 +22,7 @@ const savedSearchSchema = new mongoose.Schema(
       salary_min: { type: String, default: '' },
       salary_max: { type: String, default: '' },
       sort: { type: String, default: 'date_desc' },
-      source: { type: String, enum: ['nyc', 'federal', 'all'], default: 'all' },
+      source: { type: String, enum: VALID_SOURCE_FILTERS, default: 'all' },
     },
   },
   {

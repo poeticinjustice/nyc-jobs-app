@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const SavedSearch = require('../models/SavedSearch');
 const { authenticateToken, validateObjectId } = require('../middleware/auth');
+const { SEARCH_NAME_MAX } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ router.post(
   '/',
   [
     authenticateToken,
-    body('name').trim().isLength({ min: 1, max: 100 }).withMessage('Name is required (max 100 chars)'),
+    body('name').trim().isLength({ min: 1, max: SEARCH_NAME_MAX }).withMessage('Name is required (max 100 chars)'),
     body('criteria').isObject().withMessage('Criteria must be an object'),
   ],
   async (req, res) => {

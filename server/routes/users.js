@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Note = require('../models/Note');
 const Job = require('../models/Job');
 const { authenticateToken, requireRole, validateObjectId } = require('../middleware/auth');
+const { NAME_MAX, USER_ROLE_VALUES } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -144,10 +145,10 @@ router.put(
   [
     authenticateToken,
     validateObjectId,
-    body('firstName').optional().trim().isLength({ min: 1, max: 50 }),
-    body('lastName').optional().trim().isLength({ min: 1, max: 50 }),
+    body('firstName').optional().trim().isLength({ min: 1, max: NAME_MAX }),
+    body('lastName').optional().trim().isLength({ min: 1, max: NAME_MAX }),
     body('email').optional().isEmail().normalizeEmail(),
-    body('role').optional().isIn(['user', 'admin', 'moderator']),
+    body('role').optional().isIn(USER_ROLE_VALUES),
     body('isActive').optional().isBoolean(),
   ],
   async (req, res) => {
