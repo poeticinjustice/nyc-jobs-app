@@ -384,7 +384,7 @@ const SavedJobs = () => {
           currentPage={currentPage}
           totalPages={pagination.pages}
           total={pagination.total}
-          PAGE_SIZE={PAGE_SIZE}
+          pageSize={PAGE_SIZE}
           onPageChange={handlePageChange}
           label='saved jobs'
         />

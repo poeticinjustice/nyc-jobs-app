@@ -38,6 +38,9 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
 
   if (source && source !== 'all') {
     filter.source = source;
+  } else {
+    // 'all' still restricts to valid sources — prevents stale/unknown sources from leaking
+    filter.source = { $in: JOB_SOURCES };
   }
 
   if (q) {
@@ -344,7 +347,7 @@ router.get(
 // Get job categories
 router.get('/categories', async (req, res) => {
   try {
-    const categories = await Job.distinct('jobCategory', { jobCategory: { $ne: null } });
+    const categories = await Job.distinct('jobCategory', { jobCategory: { $ne: null }, source: { $in: JOB_SOURCES } });
     res.json({ categories: categories.sort() });
   } catch (error) {
     console.error('Get categories error:', error);
@@ -355,7 +358,7 @@ router.get('/categories', async (req, res) => {
 // Get agencies list
 router.get('/agencies', async (req, res) => {
   try {
-    const agencies = await Job.distinct('agency', { agency: { $ne: null } });
+    const agencies = await Job.distinct('agency', { agency: { $ne: null }, source: { $in: JOB_SOURCES } });
     res.json({ agencies: agencies.sort() });
   } catch (error) {
     console.error('Get agencies error:', error);
@@ -415,7 +418,11 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
     const { status } = req.query;
     const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
-    const jobs = await Job.find(queryFilter).sort({ updatedAt: -1 }).lean();
+    const jobs = await Job.find(queryFilter)
+      .select('jobId source businessTitle agency jobCategory workLocation salaryRangeFrom salaryRangeTo salaryFrequency fullTimePartTimeIndicator level postDate savedBy')
+      .sort({ updatedAt: -1 })
+      .limit(5000)
+      .lean();
 
     const headers = [
       'Job ID',
@@ -519,27 +526,34 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+    const now = new Date();
 
-    const job = await Job.findOne({ jobId: id, source });
-    if (!job) {
-      return res.status(404).json({ message: 'Job not found' });
-    }
+    const newEntry = {
+      user: req.user._id,
+      savedAt: now,
+      applicationStatus: 'interested',
+      statusUpdatedAt: now,
+      statusHistory: [{ status: 'interested', changedAt: now }],
+    };
 
-    if (job.savedBy.some((s) => s.user.toString() === req.user._id.toString())) {
+    // Atomic: only add if user hasn't already saved this job
+    const result = await Job.findOneAndUpdate(
+      { jobId: id, source, 'savedBy.user': { $ne: req.user._id } },
+      { $push: { savedBy: newEntry } },
+      { new: true }
+    );
+
+    if (!result) {
+      // Either job doesn't exist or already saved
+      const exists = await Job.exists({ jobId: id, source });
+      if (!exists) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
       return res.status(400).json({ message: 'Job already saved' });
     }
 
-    job.savedBy.push({
-      user: req.user._id,
-      savedAt: new Date(),
-      applicationStatus: 'interested',
-      statusUpdatedAt: new Date(),
-      statusHistory: [{ status: 'interested', changedAt: new Date() }],
-    });
-    await job.save();
-
-    const entry = getUserSaveEntry(job, req.user._id);
-    const { savedBy: _sb, __v: _v, ...safeJob } = job.toObject();
+    const entry = getUserSaveEntry(result, req.user._id);
+    const { savedBy: _sb, __v: _v, ...safeJob } = result.toObject();
     res.json({ message: 'Job saved successfully', jobId: id, source, ...entry, job: safeJob });
   } catch (error) {
     console.error('Error saving job:', error);
@@ -553,13 +567,15 @@ router.delete('/:id/save', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const source = JOB_SOURCES.includes(req.query.source) ? req.query.source : 'nyc';
 
-    const job = await Job.findOne({ jobId: id, source });
-    if (!job) {
+    // Atomic pull — no read-modify-write race
+    const result = await Job.findOneAndUpdate(
+      { jobId: id, source },
+      { $pull: { savedBy: { user: req.user._id } } }
+    );
+
+    if (!result) {
       return res.status(404).json({ message: 'Job not found' });
     }
-
-    job.savedBy = job.savedBy.filter((s) => s.user.toString() !== req.user._id.toString());
-    await job.save();
 
     res.json({ message: 'Job unsaved successfully' });
   } catch (error) {
@@ -641,23 +657,37 @@ router.put(
       const { id } = req.params;
       const { status } = req.body;
       const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+      const now = new Date();
 
-      const job = await Job.findOne({ jobId: id, source });
+      // Atomic update with positional operator; $slice caps history at 50 entries
+      const job = await Job.findOneAndUpdate(
+        { jobId: id, source, 'savedBy.user': req.user._id },
+        {
+          $set: {
+            'savedBy.$.applicationStatus': status,
+            'savedBy.$.statusUpdatedAt': now,
+          },
+          $push: {
+            'savedBy.$.statusHistory': {
+              $each: [{ status, changedAt: now }],
+              $slice: -50,
+            },
+          },
+        },
+        { new: true }
+      );
+
       if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
+        const exists = await Job.exists({ jobId: id, source });
+        if (!exists) {
+          return res.status(404).json({ message: 'Job not found' });
+        }
+        return res.status(400).json({ message: 'Job is not saved' });
       }
 
       const entry = job.savedBy.find(
         (s) => s.user.toString() === req.user._id.toString()
       );
-      if (!entry) {
-        return res.status(400).json({ message: 'Job is not saved' });
-      }
-
-      entry.applicationStatus = status;
-      entry.statusUpdatedAt = new Date();
-      entry.statusHistory.push({ status, changedAt: new Date() });
-      await job.save();
 
       res.json({
         message: 'Application status updated',

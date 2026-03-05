@@ -1,0 +1,254 @@
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import api from '@/lib/api';
+import { useAuth } from '@/auth/AuthContext';
+
+type JobDetail = {
+  jobId: string;
+  source?: string;
+  businessTitle: string;
+  civilServiceTitle?: string;
+  agency?: string;
+  workLocation?: string;
+  salaryRangeFrom?: number;
+  salaryRangeTo?: number;
+  salaryFrequency?: string;
+  jobCategory?: string;
+  fullTimePartTimeIndicator?: string;
+  level?: string;
+  postDate?: string;
+  postUntil?: string;
+  jobDescription?: string;
+  minimumQualRequirements?: string;
+  preferredSkills?: string;
+  additionalInformation?: string;
+  toApply?: string;
+  externalUrl?: string;
+  hoursShift?: string;
+  residencyRequirement?: string;
+  isSaved?: boolean;
+};
+
+const formatSalary = (from?: number, to?: number, freq?: string) => {
+  const hasFrom = from != null && from > 0;
+  const hasTo = to != null && to > 0;
+  if (hasFrom && hasTo) return `$${from.toLocaleString()} - $${to.toLocaleString()} ${freq || ''}`.trim();
+  if (hasFrom) return `$${from.toLocaleString()} ${freq || ''}`.trim();
+  if (hasTo) return `Up to $${to.toLocaleString()} ${freq || ''}`.trim();
+  return 'Not specified';
+};
+
+const formatDate = (d?: string) => {
+  if (!d) return null;
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const stripHtml = (text: string) => text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+export default function JobDetailScreen() {
+  const { id, source } = useLocalSearchParams<{ id: string; source?: string }>();
+  const { user } = useAuth();
+  const [job, setJob] = useState<JobDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchJob = async () => {
+      try {
+        const res = await api.get(`/api/jobs/${id}`, { params: { source: source || 'nyc' } });
+        setJob(res.data);
+      } catch (e: any) {
+        setError(e?.response?.data?.message || 'Failed to load job details');
+      } finally {
+        setLoading(false);
+      }
+    };
+    void fetchJob();
+  }, [id, source]);
+
+  const handleSave = async () => {
+    if (!job || saving) return;
+    setSaving(true);
+    try {
+      if (job.isSaved) {
+        await api.delete(`/api/jobs/${job.jobId}/save`, { params: { source: job.source || 'nyc' } });
+        setJob({ ...job, isSaved: false });
+      } else {
+        await api.post(`/api/jobs/${job.jobId}/save`, { source: job.source || 'nyc' });
+        setJob({ ...job, isSaved: true });
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApplyLink = () => {
+    const url = job?.externalUrl || job?.toApply;
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      void Linking.openURL(url);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{error || 'Job not found'}</Text>
+      </View>
+    );
+  }
+
+  const salary = formatSalary(job.salaryRangeFrom, job.salaryRangeTo, job.salaryFrequency);
+  const posted = formatDate(job.postDate);
+  const deadline = formatDate(job.postUntil);
+  const applyUrl = job.externalUrl || job.toApply;
+  const hasApplyLink = applyUrl && (applyUrl.startsWith('http://') || applyUrl.startsWith('https://'));
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <Text style={styles.title}>{job.businessTitle}</Text>
+        {job.source === 'federal' && (
+          <View style={styles.sourceBadge}>
+            <Text style={styles.sourceBadgeText}>Federal</Text>
+          </View>
+        )}
+      </View>
+
+      {!!job.agency && <Text style={styles.agency}>{job.agency}</Text>}
+
+      <View style={styles.metaGrid}>
+        <MetaItem label="Salary" value={salary} />
+        <MetaItem label="Location" value={job.workLocation} />
+        <MetaItem label="Category" value={job.jobCategory} />
+        <MetaItem label="Type" value={job.fullTimePartTimeIndicator} />
+        {posted && <MetaItem label="Posted" value={posted} />}
+        {deadline && <MetaItem label="Closes" value={deadline} />}
+        {!!job.level && <MetaItem label="Level" value={job.level} />}
+        {!!job.hoursShift && <MetaItem label="Hours" value={job.hoursShift} />}
+      </View>
+
+      <View style={styles.actions}>
+        {user && (
+          <TouchableOpacity
+            style={[styles.actionButton, job.isSaved && styles.actionButtonSaved]}
+            onPress={handleSave}
+            disabled={saving}
+          >
+            <Text style={[styles.actionButtonText, job.isSaved && styles.actionButtonTextSaved]}>
+              {saving ? '...' : job.isSaved ? 'Saved' : 'Save Job'}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {hasApplyLink && (
+          <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
+            <Text style={styles.applyButtonText}>Apply</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {!!job.jobDescription && (
+        <Section title="Description" text={job.jobDescription} />
+      )}
+      {!!job.minimumQualRequirements && (
+        <Section title="Minimum Qualifications" text={job.minimumQualRequirements} />
+      )}
+      {!!job.preferredSkills && (
+        <Section title="Preferred Skills" text={job.preferredSkills} />
+      )}
+      {!!job.additionalInformation && (
+        <Section title="Additional Information" text={job.additionalInformation} />
+      )}
+      {!!job.residencyRequirement && (
+        <Section title="Residency Requirement" text={job.residencyRequirement} />
+      )}
+    </ScrollView>
+  );
+}
+
+function MetaItem({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <View style={styles.metaItem}>
+      <Text style={styles.metaLabel}>{label}</Text>
+      <Text style={styles.metaValue}>{value}</Text>
+    </View>
+  );
+}
+
+function Section({ title, text }: { title: string; text: string }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionText}>{stripHtml(text)}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  content: { padding: 16, paddingBottom: 40 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  errorText: { color: '#DC2626', fontSize: 15, textAlign: 'center' },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 4 },
+  title: { fontSize: 20, fontWeight: '700', color: '#111827', flex: 1 },
+  sourceBadge: { backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, marginTop: 2 },
+  sourceBadgeText: { fontSize: 11, fontWeight: '600', color: '#1D4ED8' },
+  agency: { fontSize: 15, color: '#4B5563', marginBottom: 12 },
+  metaGrid: { gap: 8, marginBottom: 16 },
+  metaItem: { flexDirection: 'row', gap: 8 },
+  metaLabel: { fontSize: 13, fontWeight: '600', color: '#6B7280', width: 80 },
+  metaValue: { fontSize: 13, color: '#111827', flex: 1 },
+  actions: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  actionButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  actionButtonSaved: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
+  actionButtonText: { fontWeight: '600', fontSize: 15, color: '#3B82F6' },
+  actionButtonTextSaved: { color: '#1D4ED8' },
+  applyButton: {
+    flex: 1,
+    backgroundColor: '#3B82F6',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  applyButtonText: { fontWeight: '600', fontSize: 15, color: '#fff' },
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
+  },
+  sectionTitle: { fontSize: 15, fontWeight: '600', color: '#111827', marginBottom: 8 },
+  sectionText: { fontSize: 14, color: '#374151', lineHeight: 20 },
+});

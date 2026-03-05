@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { getDashboard } from '../store/slices/dashboardSlice';
 import {
@@ -8,6 +8,7 @@ import {
   HiDocumentText,
   HiStar,
   HiArrowRight,
+  HiLocationMarker,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
@@ -16,6 +17,7 @@ import { STATUS_COLORS } from '../utils/statusConstants';
 
 const Home = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const {
     statusCounts,
@@ -28,24 +30,63 @@ const Home = () => {
     error: dashboardError,
   } = useSelector((state) => state.dashboard);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(getDashboard());
     }
   }, [dispatch, isAuthenticated]);
 
+  const handleSearch = (e) => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) {
+      params.set('q', searchQuery.trim());
+    }
+    params.set('sort', 'date_desc');
+    params.set('source', 'all');
+    params.set('page', '1');
+    params.set('limit', '20');
+    navigate(`/search?${params.toString()}`);
+  };
+
+  const handleBrowseAll = () => {
+    navigate('/search?sort=date_desc&source=all&page=1&limit=20');
+  };
+
   // --- Authenticated Dashboard ---
   if (isAuthenticated) {
     return (
       <div className='space-y-6'>
-        {/* Welcome Header */}
+        {/* Welcome + Search */}
         <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
           <h1 className='text-2xl font-bold text-gray-900'>
             Welcome back, {user?.firstName}!
           </h1>
-          <p className='text-gray-600 mt-1'>
+          <p className='text-gray-600 mt-1 mb-4'>
             Here's an overview of your job search progress.
           </p>
+          <form onSubmit={handleSearch} className='flex gap-3'>
+            <input
+              type='text'
+              placeholder='Search jobs by title, keyword, or agency...'
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className='input flex-1'
+            />
+            <button type='submit' className='btn btn-primary flex items-center'>
+              <HiSearch className='h-5 w-5' />
+              <span className='ml-2 hidden sm:inline'>Search</span>
+            </button>
+            <button
+              type='button'
+              onClick={handleBrowseAll}
+              className='btn btn-outline hidden sm:flex items-center'
+            >
+              Browse All
+            </button>
+          </form>
         </div>
 
         {dashboardError && (
@@ -63,7 +104,7 @@ const Home = () => {
             {/* Summary Cards */}
             <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6'>
               <Link
-                to='/search'
+                to='/search?sort=date_desc&source=all&page=1&limit=20'
                 className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
               >
                 <div className='flex items-center'>
@@ -302,78 +343,90 @@ const Home = () => {
   // --- Guest Landing Page ---
   return (
     <div className='space-y-8'>
-      {/* Hero Section */}
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-8'>
-        <div className='text-center'>
-          <h1 className='text-4xl font-bold text-gray-900 mb-4'>
-            Welcome to NYC Jobs
+      {/* Hero + Search */}
+      <div className='bg-gradient-to-br from-primary-600 to-primary-800 rounded-lg shadow-lg p-8 text-white'>
+        <div className='text-center max-w-2xl mx-auto'>
+          <h1 className='text-3xl sm:text-4xl font-bold mb-3'>
+            Find Your Next Government Job
           </h1>
-          <p className='text-xl text-gray-600 mb-8'>
-            Discover and manage job opportunities across NYC and federal government
+          <p className='text-primary-100 text-lg mb-6'>
+            Search thousands of NYC city and federal government positions
           </p>
-          <div className='space-y-4'>
-            <p className='text-lg text-gray-700'>
-              Create an account to save jobs and manage your applications
-            </p>
-            <div className='flex justify-center space-x-4'>
-              <Link
-                to='/register'
-                className='inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700'
+
+          <form onSubmit={handleSearch} className='max-w-xl mx-auto'>
+            <div className='flex gap-2'>
+              <input
+                type='text'
+                placeholder='Job title, keyword, or agency...'
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className='input flex-1 text-gray-900'
+              />
+              <button
+                type='submit'
+                className='px-5 py-2.5 bg-white text-primary-700 font-semibold rounded-lg hover:bg-primary-50 transition-colors flex items-center'
               >
-                Get Started
-              </Link>
-              <Link
-                to='/search'
-                className='inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50'
-              >
-                Browse Jobs
-              </Link>
+                <HiSearch className='h-5 w-5' />
+                <span className='ml-2 hidden sm:inline'>Search</span>
+              </button>
             </div>
-          </div>
+          </form>
+
+          <button
+            onClick={handleBrowseAll}
+            className='mt-4 text-primary-200 hover:text-white text-sm font-medium underline underline-offset-2 transition-colors'
+          >
+            Or browse all available jobs
+          </button>
         </div>
       </div>
 
-      {/* Features Section */}
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-8'>
-        <h2 className='text-2xl font-bold text-gray-900 mb-6'>Why NYC Jobs?</h2>
-        <div className='grid grid-cols-1 md:grid-cols-3 gap-8'>
-          <div className='text-center'>
-            <div className='bg-blue-100 rounded-lg p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center'>
-              <HiSearch className='h-8 w-8 text-blue-600' />
-            </div>
-            <h3 className='text-lg font-medium text-gray-900 mb-2'>
-              Comprehensive Search
-            </h3>
-            <p className='text-gray-600'>
-              Search thousands of job postings from NYC government and federal
-              agencies
-            </p>
+      {/* Quick Links */}
+      <div className='grid grid-cols-1 sm:grid-cols-3 gap-4'>
+        <button
+          onClick={handleBrowseAll}
+          className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow text-left'
+        >
+          <div className='bg-blue-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-3'>
+            <HiSearch className='h-6 w-6 text-blue-600' />
           </div>
+          <h3 className='text-lg font-medium text-gray-900 mb-1'>
+            Browse Jobs
+          </h3>
+          <p className='text-sm text-gray-600'>
+            Search thousands of NYC and federal government postings
+          </p>
+        </button>
 
-          <div className='text-center'>
-            <div className='bg-green-100 rounded-lg p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center'>
-              <HiBookmark className='h-8 w-8 text-green-600' />
-            </div>
-            <h3 className='text-lg font-medium text-gray-900 mb-2'>
-              Save & Track
-            </h3>
-            <p className='text-gray-600'>
-              Save interesting jobs and track your application progress
-            </p>
+        <Link
+          to='/map'
+          className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+        >
+          <div className='bg-green-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-3'>
+            <HiLocationMarker className='h-6 w-6 text-green-600' />
           </div>
+          <h3 className='text-lg font-medium text-gray-900 mb-1'>
+            Job Map
+          </h3>
+          <p className='text-sm text-gray-600'>
+            Explore jobs by location on an interactive map
+          </p>
+        </Link>
 
-          <div className='text-center'>
-            <div className='bg-purple-100 rounded-lg p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center'>
-              <HiDocumentText className='h-8 w-8 text-purple-600' />
-            </div>
-            <h3 className='text-lg font-medium text-gray-900 mb-2'>
-              Notes & Organization
-            </h3>
-            <p className='text-gray-600'>
-              Create notes for each job application to stay organized
-            </p>
+        <Link
+          to='/register'
+          className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+        >
+          <div className='bg-purple-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-3'>
+            <HiBookmark className='h-6 w-6 text-purple-600' />
           </div>
-        </div>
+          <h3 className='text-lg font-medium text-gray-900 mb-1'>
+            Save & Track
+          </h3>
+          <p className='text-sm text-gray-600'>
+            Create an account to save jobs and track applications
+          </p>
+        </Link>
       </div>
     </div>
   );

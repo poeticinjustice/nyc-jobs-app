@@ -4,7 +4,7 @@
   "description": "MERN stack application for NYC job listings with user authentication and notes",
   "main": "server/index.js",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "start": "node server/index.js",
@@ -13,7 +13,7 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "build": "cd client && npm run build",
     "install-client": "cd client && npm install",
-    "heroku-postbuild": "npm run install-client && npm run build",
+    "render-build": "npm run install-client && npm run build",
     "install-server": "npm install",
     "install-all": "npm run install-server && npm run install-client",
     "test:server": "jest --config jest.config.js --forceExit",

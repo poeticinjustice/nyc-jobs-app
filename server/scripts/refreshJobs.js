@@ -213,16 +213,41 @@ const refreshFederalJobs = async (timestamp) => {
 // Cleanup
 // ---------------------------------------------------------------------------
 
-const cleanupStaleJobs = async (timestamp) => {
-  // Delete jobs that weren't touched by this refresh AND have no saved users
+const cleanupStaleJobs = async (timestamp, nycCount, federalCount) => {
+  // Safety: only clean up a source if we actually fetched a meaningful number of jobs.
+  // If an API returned 0 (e.g. outage), don't purge that source's jobs.
+  const sourceFilter = [];
+  if (nycCount > 100) sourceFilter.push('nyc');
+  if (federalCount > 10) sourceFilter.push('federal');
+
+  if (sourceFilter.length === 0) {
+    console.log('[refresh] Skipping cleanup — insufficient data from APIs');
+    return 0;
+  }
+
+  // Also always clean up invalid sources (e.g. legacy 'adzuna')
   const result = await Job.deleteMany({
-    lastRefreshedAt: { $lt: timestamp },
     $or: [
-      { savedBy: { $size: 0 } },
-      { savedBy: { $exists: false } },
+      // Stale jobs from sources we successfully refreshed
+      {
+        source: { $in: sourceFilter },
+        lastRefreshedAt: { $lt: timestamp },
+        $or: [
+          { savedBy: { $size: 0 } },
+          { savedBy: { $exists: false } },
+        ],
+      },
+      // Jobs with invalid/legacy sources (always remove)
+      {
+        source: { $nin: ['nyc', 'federal'] },
+        $or: [
+          { savedBy: { $size: 0 } },
+          { savedBy: { $exists: false } },
+        ],
+      },
     ],
   });
-  console.log(`[refresh] Cleaned up ${result.deletedCount} stale jobs`);
+  console.log(`[refresh] Cleaned up ${result.deletedCount} stale jobs (sources refreshed: ${sourceFilter.join(', ')})`);
   return result.deletedCount;
 };
 
@@ -236,7 +261,7 @@ const refreshAllJobs = async () => {
 
   const nyc = await refreshNycJobs(timestamp);
   const federal = await refreshFederalJobs(timestamp);
-  const staleCount = await cleanupStaleJobs(timestamp);
+  const staleCount = await cleanupStaleJobs(timestamp, nyc.upserted + nyc.modified, federal.upserted + federal.modified);
 
   const totalJobs = await Job.estimatedDocumentCount();
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);

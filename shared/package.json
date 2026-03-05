@@ -2,5 +2,6 @@
   "name": "nyc-jobs-shared",
   "version": "1.0.0",
   "description": "Shared constants and utilities for NYCJobs client and server",
-  "main": "index.js"
+  "main": "index.js",
+  "private": true
 }
