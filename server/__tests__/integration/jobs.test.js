@@ -503,3 +503,80 @@ describe('GET /api/jobs/saved (note counts)', () => {
     expect(savedJob.noteCount).toBe(2);
   });
 });
+
+describe('GET /api/jobs/map', () => {
+  it('returns GeoJSON FeatureCollection with correct structure', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map')
+      .query({ source: 'nyc' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('FeatureCollection');
+    expect(Array.isArray(res.body.features)).toBe(true);
+    expect(res.body.metadata).toBeDefined();
+    expect(res.body.metadata).toHaveProperty('total');
+    expect(res.body.metadata).toHaveProperty('geocoded');
+  });
+
+  it('returns features with valid GeoJSON Point geometry', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map')
+      .query({ source: 'nyc' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.features.length).toBeGreaterThan(0);
+
+    const feature = res.body.features[0];
+    expect(feature.type).toBe('Feature');
+    expect(feature.geometry.type).toBe('Point');
+    expect(feature.geometry.coordinates).toHaveLength(2);
+    expect(typeof feature.geometry.coordinates[0]).toBe('number'); // lng
+    expect(typeof feature.geometry.coordinates[1]).toBe('number'); // lat
+  });
+
+  it('includes required job properties on features', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map')
+      .query({ source: 'nyc' });
+
+    expect(res.status).toBe(200);
+    const props = res.body.features[0].properties;
+    expect(props).toHaveProperty('jobId');
+    expect(props).toHaveProperty('businessTitle');
+    expect(props).toHaveProperty('agency');
+    expect(props).toHaveProperty('source', 'nyc');
+  });
+
+  it('filters by category', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map')
+      .query({ source: 'nyc', category: 'Technology, Data & Innovation' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('FeatureCollection');
+    // All returned features should match the category
+    for (const feature of res.body.features) {
+      expect(feature.properties.jobCategory).toBe('Technology, Data & Innovation');
+    }
+  });
+
+  it('works without authentication (public endpoint)', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map');
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('FeatureCollection');
+  });
+
+  it('returns metadata with total and geocoded counts', async () => {
+    const res = await request(app)
+      .get('/api/jobs/map')
+      .query({ source: 'nyc' });
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.metadata.total).toBe('number');
+    expect(typeof res.body.metadata.geocoded).toBe('number');
+    expect(res.body.metadata.geocoded).toBeLessThanOrEqual(res.body.metadata.total);
+    expect(res.body.metadata.geocoded).toBe(res.body.features.length);
+  });
+});

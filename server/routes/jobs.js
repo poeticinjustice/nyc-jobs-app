@@ -16,6 +16,7 @@ const {
   escCsv,
 } = require('../helpers/jobHelpers');
 const { fetchUsaJobById, getUsaHeaders } = require('../helpers/usaJobsApi');
+const { geocodeLocation } = require('../helpers/geocoding');
 const LRUCache = require('../helpers/LRUCache');
 
 const router = express.Router();
@@ -34,6 +35,7 @@ const MAX_NYC_API_OFFSET = 50000;
 
 const searchResultCache = new LRUCache(100, 5 * 60 * 1000);
 const usaJobsSearchCache = new LRUCache(50, 5 * 60 * 1000);
+const mapCache = new LRUCache(20, 10 * 60 * 1000);
 
 // Periodically clean expired search cache entries (skip in test to avoid open handles)
 if (process.env.NODE_ENV !== 'test') {
@@ -195,6 +197,98 @@ const buildSavedJobsFilter = (userId, status) =>
     : { 'savedBy.user': userId };
 
 // --- Routes ---
+
+// Map data — returns GeoJSON FeatureCollection of geocoded jobs
+router.get(
+  '/map',
+  [
+    query('source').optional().isIn(['nyc', 'federal', 'all']),
+    query('category').optional().trim(),
+    query('salary_min').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_min must be a number'),
+    query('salary_max').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_max must be a number'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+      }
+
+      const {
+        source = 'all',
+        category = '',
+        salary_min,
+        salary_max,
+      } = req.query;
+
+      const cacheKey = JSON.stringify(['map', source, category, salary_min || '', salary_max || '']);
+      const cached = mapCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
+      let allJobs = [];
+
+      if (source === 'nyc' || source === 'all') {
+        const nycRaw = await fetchAllJobs();
+        const filtered = filterJobs(nycRaw, { category, salary_min, salary_max });
+        const transformed = filtered.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
+        allJobs = allJobs.concat(transformed);
+      }
+
+      if (source === 'federal' || source === 'all') {
+        try {
+          const usaResult = await fetchUsaJobs({
+            location: 'New York',
+            category,
+            salary_min,
+            salary_max,
+            page: 1,
+            limit: 250,
+          });
+          const federalJobs = usaResult.jobs.map((job) => ({ ...job, source: 'federal' }));
+          allJobs = allJobs.concat(federalJobs);
+        } catch (usaError) {
+          console.error('USAJobs API error during map fetch:', usaError.message);
+          // Continue with NYC data only
+        }
+      }
+
+      const features = [];
+      for (const job of allJobs) {
+        if (features.length >= 2000) break;
+        const coords = geocodeLocation(job.workLocation, job.workLocation1);
+        if (!coords) continue;
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [coords.lng, coords.lat] },
+          properties: {
+            jobId: job.jobId,
+            businessTitle: job.businessTitle,
+            agency: job.agency,
+            workLocation: job.workLocation,
+            salaryRangeFrom: job.salaryRangeFrom,
+            salaryRangeTo: job.salaryRangeTo,
+            salaryFrequency: job.salaryFrequency,
+            source: job.source,
+            postDate: job.postDate,
+            jobCategory: job.jobCategory,
+          },
+        });
+      }
+
+      const result = {
+        type: 'FeatureCollection',
+        features,
+        metadata: { total: allJobs.length, geocoded: features.length },
+      };
+
+      mapCache.set(cacheKey, result);
+      res.json(result);
+    } catch (error) {
+      console.error('Map data error:', error);
+      res.status(500).json({ message: 'Error fetching map data' });
+    }
+  }
+);
 
 // Health check
 router.get('/health', (req, res) => {

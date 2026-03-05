@@ -7,11 +7,13 @@ import {
   HiDocumentText,
   HiUser,
   HiCog,
+  HiLocationMarker,
 } from 'react-icons/hi';
 
 const NAVIGATION = [
   { name: 'Home', href: '/', icon: HiHome, requiresAuth: false },
   { name: 'Search Jobs', href: '/search', icon: HiSearch, requiresAuth: false },
+  { name: 'Job Map', href: '/map', icon: HiLocationMarker, requiresAuth: false },
   { name: 'Saved Jobs', href: '/saved', icon: HiBookmark, requiresAuth: true },
   { name: 'Notes', href: '/notes', icon: HiDocumentText, requiresAuth: true },
   { name: 'Profile', href: '/profile', icon: HiUser, requiresAuth: true },

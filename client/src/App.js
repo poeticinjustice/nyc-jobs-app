@@ -12,6 +12,7 @@ import Profile from './pages/Profile';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Admin from './pages/Admin';
+import JobMap from './pages/JobMap';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import AdminRoute from './components/Auth/AdminRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
@@ -64,6 +65,15 @@ function App() {
           element={
             <Layout>
               <JobSearch />
+            </Layout>
+          }
+        />
+
+        <Route
+          path='/map'
+          element={
+            <Layout>
+              <JobMap />
             </Layout>
           }
         />
