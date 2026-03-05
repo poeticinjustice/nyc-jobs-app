@@ -1,5 +1,5 @@
 // Validation constants (match server-side rules)
-const EMAIL_REGEX = /^[\w.+\-]+@[\w.\-]+\.\w{2,}$/;
+const EMAIL_REGEX = /^[\w.+-]+@[\w.-]+\.\w{2,}$/;
 export const NAME_MAX = 50;
 export const PASSWORD_MIN = 6;
 export const NOTE_TITLE_MAX = 200;

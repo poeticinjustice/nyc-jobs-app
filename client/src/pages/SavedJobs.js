@@ -56,7 +56,7 @@ const SavedJobs = () => {
       if (statusFilter) params.status = statusFilter;
       dispatch(getSavedJobs(params));
     }
-  }, [dispatch, isAuthenticated, currentPage, PAGE_SIZE, statusFilter]);
+  }, [dispatch, isAuthenticated, currentPage, statusFilter]);
 
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
