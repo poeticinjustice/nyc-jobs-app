@@ -43,6 +43,7 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(() => {
     searchResultCache.cleanExpired();
     usaJobsSearchCache.cleanExpired();
+    mapCache.cleanExpired();
   }, 60 * 1000);
 }
 
@@ -287,7 +288,7 @@ router.get(
       const features = [];
       for (const job of allJobs) {
         if (features.length >= 2000) break;
-        const coords = geocodeLocation(job.workLocation, job.workLocation1);
+        const coords = geocodeLocation(job.workLocation, job.workLocation1, job.source);
         if (!coords) continue;
         features.push({
           type: 'Feature',
