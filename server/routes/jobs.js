@@ -236,7 +236,7 @@ router.get(
     mapRateLimit,
     mapMonthlyLimit,
     query('source').optional().isIn(['nyc', 'federal', 'all']),
-    query('category').optional().trim(),
+    query('keyword').optional().trim(),
     query('salary_min').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_min must be a number'),
     query('salary_max').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_max must be a number'),
   ],
@@ -249,12 +249,12 @@ router.get(
 
       const {
         source = 'all',
-        category = '',
+        keyword = '',
         salary_min,
         salary_max,
       } = req.query;
 
-      const cacheKey = JSON.stringify(['map', source, category, salary_min || '', salary_max || '']);
+      const cacheKey = JSON.stringify(['map', source, keyword, salary_min || '', salary_max || '']);
       const cached = mapCache.get(cacheKey);
       if (cached) return res.json(cached);
 
@@ -262,7 +262,7 @@ router.get(
 
       if (source === 'nyc' || source === 'all') {
         const nycRaw = await fetchAllJobs();
-        const filtered = filterJobs(nycRaw, { category, salary_min, salary_max });
+        const filtered = filterJobs(nycRaw, { q: keyword, salary_min, salary_max });
         const transformed = filtered.map((job) => ({ ...transformNycJob(job), source: 'nyc' }));
         allJobs = allJobs.concat(transformed);
       }
@@ -270,8 +270,8 @@ router.get(
       if (source === 'federal' || source === 'all') {
         try {
           const usaResult = await fetchUsaJobs({
+            q: keyword,
             location: 'New York',
-            category,
             salary_min,
             salary_max,
             page: 1,

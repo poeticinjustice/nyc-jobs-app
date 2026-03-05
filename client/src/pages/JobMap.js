@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Map, { Source, Layer, Popup, NavigationControl } from 'react-map-gl';
 import { Link } from 'react-router-dom';
-import { HiLocationMarker, HiFilter, HiX } from 'react-icons/hi';
+import { HiLocationMarker, HiSearch, HiX } from 'react-icons/hi';
 import api from '../utils/api';
 import { formatSalary } from '../utils/formatUtils';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
@@ -82,23 +82,9 @@ const JobMap = () => {
   const [error, setError] = useState(null);
   const [popup, setPopup] = useState(null);
   const [source, setSource] = useState('all');
-  const [category, setCategory] = useState('');
-  const [categories, setCategories] = useState([]);
-  const [showFilters, setShowFilters] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [metadata, setMetadata] = useState(null);
-
-  // Fetch categories for filter dropdown
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await api.get('/api/jobs/categories');
-        setCategories(res.data.categories || []);
-      } catch {
-        // Non-critical, ignore
-      }
-    };
-    fetchCategories();
-  }, []);
 
   // Fetch map data
   const fetchMapData = useCallback(async () => {
@@ -106,7 +92,7 @@ const JobMap = () => {
     setError(null);
     try {
       const params = { source };
-      if (category) params.category = category;
+      if (keyword) params.keyword = keyword;
       const res = await api.get('/api/jobs/map', { params });
       setGeojson(res.data);
       setMetadata(res.data.metadata);
@@ -115,11 +101,21 @@ const JobMap = () => {
     } finally {
       setLoading(false);
     }
-  }, [source, category]);
+  }, [source, keyword]);
 
   useEffect(() => {
     fetchMapData();
   }, [fetchMapData]);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    setKeyword(searchInput.trim());
+  };
+
+  const clearSearch = () => {
+    setSearchInput('');
+    setKeyword('');
+  };
 
   // Handle click on cluster — zoom in to expand
   const handleClusterClick = useCallback((e) => {
@@ -226,46 +222,37 @@ const JobMap = () => {
           ))}
         </div>
 
-        {/* Filter toggle */}
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className={`bg-white rounded-lg shadow-lg border border-gray-200 p-2.5 transition-colors ${
-            showFilters || category ? 'text-primary-600' : 'text-gray-600 hover:text-gray-900'
-          }`}
-          title='Filters'
-        >
-          <HiFilter className='h-5 w-5' />
-        </button>
-
-        {/* Category filter dropdown */}
-        {showFilters && (
-          <div className='bg-white rounded-lg shadow-lg border border-gray-200 p-3 flex items-center gap-2'>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className='text-sm border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 max-w-[250px]'
-            >
-              <option value=''>All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            {category && (
-              <button
-                onClick={() => setCategory('')}
-                className='text-gray-400 hover:text-gray-600'
-              >
-                <HiX className='h-4 w-4' />
-              </button>
-            )}
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className='bg-white rounded-lg shadow-lg border border-gray-200 flex items-center'>
+          <div className='flex items-center px-3'>
+            <HiSearch className='h-4 w-4 text-gray-400' />
           </div>
-        )}
+          <input
+            type='text'
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder='Search jobs on map...'
+            className='text-sm py-2 pr-2 bg-transparent focus:outline-none w-48 md:w-64'
+          />
+          {searchInput && (
+            <button
+              type='button'
+              onClick={clearSearch}
+              className='pr-3 text-gray-400 hover:text-gray-600'
+            >
+              <HiX className='h-4 w-4' />
+            </button>
+          )}
+        </form>
 
         {/* Stats badge */}
         {metadata && !loading && (
           <div className='bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 ml-auto hidden md:block'>
             <span className='text-sm text-gray-600'>
               <span className='font-semibold text-gray-900'>{metadata.geocoded.toLocaleString()}</span> jobs on map
+              {keyword && (
+                <span className='text-gray-400'> for &ldquo;{keyword}&rdquo;</span>
+              )}
             </span>
           </div>
         )}
