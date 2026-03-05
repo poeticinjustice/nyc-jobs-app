@@ -20,7 +20,8 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'fonts.googleapis.com'],
+        fontSrc: ["'self'", 'fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:', 'blob:', '*.mapbox.com'],
         connectSrc: ["'self'", 'api.mapbox.com', 'events.mapbox.com', '*.tiles.mapbox.com'],
         workerSrc: ["'self'", 'blob:'],
