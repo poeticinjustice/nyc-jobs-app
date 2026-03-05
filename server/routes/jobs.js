@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
+const Note = require('../models/Note');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const {
   cleanJobFields,
@@ -413,9 +414,18 @@ router.get('/saved', authenticateToken, async (req, res) => {
       .limit(limitNum)
       .lean();
 
+    // Fetch note counts for the returned jobs in one query
+    const jobIds = jobs.map((j) => j.jobId);
+    const noteCounts = await Note.aggregate([
+      { $match: { user: req.user._id, status: 'active', jobId: { $in: jobIds } } },
+      { $group: { _id: '$jobId', count: { $sum: 1 } } },
+    ]);
+    const noteCountMap = Object.fromEntries(noteCounts.map((n) => [n._id, n.count]));
+
     const jobsWithStatus = jobs.map((job) => ({
       ...job,
       ...getUserSaveEntry(job, req.user._id),
+      noteCount: noteCountMap[job.jobId] || 0,
     }));
 
     res.json({
@@ -456,7 +466,15 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
       'Post Date',
       'Application Status',
       'Saved At',
+      'Application Date',
+      'Interview Date',
+      'Follow-Up Date',
+      'Document Links',
     ];
+
+    const fmtDate = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
+    const fmtLinks = (links) =>
+      (links || []).map((l) => `${l.label}: ${l.url}`).join('; ');
 
     const rows = jobs.map((job) => {
       const entry = getUserSaveEntry(job, req.user._id);
@@ -472,9 +490,13 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
         job.salaryFrequency,
         job.fullTimePartTimeIndicator,
         job.level,
-        job.postDate ? new Date(job.postDate).toISOString().split('T')[0] : '',
+        fmtDate(job.postDate),
         entry.applicationStatus || 'interested',
-        entry.savedAt ? new Date(entry.savedAt).toISOString().split('T')[0] : '',
+        fmtDate(entry.savedAt),
+        fmtDate(entry.applicationDate),
+        fmtDate(entry.interviewDate),
+        fmtDate(entry.followUpDate),
+        fmtLinks(entry.documentLinks),
       ]
         .map(escCsv)
         .join(',');
@@ -550,8 +572,17 @@ router.get('/:id', optionalAuth, async (req, res) => {
       }
     }
 
+    let noteCount = 0;
+    if (req.user && saveEntry.isSaved) {
+      noteCount = await Note.countDocuments({
+        user: req.user._id,
+        status: 'active',
+        jobId: id,
+      });
+    }
+
     const { savedBy, __v, ...safeJobData } = jobData;
-    res.json({ ...safeJobData, ...saveEntry });
+    res.json({ ...safeJobData, ...saveEntry, noteCount });
   } catch (error) {
     console.error('Get job details error:', error);
     res.status(500).json({ message: 'Error fetching job details' });
@@ -646,6 +677,62 @@ router.delete('/:id/save', authenticateToken, async (req, res) => {
     res.status(500).json({ message: 'Error unsaving job' });
   }
 });
+
+// Update tracking dates and document links
+router.put(
+  '/:id/tracking',
+  [
+    authenticateToken,
+    body('applicationDate').optional({ nullable: true }).isISO8601().toDate(),
+    body('interviewDate').optional({ nullable: true }).isISO8601().toDate(),
+    body('followUpDate').optional({ nullable: true }).isISO8601().toDate(),
+    body('documentLinks').optional().isArray({ max: 5 }),
+    body('documentLinks.*.label').trim().isLength({ min: 1, max: 100 }),
+    body('documentLinks.*.url').trim().isURL({ protocols: ['http', 'https'] }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { applicationDate, interviewDate, followUpDate, documentLinks } = req.body;
+      const source = VALID_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+
+      const job = await Job.findOne({ jobId: id, source });
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      const entry = job.savedBy.find(
+        (s) => s.user.toString() === req.user._id.toString()
+      );
+      if (!entry) {
+        return res.status(400).json({ message: 'Job is not saved' });
+      }
+
+      if (applicationDate !== undefined) entry.applicationDate = applicationDate;
+      if (interviewDate !== undefined) entry.interviewDate = interviewDate;
+      if (followUpDate !== undefined) entry.followUpDate = followUpDate;
+      if (documentLinks !== undefined) entry.documentLinks = documentLinks;
+
+      await job.save();
+
+      res.json({
+        message: 'Tracking info updated',
+        applicationDate: entry.applicationDate,
+        interviewDate: entry.interviewDate,
+        followUpDate: entry.followUpDate,
+        documentLinks: entry.documentLinks,
+      });
+    } catch (error) {
+      console.error('Update tracking info error:', error);
+      res.status(500).json({ message: 'Error updating tracking info' });
+    }
+  }
+);
 
 // Update application status
 router.put(

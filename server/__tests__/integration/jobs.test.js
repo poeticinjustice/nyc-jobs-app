@@ -1,6 +1,6 @@
 const request = require('supertest');
 const { setupDB } = require('../setup');
-const { createTestUser, createTestJob, createSavedJob, authHeader } = require('../helpers/testHelpers');
+const { createTestUser, createTestJob, createSavedJob, createTestNote, authHeader } = require('../helpers/testHelpers');
 const { nycApiJobsList, usaJobsSearchResponse } = require('../helpers/fixtures');
 
 jest.mock('axios');
@@ -342,5 +342,164 @@ describe('PUT /api/jobs/:id/status', () => {
       .send({ status: 'applied', source: 'nyc' });
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe('PUT /api/jobs/:id/tracking', () => {
+  it('updates tracking dates successfully', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'track-dates', source: 'nyc' });
+
+    const res = await request(app)
+      .put('/api/jobs/track-dates/tracking')
+      .set('Authorization', authHeader(token))
+      .send({
+        applicationDate: '2026-03-01',
+        interviewDate: '2026-03-10',
+        source: 'nyc',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Tracking info updated');
+    expect(res.body.applicationDate).toBeTruthy();
+    expect(res.body.interviewDate).toBeTruthy();
+    expect(res.body.followUpDate).toBeNull();
+  });
+
+  it('updates document links successfully', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'track-links', source: 'nyc' });
+
+    const res = await request(app)
+      .put('/api/jobs/track-links/tracking')
+      .set('Authorization', authHeader(token))
+      .send({
+        documentLinks: [
+          { label: 'Resume', url: 'https://example.com/resume.pdf' },
+          { label: 'Cover Letter', url: 'https://example.com/cover.pdf' },
+        ],
+        source: 'nyc',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentLinks).toHaveLength(2);
+    expect(res.body.documentLinks[0].label).toBe('Resume');
+  });
+
+  it('clears a date by sending null', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'track-clear', source: 'nyc' });
+
+    // Set a date first
+    await request(app)
+      .put('/api/jobs/track-clear/tracking')
+      .set('Authorization', authHeader(token))
+      .send({ applicationDate: '2026-03-01', source: 'nyc' });
+
+    // Clear it
+    const res = await request(app)
+      .put('/api/jobs/track-clear/tracking')
+      .set('Authorization', authHeader(token))
+      .send({ applicationDate: null, source: 'nyc' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.applicationDate).toBeNull();
+  });
+
+  it('rejects invalid date format', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'track-bad-date', source: 'nyc' });
+
+    const res = await request(app)
+      .put('/api/jobs/track-bad-date/tracking')
+      .set('Authorization', authHeader(token))
+      .send({ applicationDate: 'not-a-date', source: 'nyc' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
+  });
+
+  it('rejects more than 5 document links', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'track-many-links', source: 'nyc' });
+
+    const links = Array.from({ length: 6 }, (_, i) => ({
+      label: `Doc ${i}`,
+      url: `https://example.com/doc${i}.pdf`,
+    }));
+
+    const res = await request(app)
+      .put('/api/jobs/track-many-links/tracking')
+      .set('Authorization', authHeader(token))
+      .send({ documentLinks: links, source: 'nyc' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects invalid URL in document link', async () => {
+    const { user, token } = await createTestUser();
+    await createSavedJob(user._id, { jobId: 'track-bad-url', source: 'nyc' });
+
+    const res = await request(app)
+      .put('/api/jobs/track-bad-url/tracking')
+      .set('Authorization', authHeader(token))
+      .send({
+        documentLinks: [{ label: 'Bad', url: 'not-a-url' }],
+        source: 'nyc',
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when job not saved by user', async () => {
+    const { token } = await createTestUser();
+    await createTestJob({ jobId: 'track-unsaved', source: 'nyc' });
+
+    const res = await request(app)
+      .put('/api/jobs/track-unsaved/tracking')
+      .set('Authorization', authHeader(token))
+      .send({ applicationDate: '2026-03-01', source: 'nyc' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Job is not saved');
+  });
+
+  it('returns 404 for non-existent job', async () => {
+    const { token } = await createTestUser();
+
+    const res = await request(app)
+      .put('/api/jobs/does-not-exist/tracking')
+      .set('Authorization', authHeader(token))
+      .send({ applicationDate: '2026-03-01', source: 'nyc' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe('Job not found');
+  });
+
+  it('returns 401 without token', async () => {
+    const res = await request(app)
+      .put('/api/jobs/12345/tracking')
+      .send({ applicationDate: '2026-03-01', source: 'nyc' });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/jobs/saved (note counts)', () => {
+  it('includes noteCount in saved jobs response', async () => {
+    const { user, token } = await createTestUser();
+    const job = await createSavedJob(user._id, { jobId: 'note-count-job', source: 'nyc' });
+
+    await createTestNote(user._id, { jobId: job.jobId });
+    await createTestNote(user._id, { jobId: job.jobId });
+
+    const res = await request(app)
+      .get('/api/jobs/saved')
+      .set('Authorization', authHeader(token));
+
+    expect(res.status).toBe(200);
+    const savedJob = res.body.jobs.find((j) => j.jobId === 'note-count-job');
+    expect(savedJob).toBeDefined();
+    expect(savedJob.noteCount).toBe(2);
   });
 });

@@ -320,13 +320,20 @@ const getUserSaveEntry = (job, userId) => {
   const entry = job.savedBy?.find(
     (s) => s.user.toString() === userId.toString()
   );
-  if (!entry) return { isSaved: false, applicationStatus: null, savedAt: null, statusHistory: [] };
+  if (!entry) return {
+    isSaved: false, applicationStatus: null, savedAt: null, statusHistory: [],
+    applicationDate: null, interviewDate: null, followUpDate: null, documentLinks: [],
+  };
   return {
     isSaved: true,
     applicationStatus: entry.applicationStatus || 'interested',
     savedAt: entry.savedAt,
     statusUpdatedAt: entry.statusUpdatedAt,
     statusHistory: entry.statusHistory || [],
+    applicationDate: entry.applicationDate || null,
+    interviewDate: entry.interviewDate || null,
+    followUpDate: entry.followUpDate || null,
+    documentLinks: entry.documentLinks || [],
   };
 };
 

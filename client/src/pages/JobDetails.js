@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { getJobDetails, saveJob, unsaveJob, updateJobStatus } from '../store/slices/jobsSlice';
+import { getJobDetails, saveJob, unsaveJob, updateJobStatus, updateJobTracking, getJobNotes } from '../store/slices/jobsSlice';
 import {
   HiBookmark,
   HiBookmarkAlt,
@@ -11,6 +11,10 @@ import {
   HiPlus,
   HiClock,
   HiShare,
+  HiAnnotation,
+  HiPaperClip,
+  HiExternalLink,
+  HiX,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
@@ -18,16 +22,20 @@ import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
+import { validateDocUrl, DOC_LABEL_MAX } from '../utils/validation';
 
 const JobDetails = () => {
   const { jobId } = useParams();
   const [searchParams] = useSearchParams();
   const source = searchParams.get('source') || 'nyc';
   const dispatch = useDispatch();
-  const { currentJob, detailsLoading: loading, detailsError: error } = useSelector((state) => state.jobs);
+  const { currentJob, detailsLoading: loading, detailsError: error, jobNotes, jobNotesLoading } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [docLabel, setDocLabel] = useState('');
+  const [docUrl, setDocUrl] = useState('');
+  const [docError, setDocError] = useState('');
   const navigate = useNavigate();
 
   const deadlineInfo = currentJob ? getDeadlineInfo(currentJob.postUntil) : null;
@@ -56,7 +64,48 @@ const JobDetails = () => {
     }
   }, [dispatch, jobId, source]);
 
+  useEffect(() => {
+    if (currentJob?.isSaved && currentJob?.jobId) {
+      dispatch(getJobNotes({ jobId: currentJob.jobId }));
+    }
+  }, [dispatch, currentJob?.isSaved, currentJob?.jobId]);
+
   const effectiveSource = currentJob?.source || source;
+
+  const handleTrackingDateChange = (field, value) => {
+    dispatch(updateJobTracking({
+      jobId: currentJob.jobId,
+      source: effectiveSource,
+      trackingData: { [field]: value || null },
+    }));
+  };
+
+  const handleAddDocLink = () => {
+    if (!docLabel.trim()) return;
+    const urlErr = validateDocUrl(docUrl);
+    if (urlErr) {
+      setDocError(urlErr);
+      return;
+    }
+    setDocError('');
+    const updated = [...(currentJob.documentLinks || []), { label: docLabel.trim(), url: docUrl.trim() }];
+    dispatch(updateJobTracking({
+      jobId: currentJob.jobId,
+      source: effectiveSource,
+      trackingData: { documentLinks: updated },
+    }));
+    setDocLabel('');
+    setDocUrl('');
+  };
+
+  const handleRemoveDocLink = (idx) => {
+    const updated = (currentJob.documentLinks || []).filter((_, i) => i !== idx);
+    dispatch(updateJobTracking({
+      jobId: currentJob.jobId,
+      source: effectiveSource,
+      trackingData: { documentLinks: updated },
+    }));
+  };
 
   const handleStatusChange = (newStatus) => {
     if (!currentJob) return;
@@ -479,13 +528,163 @@ const JobDetails = () => {
               </div>
             </div>
           )}
+
+          {/* Tracking Dates */}
+          {currentJob.isSaved && (
+            <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+              <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+                <HiCalendar className='h-5 w-5 mr-2 text-gray-500' />
+                Tracking Dates
+              </h3>
+              <div className='space-y-3'>
+                <div>
+                  <label className='text-sm font-medium text-gray-500'>Application Date</label>
+                  <input
+                    type='date'
+                    value={currentJob.applicationDate ? new Date(currentJob.applicationDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleTrackingDateChange('applicationDate', e.target.value)}
+                    className='mt-1 block w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-500'
+                  />
+                </div>
+                <div>
+                  <label className='text-sm font-medium text-gray-500'>Interview Date</label>
+                  <input
+                    type='date'
+                    value={currentJob.interviewDate ? new Date(currentJob.interviewDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleTrackingDateChange('interviewDate', e.target.value)}
+                    className='mt-1 block w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-500'
+                  />
+                </div>
+                <div>
+                  <label className='text-sm font-medium text-gray-500'>Follow-up Date</label>
+                  <input
+                    type='date'
+                    value={currentJob.followUpDate ? new Date(currentJob.followUpDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleTrackingDateChange('followUpDate', e.target.value)}
+                    className='mt-1 block w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-500'
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Document Links */}
+          {currentJob.isSaved && (
+            <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+              <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+                <HiPaperClip className='h-5 w-5 mr-2 text-gray-500' />
+                Documents
+              </h3>
+              {currentJob.documentLinks?.length > 0 && (
+                <div className='space-y-2 mb-4'>
+                  {currentJob.documentLinks.map((link, idx) => (
+                    <div key={idx} className='flex items-center justify-between text-sm'>
+                      <a
+                        href={link.url}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='text-primary-600 hover:underline truncate flex items-center'
+                      >
+                        <HiExternalLink className='h-3.5 w-3.5 mr-1 flex-shrink-0' />
+                        {link.label}
+                      </a>
+                      <button
+                        onClick={() => handleRemoveDocLink(idx)}
+                        className='text-gray-400 hover:text-red-500 ml-2 flex-shrink-0'
+                        title='Remove link'
+                      >
+                        <HiX className='h-4 w-4' />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(!currentJob.documentLinks || currentJob.documentLinks.length < 5) && (
+                <div className='space-y-2'>
+                  <input
+                    type='text'
+                    value={docLabel}
+                    onChange={(e) => setDocLabel(e.target.value)}
+                    placeholder='Label (e.g. Resume)'
+                    maxLength={DOC_LABEL_MAX}
+                    className='block w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-500'
+                  />
+                  <input
+                    type='url'
+                    value={docUrl}
+                    onChange={(e) => { setDocUrl(e.target.value); if (docError) setDocError(''); }}
+                    placeholder='https://...'
+                    className={`block w-full text-sm border rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-500 ${docError ? 'border-red-300' : 'border-gray-300'}`}
+                  />
+                  {docError && <p className='text-xs text-red-600'>{docError}</p>}
+                  <button
+                    onClick={handleAddDocLink}
+                    className='text-sm text-primary-600 hover:text-primary-700 font-medium'
+                  >
+                    + Add Link
+                  </button>
+                </div>
+              )}
+              {!currentJob.documentLinks?.length && !docLabel && (
+                <p className='text-sm text-gray-500'>Add links to resumes, cover letters, or other documents.</p>
+              )}
+            </div>
+          )}
+
+          {/* Job Notes */}
+          {currentJob.isSaved && (
+            <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+              <div className='flex items-center justify-between mb-4'>
+                <h3 className='text-lg font-semibold text-gray-900 flex items-center'>
+                  <HiAnnotation className='h-5 w-5 mr-2 text-gray-500' />
+                  Notes {currentJob.noteCount > 0 && `(${currentJob.noteCount})`}
+                </h3>
+                <button
+                  onClick={() => setShowNoteModal(true)}
+                  className='text-primary-600 hover:text-primary-700 text-sm font-medium'
+                >
+                  + Add Note
+                </button>
+              </div>
+              {jobNotesLoading ? (
+                <LoadingSpinner size='sm' />
+              ) : jobNotes.length > 0 ? (
+                <div className='space-y-3'>
+                  {jobNotes.slice(0, 5).map((note) => (
+                    <div key={note._id} className='p-3 bg-gray-50 rounded-lg'>
+                      <p className='text-sm font-medium text-gray-900'>{note.title}</p>
+                      <p className='text-xs text-gray-500 mt-1'>
+                        {note.content.length > 100 ? note.content.substring(0, 100) + '...' : note.content}
+                      </p>
+                      <p className='text-xs text-gray-400 mt-1'>{formatDate(note.createdAt)}</p>
+                    </div>
+                  ))}
+                  {jobNotes.length > 5 && (
+                    <Link
+                      to={`/notes?jobId=${currentJob.jobId}`}
+                      className='text-sm text-primary-600 hover:underline block'
+                    >
+                      View all {currentJob.noteCount} notes
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <p className='text-sm text-gray-500'>No notes yet. Add one to track your progress.</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Note Modal */}
       <NoteModal
         isOpen={showNoteModal}
-        onClose={() => setShowNoteModal(false)}
+        onClose={() => {
+          setShowNoteModal(false);
+          if (currentJob?.jobId) {
+            dispatch(getJobNotes({ jobId: currentJob.jobId }));
+          }
+        }}
         jobId={currentJob?.jobId}
         jobTitle={currentJob?.businessTitle}
         source={effectiveSource}

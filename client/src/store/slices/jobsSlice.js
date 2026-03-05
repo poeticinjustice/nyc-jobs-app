@@ -95,10 +95,43 @@ export const updateJobStatus = createAsyncThunk(
   }
 );
 
+export const updateJobTracking = createAsyncThunk(
+  'jobs/updateJobTracking',
+  async ({ jobId, source, trackingData }, { rejectWithValue }) => {
+    try {
+      const response = await api.put(`/api/jobs/${jobId}/tracking`, {
+        ...trackingData,
+        source,
+      });
+      return { jobId, source, ...response.data };
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to update tracking info'
+      );
+    }
+  }
+);
+
+export const getJobNotes = createAsyncThunk(
+  'jobs/getJobNotes',
+  async ({ jobId }, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/api/notes/job/${jobId}`);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to get job notes'
+      );
+    }
+  }
+);
+
 const initialState = {
   searchResults: [],
   currentJob: null,
   savedJobs: [],
+  jobNotes: [],
+  jobNotesLoading: false,
   searchPagination: {
     page: 1,
     limit: 20,
@@ -157,6 +190,7 @@ const jobsSlice = createSlice({
         state.detailsLoading = true;
         state.detailsError = null;
         state.currentJob = null;
+        state.jobNotes = [];
       })
       .addCase(getJobDetails.fulfilled, (state, action) => {
         state.detailsLoading = false;
@@ -258,6 +292,51 @@ const jobsSlice = createSlice({
         state.saveError = action.payload;
       })
 
+      // Update Job Tracking
+      .addCase(updateJobTracking.pending, (state) => {
+        state.statusLoading = true;
+        state.saveError = null;
+      })
+      .addCase(updateJobTracking.fulfilled, (state, action) => {
+        state.statusLoading = false;
+        const { jobId, source, applicationDate, interviewDate, followUpDate, documentLinks } = action.payload;
+
+        const savedJob = state.savedJobs.find(
+          (job) => job.jobId === jobId && (!source || job.source === source)
+        );
+        if (savedJob) {
+          savedJob.applicationDate = applicationDate;
+          savedJob.interviewDate = interviewDate;
+          savedJob.followUpDate = followUpDate;
+          savedJob.documentLinks = documentLinks;
+        }
+
+        if (state.currentJob && state.currentJob.jobId === jobId &&
+            (!source || state.currentJob.source === source)) {
+          state.currentJob.applicationDate = applicationDate;
+          state.currentJob.interviewDate = interviewDate;
+          state.currentJob.followUpDate = followUpDate;
+          state.currentJob.documentLinks = documentLinks;
+        }
+      })
+      .addCase(updateJobTracking.rejected, (state, action) => {
+        state.statusLoading = false;
+        state.saveError = action.payload;
+      })
+
+      // Get Job Notes
+      .addCase(getJobNotes.pending, (state) => {
+        state.jobNotesLoading = true;
+      })
+      .addCase(getJobNotes.fulfilled, (state, action) => {
+        state.jobNotesLoading = false;
+        state.jobNotes = action.payload.notes;
+      })
+      .addCase(getJobNotes.rejected, (state) => {
+        state.jobNotesLoading = false;
+        state.jobNotes = [];
+      })
+
       // Get Saved Jobs
       .addCase(getSavedJobs.pending, (state) => {
         state.savedJobsLoading = true;
@@ -277,6 +356,7 @@ const jobsSlice = createSlice({
       .addCase(logout, (state) => {
         state.currentJob = null;
         state.savedJobs = [];
+        state.jobNotes = [];
         state.savedPagination = initialState.savedPagination;
         state.statusFilter = '';
         state.searchError = null;

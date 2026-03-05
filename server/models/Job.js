@@ -136,6 +136,32 @@ const jobSchema = new mongoose.Schema(
             },
           },
         ],
+        applicationDate: {
+          type: Date,
+          default: null,
+        },
+        interviewDate: {
+          type: Date,
+          default: null,
+        },
+        followUpDate: {
+          type: Date,
+          default: null,
+        },
+        documentLinks: [
+          {
+            label: {
+              type: String,
+              trim: true,
+              maxlength: 100,
+            },
+            url: {
+              type: String,
+              trim: true,
+              maxlength: 500,
+            },
+          },
+        ],
       },
     ],
   },

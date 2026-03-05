@@ -12,6 +12,8 @@ import {
   HiEye,
   HiTrash,
   HiDownload,
+  HiAnnotation,
+  HiPaperClip,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
@@ -238,6 +240,46 @@ const SavedJobs = () => {
                       {job.fullTimePartTimeIndicator || 'Not specified'}
                     </div>
                   </div>
+
+                  {(job.applicationDate || job.interviewDate || job.followUpDate) && (
+                    <div className='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mt-2'>
+                      {job.applicationDate && (
+                        <div>
+                          <span className='font-medium'>Applied:</span>{' '}
+                          {formatDate(job.applicationDate)}
+                        </div>
+                      )}
+                      {job.interviewDate && (
+                        <div>
+                          <span className='font-medium'>Interview:</span>{' '}
+                          {formatDate(job.interviewDate)}
+                        </div>
+                      )}
+                      {job.followUpDate && (
+                        <div>
+                          <span className='font-medium'>Follow-up:</span>{' '}
+                          {formatDate(job.followUpDate)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(job.noteCount > 0 || job.documentLinks?.length > 0) && (
+                    <div className='flex items-center gap-4 text-xs text-gray-500 mt-2'>
+                      {job.noteCount > 0 && (
+                        <span className='flex items-center'>
+                          <HiAnnotation className='h-3.5 w-3.5 mr-1' />
+                          {job.noteCount} {job.noteCount === 1 ? 'note' : 'notes'}
+                        </span>
+                      )}
+                      {job.documentLinks?.length > 0 && (
+                        <span className='flex items-center'>
+                          <HiPaperClip className='h-3.5 w-3.5 mr-1' />
+                          {job.documentLinks.length} {job.documentLinks.length === 1 ? 'doc' : 'docs'}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {job.jobDescription && (
                     <p className='mt-3 text-gray-700 line-clamp-2'>

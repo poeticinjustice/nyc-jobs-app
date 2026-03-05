@@ -48,3 +48,18 @@ export const validateSearchName = (name) => {
   if (name.trim().length > SEARCH_NAME_MAX) return `Name must be ${SEARCH_NAME_MAX} characters or less`;
   return '';
 };
+
+// Document link validation
+export const DOC_LINK_MAX = 5;
+export const DOC_LABEL_MAX = 100;
+
+export const validateDocUrl = (url) => {
+  if (!url || !url.trim()) return 'URL is required';
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return 'URL must use http or https';
+  } catch {
+    return 'Please enter a valid URL';
+  }
+  return '';
+};
