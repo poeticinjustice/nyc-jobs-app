@@ -17,8 +17,8 @@ const JOB_SOURCES = ['nyc', 'federal', 'nys'];
 const SOURCE_OPTIONS = [
   { value: 'all', label: 'All Jobs' },
   { value: 'nyc', label: 'City' },
-  { value: 'federal', label: 'Federal' },
   { value: 'nys', label: 'State' },
+  { value: 'federal', label: 'Federal' },
 ];
 
 // All valid source filter values (JOB_SOURCES + 'all')

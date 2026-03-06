@@ -360,7 +360,7 @@ const Home = () => {
                 placeholder='Job title, keyword, or agency...'
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className='input flex-1 text-gray-900'
+                className='input flex-1 min-w-0 text-gray-900'
               />
               <button
                 type='submit'

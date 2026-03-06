@@ -123,7 +123,16 @@ export default function JobSearchScreen() {
         onPress={() => router.navigate({ pathname: '/job/[id]', params: { id: item.jobId, source: item.source || 'nyc' } })}
         activeOpacity={0.7}
       >
-        <Text style={styles.title} numberOfLines={2}>{item.businessTitle}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={2}>{item.businessTitle}</Text>
+          {item.source && item.source !== 'nyc' && (
+            <View style={[styles.sourceBadge, item.source === 'nys' && styles.sourceBadgeNys]}>
+              <Text style={[styles.sourceBadgeText, item.source === 'nys' && styles.sourceBadgeTextNys]}>
+                {item.source === 'federal' ? 'Federal' : 'State'}
+              </Text>
+            </View>
+          )}
+        </View>
         {!!item.agency && <Text style={styles.meta} numberOfLines={1}>{item.agency}</Text>}
         <View style={styles.cardRow}>
           {!!item.workLocation && (
@@ -134,11 +143,6 @@ export default function JobSearchScreen() {
           )}
         </View>
         {salary && <Text style={styles.salary}>{salary}</Text>}
-        {item.source === 'federal' && (
-          <View style={styles.sourceBadge}>
-            <Text style={styles.sourceBadgeText}>Federal</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -297,11 +301,17 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#E5E7EB',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginBottom: 4,
+  },
   title: {
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 4,
+    flex: 1,
   },
   meta: {
     fontSize: 14,
@@ -335,18 +345,23 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
   sourceBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
     backgroundColor: '#DBEAFE',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  sourceBadgeNys: {
+    backgroundColor: '#D1FAE5',
   },
   sourceBadgeText: {
     fontSize: 10,
     fontWeight: '600',
     color: '#1D4ED8',
+  },
+  sourceBadgeTextNys: {
+    color: '#059669',
   },
   errorContainer: {
     flex: 1,

@@ -3,6 +3,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body {
+  overflow-x: hidden;
+}
+
 @layer base {
   html {
     font-family: 'Inter', system-ui, sans-serif;

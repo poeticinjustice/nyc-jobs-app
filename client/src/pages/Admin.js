@@ -8,7 +8,7 @@ import {
   HiSearch,
   HiRefresh,
 } from 'react-icons/hi';
-import { formatDate, formatSalary } from '../utils/formatUtils';
+import { formatDate } from '../utils/formatUtils';
 import Pagination from '../components/UI/Pagination';
 import api from '../utils/api';
 
@@ -284,44 +284,48 @@ const JobManagement = () => {
           <EmptyState icon={HiBriefcase} message='No jobs found' />
         ) : (
           <div className='overflow-x-auto'>
-            <table className='min-w-full divide-y divide-gray-200'>
+            <table className='w-full divide-y divide-gray-200 table-auto'>
               <thead className='bg-gray-50'>
                 <tr>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Job</th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Agency</th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Salary</th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Source</th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Saves</th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Posted</th>
+                  <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Job</th>
+                  <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell'>Agency</th>
+                  <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Source</th>
+                  <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Saves</th>
+                  <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell'>Posted</th>
+                  <th className='px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase hidden md:table-cell'>Min Salary</th>
+                  <th className='px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase hidden md:table-cell'>Max Salary</th>
                 </tr>
               </thead>
               <tbody className='bg-white divide-y divide-gray-200'>
                 {jobs.map((job) => (
                   <tr key={`${job.source}-${job.jobId}`} className='hover:bg-gray-50'>
-                    <td className='px-4 py-3'>
+                    <td className='px-3 py-3 max-w-[150px] xl:max-w-none'>
                       <div>
-                        <p className='text-sm font-medium text-gray-900 line-clamp-1'>{job.businessTitle}</p>
-                        <p className='text-xs text-gray-500'>{job.workLocation || 'No location'}</p>
+                        <p className='text-sm font-medium text-gray-900 truncate xl:whitespace-normal'>{job.businessTitle}</p>
+                        <p className='text-xs text-gray-500 truncate xl:whitespace-normal'>{job.workLocation || 'No location'}</p>
                       </div>
                     </td>
-                    <td className='px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate'>
+                    <td className='px-3 py-3 text-sm text-gray-500 hidden lg:table-cell max-w-[200px] xl:max-w-none truncate xl:whitespace-normal'>
                       {job.agency || '-'}
                     </td>
-                    <td className='px-4 py-3 text-sm text-gray-500'>
-                      {formatSalary(job.salaryRangeFrom, job.salaryRangeTo, job.salaryFrequency)}
-                    </td>
-                    <td className='px-4 py-3'>
+                    <td className='px-3 py-3'>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         job.source === 'federal' ? 'bg-blue-100 text-blue-800' : job.source === 'nys' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
                       }`}>
                         {job.source === 'federal' ? 'Federal' : job.source === 'nys' ? 'State' : 'NYC'}
                       </span>
                     </td>
-                    <td className='px-4 py-3 text-sm text-gray-500 text-center'>
+                    <td className='px-3 py-3 text-sm text-gray-500 text-center'>
                       {job.saveCount || 0}
                     </td>
-                    <td className='px-4 py-3 text-sm text-gray-500'>
+                    <td className='px-3 py-3 text-sm text-gray-500 hidden sm:table-cell whitespace-nowrap'>
                       {formatDate(job.postDate)}
+                    </td>
+                    <td className='px-3 py-3 text-sm text-gray-500 text-right hidden md:table-cell whitespace-nowrap'>
+                      {job.salaryRangeFrom ? `$${job.salaryRangeFrom.toLocaleString()}` : '-'}
+                    </td>
+                    <td className='px-3 py-3 text-sm text-gray-500 text-right hidden md:table-cell whitespace-nowrap'>
+                      {job.salaryRangeTo ? `$${job.salaryRangeTo.toLocaleString()}` : '-'}
                     </td>
                   </tr>
                 ))}

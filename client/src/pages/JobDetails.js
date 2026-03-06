@@ -417,7 +417,9 @@ const JobDetails = () => {
               href={
                 effectiveSource === 'federal'
                   ? currentJob.externalUrl || `https://www.usajobs.gov/job/${currentJob.jobId}`
-                  : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
+                  : effectiveSource === 'nys'
+                    ? currentJob.externalUrl || `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${currentJob.jobId}`
+                    : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
               }
               target='_blank'
               rel='noopener noreferrer'
@@ -425,7 +427,9 @@ const JobDetails = () => {
             >
               {effectiveSource === 'federal'
                 ? 'Apply at USAJobs'
-                : 'Apply at NYC Jobs'}
+                : effectiveSource === 'nys'
+                  ? 'Apply at StateJobsNY'
+                  : 'Apply at NYC Jobs'}
               <svg
                 className='ml-2 h-4 w-4'
                 fill='none'

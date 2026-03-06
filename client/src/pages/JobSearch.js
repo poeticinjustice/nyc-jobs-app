@@ -26,7 +26,6 @@ import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils'
 import { truncateText } from '../utils/textUtils';
 import { SEARCH_NAME_MAX, SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
-const SOURCE_TABS = SOURCE_OPTIONS;
 
 // Build URLSearchParams from a params object, always including sort/source
 const buildUrlParams = (params, page = 1, limit = 20) => {
@@ -241,15 +240,15 @@ const JobSearch = () => {
   return (
     <div className='space-y-6'>
       {/* Search Header */}
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 overflow-hidden'>
         <h1 className='text-2xl font-bold text-gray-900 mb-4'>
           Search Jobs
         </h1>
 
         {/* Search Form */}
-        <form onSubmit={handleSearchSubmit} className='space-y-4'>
-          <div className='flex flex-col sm:flex-row gap-4'>
-            <div className='flex-1'>
+        <form onSubmit={handleSearchSubmit} className='space-y-3'>
+          <div className='flex flex-col sm:flex-row gap-2 sm:gap-4'>
+            <div className='flex-1 min-w-0'>
               <input
                 type='text'
                 name='q'
@@ -259,7 +258,7 @@ const JobSearch = () => {
                 className='input w-full'
               />
             </div>
-            <div className='flex gap-2 sm:gap-4'>
+            <div className='flex gap-2'>
               <button
                 type='submit'
                 disabled={searchLoading}
@@ -309,27 +308,26 @@ const JobSearch = () => {
 
           {/* Filter Bar: Source Tabs | Salary | Sort */}
           <div className='flex flex-wrap items-center gap-3 justify-between'>
-            {/* Left: Source Tabs + Salary */}
-            <div className='flex flex-wrap items-center gap-3'>
-              <div className='flex gap-1'>
-                {SOURCE_TABS.map((tab) => (
-                  <button
-                    key={tab.value}
-                    type='button'
-                    onClick={() => handleSourceChange(tab.value)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                      localSearchParams.source === tab.value
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+            {/* Left: Source Tabs */}
+            <div className='flex gap-1'>
+              {SOURCE_OPTIONS.map((tab) => (
+                <button
+                  key={tab.value}
+                  type='button'
+                  onClick={() => handleSourceChange(tab.value)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    localSearchParams.source === tab.value
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-              <div className='h-5 w-px bg-gray-300 hidden sm:block' />
-
+            {/* Right: Salary + Sort (desktop) */}
+            <div className='hidden sm:flex items-center gap-3'>
               <div className='flex items-center gap-2'>
                 <input
                   type='number'
@@ -338,7 +336,7 @@ const JobSearch = () => {
                   min='0'
                   value={localSearchParams.salary_min}
                   onChange={handleInputChange}
-                  className='input w-24 text-sm py-1.5'
+                  className='input w-24 lg:w-32 text-sm py-1.5'
                 />
                 <span className='text-sm text-gray-400'>–</span>
                 <input
@@ -348,13 +346,11 @@ const JobSearch = () => {
                   min='0'
                   value={localSearchParams.salary_max}
                   onChange={handleInputChange}
-                  className='input w-24 text-sm py-1.5'
+                  className='input w-24 lg:w-32 text-sm py-1.5'
                 />
               </div>
-            </div>
 
-            {/* Right: Sort */}
-            <div className='relative sort-dropdown-container'>
+              <div className='relative sort-dropdown-container'>
               <button
                 type='button'
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
@@ -399,7 +395,44 @@ const JobSearch = () => {
                   </div>
                 </div>
               )}
+              </div>
             </div>
+          </div>
+
+          {/* Mobile: Salary then Sort below pills */}
+          <div className='flex sm:hidden items-center gap-2'>
+            <input
+              type='number'
+              name='salary_min'
+              placeholder='Min $'
+              min='0'
+              value={localSearchParams.salary_min}
+              onChange={handleInputChange}
+              className='input !w-0 flex-1 min-w-0 text-sm py-1.5'
+            />
+            <span className='text-xs text-gray-400'>–</span>
+            <input
+              type='number'
+              name='salary_max'
+              placeholder='Max $'
+              min='0'
+              value={localSearchParams.salary_max}
+              onChange={handleInputChange}
+              className='input !w-0 flex-1 min-w-0 text-sm py-1.5'
+            />
+          </div>
+          <div className='sm:hidden'>
+            <select
+              value={localSearchParams.sort || 'date_desc'}
+              onChange={(e) => handleSortChange(e.target.value)}
+              className='input w-auto text-sm py-1.5'
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Saved Searches Panel */}
@@ -615,12 +648,12 @@ const JobSearch = () => {
               {searchResults.map((job, index) => (
                 <div
                   key={job.jobId || `job-${index}`}
-                  className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+                  className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow overflow-hidden'
                 >
                   <div className='flex justify-between items-start'>
-                    <div className='flex-1'>
-                      <div className='flex items-center gap-2 mb-2'>
-                        <h3 className='text-lg font-semibold text-gray-900'>
+                    <div className='flex-1 min-w-0'>
+                      <div className='flex flex-wrap items-center gap-2 mb-2'>
+                        <h3 className='text-lg font-semibold text-gray-900 break-words'>
                           {job.businessTitle}
                         </h3>
                         <SourceBadge source={job.source} />
