@@ -144,12 +144,4 @@ const geocodeLocationBase = (workLocation, workLocation1, source) => {
   return null;
 };
 
-/**
- * Geocode with jitter — for runtime use (e.g., map display).
- */
-const geocodeLocation = (workLocation, workLocation1, source) => {
-  const coords = geocodeLocationBase(workLocation, workLocation1, source);
-  return coords ? addJitter(coords) : null;
-};
-
-module.exports = { geocodeLocation, geocodeLocationBase };
+module.exports = { geocodeLocationBase };

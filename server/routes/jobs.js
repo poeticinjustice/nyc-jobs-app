@@ -19,6 +19,12 @@ const router = express.Router();
 
 // --- Helpers ---
 
+// Validate and default job source from request body or query
+const getSource = (req) => {
+  const raw = req.body.source || req.query.source;
+  return JOB_SOURCES.includes(raw) ? raw : 'nyc';
+};
+
 // Build Mongoose sort from query param
 const buildSort = (sort) => {
   switch (sort) {
@@ -537,7 +543,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.post('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+    const source = getSource(req);
     const now = new Date();
 
     const newEntry = {
@@ -577,7 +583,7 @@ router.post('/:id/save', authenticateToken, async (req, res) => {
 router.delete('/:id/save', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const source = JOB_SOURCES.includes(req.query.source) ? req.query.source : 'nyc';
+    const source = getSource(req);
 
     // Atomic pull — no read-modify-write race
     const result = await Job.findOneAndUpdate(
@@ -620,7 +626,7 @@ router.put(
 
       const { id } = req.params;
       const { applicationDate, interviewDate, followUpDate, documentLinks, statusHistory } = req.body;
-      const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+      const source = getSource(req);
 
       // Build atomic $set for only the fields provided
       const setFields = {};
@@ -681,7 +687,7 @@ router.put(
 
       const { id } = req.params;
       const { status } = req.body;
-      const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
+      const source = getSource(req);
       const now = new Date();
 
       // Atomic update with positional operator; $slice caps history at 50 entries

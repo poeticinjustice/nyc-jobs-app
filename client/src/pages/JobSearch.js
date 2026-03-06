@@ -29,14 +29,6 @@ import { SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
 const SOURCE_TABS = SOURCE_OPTIONS;
 
-const DEFAULT_PARAMS = {
-  q: '',
-  salary_min: '',
-  salary_max: '',
-  sort: 'date_desc',
-  source: 'all',
-};
-
 // Build URLSearchParams from a params object, always including sort/source
 const buildUrlParams = (params, page = 1, limit = 20) => {
   const newParams = new URLSearchParams();

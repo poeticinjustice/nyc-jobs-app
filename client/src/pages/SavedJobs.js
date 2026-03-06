@@ -71,9 +71,6 @@ const SavedJobs = () => {
     if (window.confirm('Are you sure you want to remove this bookmark?')) {
       try {
         await dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
-        const params = { page: currentPage, limit: PAGE_SIZE };
-        if (statusFilter) params.status = statusFilter;
-        dispatch(getSavedJobs(params));
       } catch {
         // saveError is displayed in the UI
       }

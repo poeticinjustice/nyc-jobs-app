@@ -207,16 +207,19 @@ router.get(
         Note.countDocuments(queryFilter),
       ]);
 
-      // Enrich notes with job info from MongoDB
+      // Enrich notes with job info — prefer the user's saved version when jobId exists in multiple sources
       const jobIds = [...new Set(notes.map((n) => n.jobId).filter(Boolean))];
       const jobs = jobIds.length
-        ? await Job.find({ jobId: { $in: jobIds } }).select('jobId source businessTitle jobCategory workLocation').lean()
+        ? await Job.find({ jobId: { $in: jobIds } }).select('jobId source businessTitle jobCategory workLocation savedBy').lean()
         : [];
-      // Use compound key to avoid collisions when different sources share a jobId
-      const jobMap = Object.fromEntries(jobs.map((j) => [`${j.source}:${j.jobId}`, j]));
-      // Also index by jobId alone as fallback (notes don't store source)
+      const jobMap = {};
       for (const j of jobs) {
-        if (!jobMap[j.jobId]) jobMap[j.jobId] = j;
+        const userSaved = j.savedBy?.some((s) => s.user.toString() === req.user._id.toString());
+        // Prefer the job the user actually saved; otherwise first match
+        if (!jobMap[j.jobId] || userSaved) {
+          const { savedBy: _sb, ...safeJob } = j;
+          jobMap[j.jobId] = safeJob;
+        }
       }
 
       const notesWithJobInfo = notes.map((note) => {

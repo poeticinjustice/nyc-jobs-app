@@ -77,7 +77,6 @@ const Notes = () => {
     if (window.confirm('Are you sure you want to delete this note?')) {
       try {
         await dispatch(deleteNote(noteId)).unwrap();
-        dispatch(getNotes({ ...filters, page: currentPage, limit: pageSize }));
       } catch {
         // Error displayed via Redux state
       }
