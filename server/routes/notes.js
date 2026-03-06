@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const Note = require('../models/Note');
 const Job = require('../models/Job');
-const { authenticateToken, validateObjectId } = require('../middleware/auth');
+const { authenticateToken, validateObjectId, requireRole } = require('../middleware/auth');
 const { escCsv } = require('../helpers/jobHelpers');
 const { NOTE_TITLE_MAX, NOTE_CONTENT_MAX, NOTE_TYPE_VALUES, NOTE_PRIORITY_VALUES } = require('../../shared/constants');
 
@@ -246,6 +246,42 @@ router.get(
       });
     } catch (error) {
       console.error('Get notes error:', error);
+      res.status(500).json({ message: 'Error fetching notes' });
+    }
+  }
+);
+
+// Admin: list all notes across all users
+router.get(
+  '/admin',
+  [authenticateToken, requireRole(['admin'])],
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, type, priority, userId } = req.query;
+      const pageNum = parseInt(page) || 1;
+      const limitNum = Math.min(parseInt(limit) || 20, 100);
+
+      const filter = { status: 'active' };
+      if (type) filter.type = type;
+      if (priority) filter.priority = priority;
+      if (userId) filter.user = userId;
+
+      const [total, notes] = await Promise.all([
+        Note.countDocuments(filter),
+        Note.find(filter)
+          .populate('user', 'firstName lastName email')
+          .sort({ createdAt: -1 })
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .lean(),
+      ]);
+
+      res.json({
+        notes,
+        pagination: { page: pageNum, limit: limitNum, total, pages: Math.ceil(total / limitNum) },
+      });
+    } catch (error) {
+      console.error('Admin notes list error:', error);
       res.status(500).json({ message: 'Error fetching notes' });
     }
   }

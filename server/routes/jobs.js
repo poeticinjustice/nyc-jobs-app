@@ -3,9 +3,8 @@ const rateLimit = require('express-rate-limit');
 const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
 const Note = require('../models/Note');
-const { authenticateToken, optionalAuth } = require('../middleware/auth');
+const { authenticateToken, optionalAuth, requireRole } = require('../middleware/auth');
 const { getUserSaveEntry, escCsv, escapeRegex } = require('../helpers/jobHelpers');
-const { geocodeLocationBase } = require('../helpers/geocoding');
 const {
   JOB_SOURCES,
   VALID_SOURCE_FILTERS,
@@ -503,6 +502,50 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
     res.status(500).json({ message: 'Error exporting saved jobs' });
   }
 });
+
+// Admin: list all jobs with save counts
+router.get(
+  '/admin',
+  [authenticateToken, requireRole(['admin'])],
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, q, source, agency } = req.query;
+      const pageNum = parseInt(page) || 1;
+      const limitNum = Math.min(parseInt(limit) || 20, 100);
+
+      const filter = {};
+      if (source && source !== 'all') filter.source = source;
+      if (agency) filter.agency = new RegExp(escapeRegex(agency), 'i');
+      if (q) filter.$text = { $search: q };
+
+      const projection = q ? { score: { $meta: 'textScore' } } : {};
+      const sortObj = q ? { score: { $meta: 'textScore' }, postDate: -1 } : { postDate: -1 };
+
+      const [total, jobs] = await Promise.all([
+        Job.countDocuments(filter),
+        Job.find(filter, projection)
+          .select('jobId source businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency postDate savedBy jobCategory')
+          .sort(sortObj)
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .lean(),
+      ]);
+
+      const result = jobs.map(({ savedBy, score, ...job }) => ({
+        ...job,
+        saveCount: savedBy?.length || 0,
+      }));
+
+      res.json({
+        jobs: result,
+        pagination: { page: pageNum, limit: limitNum, total, pages: Math.ceil(total / limitNum) },
+      });
+    } catch (error) {
+      console.error('Admin job list error:', error);
+      res.status(500).json({ message: 'Error fetching jobs' });
+    }
+  }
+);
 
 // Get job details
 router.get('/:id', optionalAuth, async (req, res) => {
