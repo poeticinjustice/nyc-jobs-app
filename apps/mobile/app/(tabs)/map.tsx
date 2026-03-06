@@ -8,7 +8,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Callout, Marker, Region } from 'react-native-maps';
+import ClusteredMapView from 'react-native-map-clustering';
+import { Callout, Marker, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import api from '@/lib/api';
 import { formatSalary } from '@/lib/format';
@@ -107,7 +108,15 @@ export default function MapScreen() {
 
       {!loading && !error && (
         <>
-          <MapView style={styles.map} initialRegion={NYC_REGION} showsUserLocation>
+          <ClusteredMapView
+            style={styles.map}
+            initialRegion={NYC_REGION}
+            showsUserLocation
+            clusterColor="#3B82F6"
+            clusterTextColor="#fff"
+            radius={50}
+            maxZoom={14}
+          >
             {jobs.map((job) => (
               <Marker
                 key={`${job.source || 'nyc'}-${job.jobId}`}
@@ -134,7 +143,7 @@ export default function MapScreen() {
                 </Callout>
               </Marker>
             ))}
-          </MapView>
+          </ClusteredMapView>
           <View style={styles.countBadge}>
             <Text style={styles.countText}>{jobs.length} jobs on map</Text>
           </View>
