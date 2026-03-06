@@ -369,16 +369,28 @@ router.get('/agencies', async (req, res) => {
 // Get saved jobs
 router.get('/saved', authenticateToken, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status } = req.query;
+    const { page = 1, limit = 20, status, sort = 'updated_desc' } = req.query;
     const pageNum = parseInt(page) || 1;
     const limitNum = Math.min(parseInt(limit) || 20, 100);
 
     const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
+    const savedSortMap = {
+      updated_desc: { updatedAt: -1 },
+      saved_desc: { 'savedBy.savedAt': -1 },
+      date_desc: { postDate: -1 },
+      date_asc: { postDate: 1 },
+      title_asc: { businessTitle: 1 },
+      title_desc: { businessTitle: -1 },
+      salary_desc: { salaryRangeFrom: -1 },
+      salary_asc: { salaryRangeFrom: 1 },
+    };
+    const mongoSort = savedSortMap[sort] || savedSortMap.updated_desc;
+
     const total = await Job.countDocuments(queryFilter);
 
     const jobs = await Job.find(queryFilter)
-      .sort({ updatedAt: -1 })
+      .sort(mongoSort)
       .skip((pageNum - 1) * limitNum)
       .limit(limitNum)
       .lean();

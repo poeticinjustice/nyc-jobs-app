@@ -25,6 +25,15 @@ const STATUS_FILTERS = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
+const SORT_OPTIONS = [
+  { value: 'updated_desc', label: 'Recently Updated' },
+  { value: 'saved_desc', label: 'Recently Saved' },
+  { value: 'date_desc', label: 'Newest' },
+  { value: 'date_asc', label: 'Oldest' },
+  { value: 'title_asc', label: 'Title A-Z' },
+  { value: 'salary_desc', label: 'Salary High' },
+];
+
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   interested: { bg: '#DBEAFE', text: '#1D4ED8' },
   applied: { bg: '#D1FAE5', text: '#065F46' },
@@ -44,6 +53,7 @@ type SavedJob = {
   salaryRangeTo?: number;
   salaryFrequency?: string;
   applicationStatus?: string;
+  interviewDate?: string;
   savedAt?: string;
   postDate?: string;
   noteCount?: number;
@@ -57,13 +67,14 @@ export default function SavedJobsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [sort, setSort] = useState('updated_desc');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
-  const fetchSavedJobs = useCallback(async (p: number, filter: string, append = false) => {
+  const fetchSavedJobs = useCallback(async (p: number, filter: string, sortBy: string, append = false) => {
     try {
-      const params: Record<string, string | number> = { page: p, limit: 20 };
+      const params: Record<string, string | number> = { page: p, limit: 20, sort: sortBy };
       if (filter) params.status = filter;
       const res = await api.get('/api/jobs/saved', { params });
       const data = res.data;
@@ -83,13 +94,13 @@ export default function SavedJobsScreen() {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    fetchSavedJobs(1, statusFilter).finally(() => setLoading(false));
-  }, [user, statusFilter, fetchSavedJobs]);
+    fetchSavedJobs(1, statusFilter, sort).finally(() => setLoading(false));
+  }, [user, statusFilter, sort, fetchSavedJobs]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     setPage(1);
-    await fetchSavedJobs(1, statusFilter);
+    await fetchSavedJobs(1, statusFilter, sort);
     setRefreshing(false);
   };
 
@@ -97,7 +108,7 @@ export default function SavedJobsScreen() {
     if (!hasMore || loading) return;
     const next = page + 1;
     setPage(next);
-    fetchSavedJobs(next, statusFilter, true);
+    fetchSavedJobs(next, statusFilter, sort, true);
   };
 
   const handleUnsave = (job: SavedJob) => {
@@ -150,6 +161,14 @@ export default function SavedJobsScreen() {
 
   const statusColor = (s?: string) => STATUS_COLORS[s || 'interested'] || STATUS_COLORS.interested;
 
+  const getStatusLabel = (item: SavedJob) => {
+    const s = item.applicationStatus || 'interested';
+    if (s === 'interviewing' && item.interviewDate && new Date(item.interviewDate) < new Date()) {
+      return 'Interviewed';
+    }
+    return s;
+  };
+
   const renderJob = ({ item }: { item: SavedJob }) => {
     const sc = statusColor(item.applicationStatus);
     return (
@@ -162,7 +181,7 @@ export default function SavedJobsScreen() {
           <Text style={styles.cardTitle} numberOfLines={2}>{item.businessTitle}</Text>
           <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
             <Text style={[styles.statusBadgeText, { color: sc.text }]}>
-              {item.applicationStatus || 'interested'}
+              {getStatusLabel(item)}
             </Text>
           </View>
         </View>
@@ -225,6 +244,11 @@ export default function SavedJobsScreen() {
         options={STATUS_FILTERS}
         selected={statusFilter}
         onSelect={(v) => { setStatusFilter(v); setPage(1); }}
+      />
+      <FilterPills
+        options={SORT_OPTIONS}
+        selected={sort}
+        onSelect={(v) => { setSort(v); setPage(1); }}
       />
 
       {loading && !refreshing ? (

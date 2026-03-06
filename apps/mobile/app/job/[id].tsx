@@ -421,11 +421,14 @@ export default function JobDetailScreen() {
         {job.isSaved && job.statusHistory && job.statusHistory.length > 0 && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Application Timeline</Text>
-            {[...job.statusHistory].reverse().map((entry, reverseIdx) => {
-              const originalIdx = job.statusHistory!.length - 1 - reverseIdx;
+            {[...job.statusHistory]
+              .map((entry, idx) => ({ ...entry, _origIdx: idx }))
+              .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime())
+              .map((entry) => {
+              const originalIdx = entry._origIdx;
               const entryColor = STATUS_COLORS[entry.status] || STATUS_COLORS.interested;
               return (
-                <View key={reverseIdx} style={styles.timelineItem}>
+                <View key={originalIdx} style={styles.timelineItem}>
                   <View style={[styles.timelineDot, { backgroundColor: entryColor.text }]} />
                   <View style={styles.timelineContent}>
                     <Text style={[styles.timelineStatus, { color: entryColor.text }]}>
