@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import api from '@/lib/api';
 import { useAuth } from '@/auth/AuthContext';
 import { formatSalary, formatDate, stripHtml } from '@/lib/format';
+import BackButton from '@/components/BackButton';
 
 type StatusHistoryEntry = { status: string; changedAt: string };
 type DocLink = { label: string; url: string };
@@ -87,7 +88,7 @@ export default function JobDetailScreen() {
   const [notes, setNotes] = useState<JobNote[]>([]);
 
   // Tracking dates
-  const [datePicker, setDatePicker] = useState<{ field: string; value: Date } | null>(null);
+  const [datePicker, setDatePicker] = useState<{ field: string; value: Date; timelineIndex?: number } | null>(null);
 
   // Document link form
   const [docLabel, setDocLabel] = useState('');
@@ -167,6 +168,42 @@ export default function JobDetailScreen() {
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.message || 'Could not update date');
     }
+  };
+
+  const updateStatusHistory = async (newHistory: StatusHistoryEntry[]) => {
+    if (!job) return;
+    try {
+      const res = await api.put(`/api/jobs/${job.jobId}/tracking`, {
+        statusHistory: newHistory,
+        source: job.source || 'nyc',
+      });
+      setJob({ ...job, statusHistory: res.data.statusHistory || newHistory });
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Could not update timeline');
+    }
+  };
+
+  const handleTimelineDelete = (index: number) => {
+    if (!job?.statusHistory) return;
+    Alert.alert('Remove Entry', 'Remove this timeline entry?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          const newHistory = job.statusHistory!.filter((_, i) => i !== index);
+          void updateStatusHistory(newHistory);
+        },
+      },
+    ]);
+  };
+
+  const handleTimelineDateSave = (index: number, date: Date) => {
+    if (!job?.statusHistory) return;
+    const newHistory = job.statusHistory.map((entry, i) =>
+      i === index ? { ...entry, changedAt: date.toISOString() } : entry
+    );
+    void updateStatusHistory(newHistory);
   };
 
   const handleAddDoc = async () => {
@@ -253,21 +290,11 @@ export default function JobDetailScreen() {
     }
   };
 
-  const goBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
-  };
-
   const headerBar = (
     <View style={[styles.navBar, { paddingTop: insets.top }]}>
-      <TouchableOpacity style={styles.backButton} onPress={goBack}>
-        <Text style={styles.backText}>Back</Text>
-      </TouchableOpacity>
+      <BackButton />
       <Text style={styles.navTitle}>Job Details</Text>
-      <View style={styles.backButton} />
+      <View style={styles.navSpacer} />
     </View>
   );
 
@@ -394,17 +421,23 @@ export default function JobDetailScreen() {
         {job.isSaved && job.statusHistory && job.statusHistory.length > 0 && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Application Timeline</Text>
-            {[...job.statusHistory].reverse().map((entry, i) => {
+            {[...job.statusHistory].reverse().map((entry, reverseIdx) => {
+              const originalIdx = job.statusHistory!.length - 1 - reverseIdx;
               const entryColor = STATUS_COLORS[entry.status] || STATUS_COLORS.interested;
               return (
-                <View key={i} style={styles.timelineItem}>
+                <View key={reverseIdx} style={styles.timelineItem}>
                   <View style={[styles.timelineDot, { backgroundColor: entryColor.text }]} />
                   <View style={styles.timelineContent}>
                     <Text style={[styles.timelineStatus, { color: entryColor.text }]}>
                       {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
                     </Text>
-                    <Text style={styles.timelineDate}>{formatDate(entry.changedAt)}</Text>
+                    <TouchableOpacity onPress={() => setDatePicker({ field: 'timeline', value: new Date(entry.changedAt), timelineIndex: originalIdx })}>
+                      <Text style={styles.timelineDateTappable}>{formatDate(entry.changedAt)}</Text>
+                    </TouchableOpacity>
                   </View>
+                  <TouchableOpacity style={styles.timelineRemove} onPress={() => handleTimelineDelete(originalIdx)}>
+                    <Text style={styles.timelineRemoveText}>✕</Text>
+                  </TouchableOpacity>
                 </View>
               );
             })}
@@ -538,8 +571,13 @@ export default function JobDetailScreen() {
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={(_, date) => {
                   if (Platform.OS === 'android') {
+                    const dp = datePicker;
                     setDatePicker(null);
-                    if (date) void handleDateSave(datePicker.field, date);
+                    if (date && dp.field === 'timeline' && dp.timelineIndex != null) {
+                      handleTimelineDateSave(dp.timelineIndex, date);
+                    } else if (date) {
+                      void handleDateSave(dp.field, date);
+                    }
                   } else {
                     if (date) setDatePicker({ ...datePicker, value: date });
                   }
@@ -550,7 +588,15 @@ export default function JobDetailScreen() {
                   <TouchableOpacity onPress={() => setDatePicker(null)}>
                     <Text style={styles.datePickerCancel}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { void handleDateSave(datePicker.field, datePicker.value); setDatePicker(null); }}>
+                  <TouchableOpacity onPress={() => {
+                    const dp = datePicker;
+                    setDatePicker(null);
+                    if (dp.field === 'timeline' && dp.timelineIndex != null) {
+                      handleTimelineDateSave(dp.timelineIndex, dp.value);
+                    } else {
+                      void handleDateSave(dp.field, dp.value);
+                    }
+                  }}>
                     <Text style={styles.datePickerDone}>Done</Text>
                   </TouchableOpacity>
                 </View>
@@ -652,8 +698,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
   },
-  backButton: { width: 60 },
-  backText: { fontSize: 16, color: '#3B82F6', fontWeight: '500' },
+  navSpacer: { width: 70 },
   navTitle: { fontSize: 17, fontWeight: '600', color: '#111827' },
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
@@ -724,7 +769,9 @@ const styles = StyleSheet.create({
   timelineDot: { width: 8, height: 8, borderRadius: 4 },
   timelineContent: { flex: 1 },
   timelineStatus: { fontSize: 13, fontWeight: '600' },
-  timelineDate: { fontSize: 12, color: '#9CA3AF' },
+  timelineDateTappable: { fontSize: 12, color: '#3B82F6', textDecorationLine: 'underline' },
+  timelineRemove: { padding: 6 },
+  timelineRemoveText: { fontSize: 14, color: '#9CA3AF', fontWeight: '600' },
 
   // Tracking Dates
   trackingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 8 },

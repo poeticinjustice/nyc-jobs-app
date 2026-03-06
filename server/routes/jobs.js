@@ -595,6 +595,9 @@ router.put(
     body('documentLinks').optional().isArray({ max: DOC_LINK_MAX }),
     body('documentLinks.*.label').trim().isLength({ min: 1, max: DOC_LABEL_MAX }),
     body('documentLinks.*.url').trim().isURL({ protocols: ['http', 'https'] }),
+    body('statusHistory').optional().isArray({ max: 50 }),
+    body('statusHistory.*.status').isIn(APPLICATION_STATUS_VALUES),
+    body('statusHistory.*.changedAt').isISO8601(),
   ],
   async (req, res) => {
     try {
@@ -604,7 +607,7 @@ router.put(
       }
 
       const { id } = req.params;
-      const { applicationDate, interviewDate, followUpDate, documentLinks } = req.body;
+      const { applicationDate, interviewDate, followUpDate, documentLinks, statusHistory } = req.body;
       const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
 
       // Build atomic $set for only the fields provided
@@ -613,6 +616,7 @@ router.put(
       if (interviewDate !== undefined) setFields['savedBy.$.interviewDate'] = interviewDate;
       if (followUpDate !== undefined) setFields['savedBy.$.followUpDate'] = followUpDate;
       if (documentLinks !== undefined) setFields['savedBy.$.documentLinks'] = documentLinks;
+      if (statusHistory !== undefined) setFields['savedBy.$.statusHistory'] = statusHistory;
 
       if (Object.keys(setFields).length === 0) {
         return res.status(400).json({ message: 'No tracking fields provided' });
@@ -640,6 +644,7 @@ router.put(
         interviewDate: entry.interviewDate,
         followUpDate: entry.followUpDate,
         documentLinks: entry.documentLinks,
+        statusHistory: entry.statusHistory,
       });
     } catch (error) {
       console.error('Update tracking info error:', error);
