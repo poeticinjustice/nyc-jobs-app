@@ -315,6 +315,66 @@ const transformUsaJob = (usaItem) => {
   };
 };
 
+// Transform NYS StateJobsNY scraped fields to camelCase model fields
+const transformNysJob = (nys) => {
+  // Parse salary range like "From $50425 to $61548 Annually"
+  let salaryRangeFrom = null;
+  let salaryRangeTo = null;
+  let salaryFrequency = null;
+  const salaryStr = nys['Salary Range'] || '';
+  const rangeMatch = salaryStr.match(/\$?([\d,]+).*?\$?([\d,]+)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
+  const singleMatch = !rangeMatch && salaryStr.match(/\$?([\d,]+)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
+  if (rangeMatch) {
+    salaryRangeFrom = parseFloat(rangeMatch[1].replace(/,/g, ''));
+    salaryRangeTo = parseFloat(rangeMatch[2].replace(/,/g, ''));
+    salaryFrequency = rangeMatch[3] || 'Annual';
+  } else if (singleMatch) {
+    salaryRangeFrom = parseFloat(singleMatch[1].replace(/,/g, ''));
+    salaryFrequency = singleMatch[2] || 'Annual';
+  }
+
+  // Parse dates from MM/DD/YY format
+  const parseNysDate = (str) => {
+    if (!str) return null;
+    const m = str.match(/(\d{2})\/(\d{2})\/(\d{2,4})/);
+    if (!m) return null;
+    const year = m[3].length === 2 ? 2000 + parseInt(m[3]) : parseInt(m[3]);
+    return new Date(year, parseInt(m[1]) - 1, parseInt(m[2]));
+  };
+
+  const location = [nys['Street Address'], nys['City'], nys['State'], nys['Zip Code']]
+    .filter(Boolean).join(', ');
+
+  return {
+    jobId: nys['Vacancy ID'],
+    source: 'nys',
+    businessTitle: nys['Title'] || null,
+    civilServiceTitle: null,
+    titleCodeNo: null,
+    level: nys['Salary Grade'] || null,
+    jobCategory: nys['Occupational Category'] || null,
+    fullTimePartTimeIndicator: nys['Employment Type'] || null,
+    salaryRangeFrom,
+    salaryRangeTo,
+    salaryFrequency,
+    workLocation: nys['County'] || null,
+    divisionWorkUnit: nys['Bargaining Unit'] || null,
+    jobDescription: nys['Duties Description'] || null,
+    minimumQualRequirements: nys['Minimum Qualifications'] || null,
+    preferredSkills: null,
+    additionalInformation: nys['Notes on Applying'] || null,
+    toApply: nys['Notes on Applying'] || null,
+    externalUrl: nys._detailUrl || null,
+    hoursShift: nys['Workweek'] ? `${nys['Workweek']} ${nys['Hours Per Week'] ? nys['Hours Per Week'] + ' hrs/wk' : ''}`.trim() : null,
+    workLocation1: location || null,
+    residencyRequirement: null,
+    postDate: parseNysDate(nys['Date Posted']),
+    processDate: null,
+    postUntil: parseNysDate(nys['Applications Due']),
+    agency: nys['Agency'] || null,
+  };
+};
+
 // Extract a user's save entry from a job document
 const getUserSaveEntry = (job, userId) => {
   const entry = job.savedBy?.find(
@@ -363,6 +423,7 @@ module.exports = {
   sortMergedJobs,
   transformNycJob,
   transformUsaJob,
+  transformNysJob,
   getUserSaveEntry,
   escCsv,
   escapeRegex,

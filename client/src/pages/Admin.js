@@ -258,6 +258,7 @@ const JobManagement = () => {
               <option value=''>All Sources</option>
               <option value='nyc'>NYC</option>
               <option value='federal'>Federal</option>
+              <option value='nys'>State</option>
             </select>
             <button
               onClick={fetchJobs}
@@ -311,9 +312,9 @@ const JobManagement = () => {
                     </td>
                     <td className='px-4 py-3'>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        job.source === 'federal' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'
+                        job.source === 'federal' ? 'bg-blue-100 text-blue-800' : job.source === 'nys' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
                       }`}>
-                        {job.source === 'federal' ? 'Federal' : 'NYC'}
+                        {job.source === 'federal' ? 'Federal' : job.source === 'nys' ? 'State' : 'NYC'}
                       </span>
                     </td>
                     <td className='px-4 py-3 text-sm text-gray-500 text-center'>

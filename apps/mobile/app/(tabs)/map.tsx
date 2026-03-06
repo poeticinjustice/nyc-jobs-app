@@ -121,7 +121,7 @@ export default function MapScreen() {
               <Marker
                 key={`${job.source || 'nyc'}-${job.jobId}`}
                 coordinate={{ latitude: job.latitude, longitude: job.longitude }}
-                pinColor={job.source === 'federal' ? '#1D4ED8' : '#DC2626'}
+                pinColor={job.source === 'federal' ? '#1D4ED8' : job.source === 'nys' ? '#059669' : '#DC2626'}
               >
                 <Callout
                   onPress={() => router.navigate({ pathname: '/job/[id]', params: { id: job.jobId, source: job.source || 'nyc' } })}

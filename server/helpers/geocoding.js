@@ -84,24 +84,85 @@ const BOROUGH_KEYWORDS = [
   { keyword: 'n.y.', lat: 40.7128, lng: -74.0060 },
 ];
 
-// Default NYC center for jobs that can't be precisely located
-const NYC_DEFAULT = { lat: 40.7128, lng: -74.0060 };
+// NY State county seats / centers (for NYS job locations)
+const NY_COUNTY_COORDS = {
+  'albany': { lat: 42.6526, lng: -73.7562 },
+  'allegany': { lat: 42.2538, lng: -78.0268 },
+  'broome': { lat: 42.0987, lng: -75.9180 },
+  'cattaraugus': { lat: 42.2495, lng: -78.6095 },
+  'cayuga': { lat: 42.9318, lng: -76.5660 },
+  'chautauqua': { lat: 42.1410, lng: -79.2353 },
+  'chemung': { lat: 42.0898, lng: -76.8077 },
+  'chenango': { lat: 42.4977, lng: -75.6352 },
+  'clinton': { lat: 44.6935, lng: -73.4580 },
+  'columbia': { lat: 42.2469, lng: -73.7621 },
+  'cortland': { lat: 42.6011, lng: -76.1808 },
+  'delaware': { lat: 42.1982, lng: -74.9669 },
+  'dutchess': { lat: 41.7004, lng: -73.8963 },
+  'erie': { lat: 42.8864, lng: -78.8784 },
+  'essex': { lat: 44.1167, lng: -73.7337 },
+  'franklin': { lat: 44.5926, lng: -74.1555 },
+  'fulton': { lat: 43.1153, lng: -74.3741 },
+  'genesee': { lat: 43.0042, lng: -78.1893 },
+  'greene': { lat: 42.2563, lng: -74.1310 },
+  'hamilton': { lat: 43.6593, lng: -74.4971 },
+  'herkimer': { lat: 43.0257, lng: -74.9848 },
+  'jefferson': { lat: 44.0019, lng: -75.8994 },
+  'kings': { lat: 40.6782, lng: -73.9442 },
+  'lewis': { lat: 43.7846, lng: -75.4493 },
+  'livingston': { lat: 42.7967, lng: -77.7822 },
+  'madison': { lat: 42.9133, lng: -75.6605 },
+  'monroe': { lat: 43.1566, lng: -77.6088 },
+  'montgomery': { lat: 42.9415, lng: -74.1763 },
+  'nassau': { lat: 40.7291, lng: -73.5893 },
+  'new york': { lat: 40.7831, lng: -73.9712 },
+  'niagara': { lat: 43.0962, lng: -78.8867 },
+  'oneida': { lat: 43.1009, lng: -75.2327 },
+  'onondaga': { lat: 43.0481, lng: -76.1474 },
+  'ontario': { lat: 42.8530, lng: -77.2864 },
+  'orange': { lat: 41.4018, lng: -74.3118 },
+  'orleans': { lat: 43.2468, lng: -78.2254 },
+  'oswego': { lat: 43.4555, lng: -76.5105 },
+  'otsego': { lat: 42.4633, lng: -75.0614 },
+  'putnam': { lat: 41.4270, lng: -73.7613 },
+  'queens': { lat: 40.7282, lng: -73.7949 },
+  'rensselaer': { lat: 42.7284, lng: -73.6918 },
+  'richmond': { lat: 40.5795, lng: -74.1502 },
+  'rockland': { lat: 41.1489, lng: -74.0256 },
+  'saratoga': { lat: 43.0843, lng: -73.7846 },
+  'schenectady': { lat: 42.8142, lng: -73.9396 },
+  'schoharie': { lat: 42.6567, lng: -74.3093 },
+  'schuyler': { lat: 42.3920, lng: -76.8608 },
+  'seneca': { lat: 42.7814, lng: -76.8229 },
+  'st. lawrence': { lat: 44.5946, lng: -75.1710 },
+  'saint lawrence': { lat: 44.5946, lng: -75.1710 },
+  'steuben': { lat: 42.2687, lng: -77.3869 },
+  'suffolk': { lat: 40.9423, lng: -72.6832 },
+  'sullivan': { lat: 41.7174, lng: -74.7691 },
+  'tioga': { lat: 42.1706, lng: -76.3060 },
+  'tompkins': { lat: 42.4440, lng: -76.5019 },
+  'ulster': { lat: 41.8271, lng: -74.3254 },
+  'warren': { lat: 43.3345, lng: -73.6840 },
+  'washington': { lat: 43.3134, lng: -73.4287 },
+  'wayne': { lat: 43.1399, lng: -77.0461 },
+  'westchester': { lat: 41.1220, lng: -73.7949 },
+  'wyoming': { lat: 42.7017, lng: -78.2334 },
+  'yates': { lat: 42.6133, lng: -77.1045 },
+  // NYC borough aliases for county names
+  'bronx': { lat: 40.8448, lng: -73.8648 },
+  'staten island': { lat: 40.5795, lng: -74.1502 },
+};
 
-/**
- * Add small random jitter to coordinates so markers at the same location
- * don't stack on top of each other (±~500m).
- */
-const addJitter = (coords) => ({
-  lat: coords.lat + (Math.random() - 0.5) * 0.01,
-  lng: coords.lng + (Math.random() - 0.5) * 0.01,
-});
+// Default centers per source
+const NYC_DEFAULT = { lat: 40.7128, lng: -74.0060 };
+const NYS_DEFAULT = { lat: 42.6526, lng: -73.7562 }; // Albany
 
 /**
  * Geocode a job's location using static lookup (no jitter).
  * Use this for storing coordinates in the database.
  * @param {string} workLocation - Primary location (e.g., "Manhattan")
  * @param {string} [workLocation1] - Secondary address (e.g., "100 Church St., New York, NY")
- * @param {string} [source] - Job source ('nyc', 'federal') — NYC jobs default to NYC center
+ * @param {string} [source] - Job source ('nyc', 'federal', 'nys') — NYC/NYS jobs default to center
  * @returns {{ lat: number, lng: number } | null}
  */
 const geocodeLocationBase = (workLocation, workLocation1, source) => {
@@ -134,6 +195,21 @@ const geocodeLocationBase = (workLocation, workLocation1, source) => {
     if (combined.includes(keyword)) {
       return { lat, lng };
     }
+  }
+
+  // For NYS jobs, try county lookup
+  if (source === 'nys') {
+    const countyKey = (workLocation || '').toLowerCase().trim();
+    if (NY_COUNTY_COORDS[countyKey]) {
+      return { ...NY_COUNTY_COORDS[countyKey] };
+    }
+    // Try county name in the combined string
+    for (const [county, coords] of Object.entries(NY_COUNTY_COORDS)) {
+      if (combined.includes(county)) {
+        return { ...coords };
+      }
+    }
+    return { ...NYS_DEFAULT };
   }
 
   // For NYC-source jobs, default to NYC center rather than dropping them

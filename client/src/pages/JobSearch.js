@@ -24,8 +24,7 @@ import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
-import { SEARCH_NAME_MAX } from 'nyc-jobs-shared/constants';
-import { SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
+import { SEARCH_NAME_MAX, SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
 const SOURCE_TABS = SOURCE_OPTIONS;
 
@@ -220,7 +219,7 @@ const JobSearch = () => {
   };
 
   const handleClearSearch = () => {
-    setLocalSearchParams({ ...DEFAULT_PARAMS });
+    setLocalSearchParams({ q: '', salary_min: '', salary_max: '', sort: 'date_desc', source: 'all' });
     setSearchParams(new URLSearchParams());
   };
 
@@ -426,7 +425,7 @@ const JobSearch = () => {
                         )}
                         {search.criteria.source && search.criteria.source !== 'all' && (
                           <span className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                            {search.criteria.source === 'nyc' ? 'City' : search.criteria.source === 'federal' ? 'Federal' : search.criteria.source}
+                            {SOURCE_OPTIONS.find((o) => o.value === search.criteria.source)?.label || search.criteria.source}
                           </span>
                         )}
                       </div>
@@ -544,7 +543,7 @@ const JobSearch = () => {
                     )}
                     {localSearchParams.source && localSearchParams.source !== 'all' && (
                       <span className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                        {localSearchParams.source === 'nyc' ? 'City Jobs' : 'Federal Jobs'}
+                        {`${SOURCE_OPTIONS.find((o) => o.value === localSearchParams.source)?.label || localSearchParams.source} Jobs`}
                       </span>
                     )}
                     {localSearchParams.salary_min && (

@@ -7,12 +7,14 @@
  */
 
 const axios = require('axios');
+const cheerio = require('cheerio');
 const Job = require('../models/Job');
 const {
   cleanJobFields,
   deduplicateJobs,
   transformNycJob,
   transformUsaJob,
+  transformNysJob,
 } = require('../helpers/jobHelpers');
 const { geocodeLocationBase } = require('../helpers/geocoding');
 const { getUsaHeaders } = require('../helpers/usaJobsApi');
@@ -210,22 +212,127 @@ const refreshFederalJobs = async (timestamp) => {
 };
 
 // ---------------------------------------------------------------------------
+// NYS Jobs (StateJobsNY)
+// ---------------------------------------------------------------------------
+
+const NYS_TABLE_URL = 'https://statejobs.ny.gov/public/vacancytable.cfm';
+const NYS_DETAIL_URL = 'https://statejobs.ny.gov/public/vacancyDetailsView.cfm';
+const NYS_CONCURRENCY = 10; // parallel detail page fetches
+const NYS_DETAIL_DELAY = 200; // ms between batches to be polite
+
+const scrapeNysTable = async () => {
+  const res = await axios.get(NYS_TABLE_URL, { timeout: 30000 });
+  const $ = cheerio.load(res.data);
+  const ids = [];
+  $('#vacancyTable tbody tr').each((_, row) => {
+    const id = $(row).find('td').eq(0).text().trim();
+    if (id) ids.push(id);
+  });
+  return ids;
+};
+
+const scrapeNysDetail = async (vacancyId) => {
+  const url = `${NYS_DETAIL_URL}?id=${vacancyId}`;
+  const res = await axios.get(url, { timeout: 15000 });
+  const $ = cheerio.load(res.data);
+  const fields = { _detailUrl: url };
+  $('p.row').each((_, row) => {
+    const label = $(row).find('.leftCol').text().trim()
+      .replace(/[\:\s]+$/, '').replace(/\s+/g, ' ');
+    const value = $(row).find('.rightCol').text().trim().replace(/\s+/g, ' ');
+    if (label && value) fields[label] = value;
+  });
+  return fields;
+};
+
+const refreshNysJobs = async (timestamp) => {
+  console.log('[refresh] Fetching NYS jobs...');
+  let vacancyIds;
+  try {
+    vacancyIds = await scrapeNysTable();
+  } catch (err) {
+    console.warn('[refresh] NYS table fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Found ${vacancyIds.length} NYS vacancy IDs`);
+  if (vacancyIds.length === 0) return { upserted: 0, modified: 0 };
+
+  // Fetch detail pages in parallel batches
+  const allJobs = [];
+  for (let i = 0; i < vacancyIds.length; i += NYS_CONCURRENCY) {
+    const batch = vacancyIds.slice(i, i + NYS_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((id) => scrapeNysDetail(id))
+    );
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value['Vacancy ID']) {
+        allJobs.push(result.value);
+      }
+    }
+    if (i + NYS_CONCURRENCY < vacancyIds.length) {
+      await new Promise((r) => setTimeout(r, NYS_DETAIL_DELAY));
+    }
+    // Log progress every 100 jobs
+    if ((i + NYS_CONCURRENCY) % 100 === 0 || i + NYS_CONCURRENCY >= vacancyIds.length) {
+      console.log(`[refresh] NYS detail pages: ${Math.min(i + NYS_CONCURRENCY, vacancyIds.length)}/${vacancyIds.length}`);
+    }
+  }
+
+  console.log(`[refresh] Scraped ${allJobs.length} NYS job details`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
+    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const job = transformNysJob(raw);
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nys');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'nys' },
+          update: {
+            $set: {
+              ...job,
+              source: 'nys',
+              coordinates: coords || { lat: null, lng: null },
+              lastRefreshedAt: timestamp,
+            },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] NYS: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
-const cleanupStaleJobs = async (timestamp, nycCount, federalCount) => {
+const cleanupStaleJobs = async (timestamp, counts) => {
   // Safety: only clean up a source if we actually fetched a meaningful number of jobs.
   // If an API returned 0 (e.g. outage), don't purge that source's jobs.
   const sourceFilter = [];
-  if (nycCount > 100) sourceFilter.push('nyc');
-  if (federalCount > 10) sourceFilter.push('federal');
+  if (counts.nyc > 100) sourceFilter.push('nyc');
+  if (counts.federal > 10) sourceFilter.push('federal');
+  if (counts.nys > 50) sourceFilter.push('nys');
 
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
     return 0;
   }
 
-  // Also always clean up invalid sources (e.g. legacy 'adzuna')
+  const validSources = ['nyc', 'federal', 'nys'];
   const result = await Job.deleteMany({
     $or: [
       // Stale jobs from sources we successfully refreshed
@@ -239,7 +346,7 @@ const cleanupStaleJobs = async (timestamp, nycCount, federalCount) => {
       },
       // Jobs with invalid/legacy sources (always remove)
       {
-        source: { $nin: ['nyc', 'federal'] },
+        source: { $nin: validSources },
         $or: [
           { savedBy: { $size: 0 } },
           { savedBy: { $exists: false } },
@@ -261,12 +368,19 @@ const refreshAllJobs = async () => {
 
   const nyc = await refreshNycJobs(timestamp);
   const federal = await refreshFederalJobs(timestamp);
-  const staleCount = await cleanupStaleJobs(timestamp, nyc.upserted + nyc.modified, federal.upserted + federal.modified);
+  const nys = await refreshNysJobs(timestamp);
+
+  const counts = {
+    nyc: nyc.upserted + nyc.modified,
+    federal: federal.upserted + federal.modified,
+    nys: nys.upserted + nys.modified,
+  };
+  const staleCount = await cleanupStaleJobs(timestamp, counts);
 
   const totalJobs = await Job.estimatedDocumentCount();
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { nyc, federal, staleCount, totalJobs };
+  return { nyc, federal, nys, staleCount, totalJobs };
 };
 
 // Run standalone
