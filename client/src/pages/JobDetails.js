@@ -22,7 +22,8 @@ import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
-import { validateDocUrl, DOC_LABEL_MAX } from '../utils/validation';
+import { validateDocUrl } from 'nyc-jobs-shared/utils/validation';
+import { DOC_LABEL_MAX } from 'nyc-jobs-shared/constants';
 
 const JobDetails = () => {
   const { jobId } = useParams();

@@ -607,24 +607,32 @@ router.put(
       const { applicationDate, interviewDate, followUpDate, documentLinks } = req.body;
       const source = JOB_SOURCES.includes(req.body.source) ? req.body.source : 'nyc';
 
-      const job = await Job.findOne({ jobId: id, source });
+      // Build atomic $set for only the fields provided
+      const setFields = {};
+      if (applicationDate !== undefined) setFields['savedBy.$.applicationDate'] = applicationDate;
+      if (interviewDate !== undefined) setFields['savedBy.$.interviewDate'] = interviewDate;
+      if (followUpDate !== undefined) setFields['savedBy.$.followUpDate'] = followUpDate;
+      if (documentLinks !== undefined) setFields['savedBy.$.documentLinks'] = documentLinks;
+
+      if (Object.keys(setFields).length === 0) {
+        return res.status(400).json({ message: 'No tracking fields provided' });
+      }
+
+      const job = await Job.findOneAndUpdate(
+        { jobId: id, source, 'savedBy.user': req.user._id },
+        { $set: setFields },
+        { new: true }
+      );
+
       if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
+        const exists = await Job.exists({ jobId: id, source });
+        if (!exists) return res.status(404).json({ message: 'Job not found' });
+        return res.status(400).json({ message: 'Job is not saved' });
       }
 
       const entry = job.savedBy.find(
         (s) => s.user.toString() === req.user._id.toString()
       );
-      if (!entry) {
-        return res.status(400).json({ message: 'Job is not saved' });
-      }
-
-      if (applicationDate !== undefined) entry.applicationDate = applicationDate;
-      if (interviewDate !== undefined) entry.interviewDate = interviewDate;
-      if (followUpDate !== undefined) entry.followUpDate = followUpDate;
-      if (documentLinks !== undefined) entry.documentLinks = documentLinks;
-
-      await job.save();
 
       res.json({
         message: 'Tracking info updated',

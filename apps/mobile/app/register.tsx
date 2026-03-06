@@ -13,13 +13,27 @@ export default function RegisterScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const onSubmit = async () => {
+    if (!firstName.trim()) {
+      Alert.alert('Missing fields', 'Please enter your first name.');
+      return;
+    }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      Alert.alert('Missing fields', 'Please enter your email.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await register({
-        email: email.trim(),
+        email: trimmedEmail,
         password,
-        firstName,
-        lastName,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
       });
       router.replace('/');
     } catch (e: any) {
@@ -56,7 +70,7 @@ export default function RegisterScreen() {
         style={styles.input}
       />
       <TextInput
-        placeholder="Password"
+        placeholder="Password (min 6 characters)"
         secureTextEntry
         value={password}
         onChangeText={setPassword}
@@ -68,6 +82,10 @@ export default function RegisterScreen() {
         onPress={onSubmit}
         disabled={submitting}
       />
+
+      <View style={styles.footer}>
+        <Button title="Back" color="#6B7280" onPress={() => router.back()} />
+      </View>
     </View>
   );
 }
@@ -90,5 +108,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 12,
   },
+  footer: {
+    marginTop: 16,
+  },
 });
-

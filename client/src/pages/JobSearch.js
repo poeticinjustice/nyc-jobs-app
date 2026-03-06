@@ -24,7 +24,7 @@ import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
-import { SEARCH_NAME_MAX } from '../utils/validation';
+import { SEARCH_NAME_MAX } from 'nyc-jobs-shared/constants';
 import { SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
 const SOURCE_TABS = SOURCE_OPTIONS;

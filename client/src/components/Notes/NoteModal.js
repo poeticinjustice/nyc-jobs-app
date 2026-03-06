@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { createNote, updateNote, clearError } from '../../store/slices/notesSlice';
 import { HiX, HiSave, HiPencil } from 'react-icons/hi';
-import { NOTE_TITLE_MAX, NOTE_CONTENT_MAX } from '../../utils/validation';
+import { NOTE_TITLE_MAX, NOTE_CONTENT_MAX } from 'nyc-jobs-shared/constants';
 
 const INITIAL_FORM_DATA = {
   title: '',

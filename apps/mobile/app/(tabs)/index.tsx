@@ -15,7 +15,7 @@ import { useAuth } from '@/auth/AuthContext';
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSearch = () => {
@@ -119,6 +119,16 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Logout for authenticated users */}
+      {user && (
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={() => logout()}
+        >
+          <Text style={styles.logoutButtonText}>Log Out</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Auth prompt for guests */}
       {!user && (
@@ -278,6 +288,21 @@ const styles = StyleSheet.create({
   },
   registerButtonText: {
     color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  logoutButton: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  logoutButtonText: {
+    color: '#6B7280',
     fontWeight: '600',
     fontSize: 15,
   },

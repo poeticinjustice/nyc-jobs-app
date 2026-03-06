@@ -4,7 +4,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { login, clearError } from '../store/slices/authSlice';
 import { HiMail, HiLockClosed, HiEye, HiEyeOff } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
-import { validateEmail } from '../utils/validation';
+import { validateEmail } from 'nyc-jobs-shared/utils/validation';
 
 const Login = () => {
   const dispatch = useDispatch();

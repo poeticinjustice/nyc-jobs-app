@@ -4,7 +4,8 @@ import { updateProfile, changePassword, clearError } from '../store/slices/authS
 import { HiUser, HiLockClosed } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { formatDate } from '../utils/formatUtils';
-import { validateEmail, validateName, NAME_MAX } from '../utils/validation';
+import { validateEmail, validateName } from 'nyc-jobs-shared/utils/validation';
+import { NAME_MAX } from 'nyc-jobs-shared/constants';
 
 const Profile = () => {
   const dispatch = useDispatch();

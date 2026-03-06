@@ -11,9 +11,15 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const onSubmit = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert('Missing fields', 'Please enter your email and password.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await login(trimmedEmail, password);
       router.replace('/');
     } catch (e: any) {
       const message =
@@ -52,6 +58,7 @@ export default function LoginScreen() {
 
       <View style={styles.footer}>
         <Button title="Create account" onPress={() => router.push('/register')} />
+        <Button title="Back" color="#6B7280" onPress={() => router.back()} />
       </View>
     </View>
   );
@@ -77,6 +84,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     marginTop: 16,
+    gap: 8,
   },
 });
-

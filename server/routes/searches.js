@@ -58,7 +58,7 @@ router.post(
           salary_min: criteria.salary_min || '',
           salary_max: criteria.salary_max || '',
           sort: criteria.sort || 'date_desc',
-          source: criteria.source || 'nyc',
+          source: criteria.source || 'all',
         },
       });
 

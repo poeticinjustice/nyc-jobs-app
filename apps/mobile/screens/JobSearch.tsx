@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import api from '@/lib/api';
 import { API_BASE_URL } from '@/lib/config';
+import { formatSalary } from '@/lib/format';
 
 type Job = {
   _id: string;
@@ -37,18 +38,6 @@ type Pagination = {
 
 const PAGE_SIZE = 20;
 
-const formatSalary = (from?: number, to?: number, freq?: string) => {
-  const hasFrom = from != null && from > 0;
-  const hasTo = to != null && to > 0;
-  if (hasFrom && hasTo) {
-    return `$${from.toLocaleString()} - $${to.toLocaleString()} ${freq || ''}`.trim();
-  } else if (hasFrom) {
-    return `$${from.toLocaleString()} ${freq || ''}`.trim();
-  } else if (hasTo) {
-    return `Up to $${to.toLocaleString()} ${freq || ''}`.trim();
-  }
-  return null;
-};
 
 export default function JobSearchScreen() {
   const insets = useSafeAreaInsets();

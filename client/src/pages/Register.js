@@ -4,7 +4,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { register, clearError } from '../store/slices/authSlice';
 import { HiMail, HiLockClosed, HiUser, HiEye, HiEyeOff } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
-import { validateEmail, validateName, validatePassword, validatePasswordMatch, NAME_MAX } from '../utils/validation';
+import { validateEmail, validateName, validatePassword, validatePasswordMatch } from 'nyc-jobs-shared/utils/validation';
+import { NAME_MAX } from 'nyc-jobs-shared/constants';
 
 const Register = () => {
   const dispatch = useDispatch();

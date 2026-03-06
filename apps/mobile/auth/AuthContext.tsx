@@ -5,7 +5,7 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
-import api from '@/lib/api';
+import api, { setOnUnauthorized } from '@/lib/api';
 import { storage } from '@/lib/storage';
 
 type User = {
@@ -35,6 +35,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Clear user state when API detects 401
+  useEffect(() => {
+    setOnUnauthorized(() => setUser(null));
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -46,8 +51,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         const res = await api.get('/api/auth/me');
         setUser(res.data.user);
-      } catch {
-        await storage.removeItem('token');
+      } catch (err: any) {
+        // Only clear token on auth errors (401/403), not network failures
+        const status = err?.response?.status;
+        if (status === 401 || status === 403) {
+          await storage.removeItem('token');
+        }
       } finally {
         setLoading(false);
       }

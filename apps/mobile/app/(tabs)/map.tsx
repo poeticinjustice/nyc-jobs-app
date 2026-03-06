@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Callout, Marker, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import api from '@/lib/api';
+import { formatSalary } from '@/lib/format';
 
 type MapJob = {
   jobId: string;
@@ -30,15 +31,6 @@ const NYC_REGION: Region = {
   longitude: -74.006,
   latitudeDelta: 0.15,
   longitudeDelta: 0.15,
-};
-
-const formatSalary = (from?: number, to?: number) => {
-  const hasFrom = from != null && from > 0;
-  const hasTo = to != null && to > 0;
-  if (hasFrom && hasTo) return `$${from.toLocaleString()} - $${to.toLocaleString()}`;
-  if (hasFrom) return `$${from.toLocaleString()}+`;
-  if (hasTo) return `Up to $${to.toLocaleString()}`;
-  return null;
 };
 
 export default function MapScreen() {

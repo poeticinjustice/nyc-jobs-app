@@ -16,5 +16,22 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-export default api;
+// 401 response interceptor — clear stored token so stale auth doesn't persist
+let onUnauthorized: (() => void) | null = null;
 
+export const setOnUnauthorized = (cb: () => void) => {
+  onUnauthorized = cb;
+};
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error?.response?.status === 401) {
+      await storage.removeItem('token');
+      onUnauthorized?.();
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;

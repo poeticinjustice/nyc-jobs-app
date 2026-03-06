@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import api from '@/lib/api';
 import { useAuth } from '@/auth/AuthContext';
+import { formatSalary, formatDate, stripHtml } from '@/lib/format';
 
 type JobDetail = {
   jobId: string;
@@ -38,23 +40,6 @@ type JobDetail = {
   isSaved?: boolean;
 };
 
-const formatSalary = (from?: number, to?: number, freq?: string) => {
-  const hasFrom = from != null && from > 0;
-  const hasTo = to != null && to > 0;
-  if (hasFrom && hasTo) return `$${from.toLocaleString()} - $${to.toLocaleString()} ${freq || ''}`.trim();
-  if (hasFrom) return `$${from.toLocaleString()} ${freq || ''}`.trim();
-  if (hasTo) return `Up to $${to.toLocaleString()} ${freq || ''}`.trim();
-  return 'Not specified';
-};
-
-const formatDate = (d?: string) => {
-  if (!d) return null;
-  const date = new Date(d);
-  if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-};
-
-const stripHtml = (text: string) => text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 export default function JobDetailScreen() {
   const { id, source } = useLocalSearchParams<{ id: string; source?: string }>();
@@ -89,8 +74,8 @@ export default function JobDetailScreen() {
         await api.post(`/api/jobs/${job.jobId}/save`, { source: job.source || 'nyc' });
         setJob({ ...job, isSaved: true });
       }
-    } catch {
-      // silently fail
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Could not update saved status');
     } finally {
       setSaving(false);
     }
@@ -119,7 +104,7 @@ export default function JobDetailScreen() {
     );
   }
 
-  const salary = formatSalary(job.salaryRangeFrom, job.salaryRangeTo, job.salaryFrequency);
+  const salary = formatSalary(job.salaryRangeFrom, job.salaryRangeTo, job.salaryFrequency) || 'Not specified';
   const posted = formatDate(job.postDate);
   const deadline = formatDate(job.postUntil);
   const applyUrl = job.externalUrl || job.toApply;
