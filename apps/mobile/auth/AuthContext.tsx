@@ -5,8 +5,7 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
-import api, { setOnUnauthorized } from '@/lib/api';
-import { storage } from '@/lib/storage';
+import api, { setOnUnauthorized, setToken, loadToken } from '@/lib/api';
 
 type User = {
   _id: string;
@@ -43,7 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const init = async () => {
       try {
-        const token = await storage.getItem('token');
+        const token = await loadToken();
         if (!token) {
           setLoading(false);
           return;
@@ -55,7 +54,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Only clear token on auth errors (401/403), not network failures
         const status = err?.response?.status;
         if (status === 401 || status === 403) {
-          await storage.removeItem('token');
+          setToken(null);
         }
       } finally {
         setLoading(false);
@@ -67,7 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, password: string) => {
     const res = await api.post('/api/auth/login', { email, password });
-    await storage.setItem('token', res.data.token);
+    setToken(res.data.token);
     setUser(res.data.user);
   };
 
@@ -78,12 +77,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     lastName: string;
   }) => {
     const res = await api.post('/api/auth/register', data);
-    await storage.setItem('token', res.data.token);
+    setToken(res.data.token);
     setUser(res.data.user);
   };
 
   const logout = async () => {
-    await storage.removeItem('token');
+    setToken(null);
     setUser(null);
   };
 

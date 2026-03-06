@@ -115,7 +115,7 @@ export default function MapScreen() {
                 pinColor={job.source === 'federal' ? '#1D4ED8' : '#DC2626'}
               >
                 <Callout
-                  onPress={() => router.push(`/job/${job.jobId}?source=${job.source || 'nyc'}`)}
+                  onPress={() => router.navigate({ pathname: '/job/[id]', params: { id: job.jobId, source: job.source || 'nyc' } })}
                 >
                   <View style={styles.callout}>
                     <Text style={styles.calloutTitle} numberOfLines={2}>

@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import api from '@/lib/api';
 import { useAuth } from '@/auth/AuthContext';
 import { formatSalary, formatDate, stripHtml } from '@/lib/format';
@@ -43,6 +44,8 @@ type JobDetail = {
 
 export default function JobDetailScreen() {
   const { id, source } = useLocalSearchParams<{ id: string; source?: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +53,10 @@ export default function JobDetailScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    setJob(null);
+    setLoading(true);
+    setError(null);
+
     const fetchJob = async () => {
       try {
         const res = await api.get(`/api/jobs/${id}`, { params: { source: source || 'nyc' } });
@@ -81,25 +88,63 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleApplyLink = () => {
+  const handleApplyLink = async () => {
     const url = job?.externalUrl || job?.toApply;
-    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-      void Linking.openURL(url);
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) return;
+
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        const cleaned = url.replace(/:443(?=\/|$)/, '');
+        if (cleaned !== url) {
+          await Linking.openURL(cleaned);
+        } else {
+          Alert.alert('Cannot Open Link', 'Unable to open this URL on your device.');
+        }
+      }
+    } catch {
+      Alert.alert('Cannot Open Link', 'Unable to open this URL on your device.');
     }
   };
 
+  const goBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
+  const headerBar = (
+    <View style={[styles.navBar, { paddingTop: insets.top }]}>
+      <TouchableOpacity style={styles.backButton} onPress={goBack}>
+        <Text style={styles.backText}>Back</Text>
+      </TouchableOpacity>
+      <Text style={styles.navTitle}>Job Details</Text>
+      <View style={styles.backButton} />
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#3B82F6" />
+      <View style={styles.screen}>
+        {headerBar}
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+        </View>
       </View>
     );
   }
 
   if (error || !job) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>{error || 'Job not found'}</Text>
+      <View style={styles.screen}>
+        {headerBar}
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>{error || 'Job not found'}</Text>
+        </View>
       </View>
     );
   }
@@ -111,64 +156,67 @@ export default function JobDetailScreen() {
   const hasApplyLink = applyUrl && (applyUrl.startsWith('http://') || applyUrl.startsWith('https://'));
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{job.businessTitle}</Text>
-        {job.source === 'federal' && (
-          <View style={styles.sourceBadge}>
-            <Text style={styles.sourceBadgeText}>Federal</Text>
-          </View>
+    <View style={styles.screen}>
+      {headerBar}
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{job.businessTitle}</Text>
+          {job.source === 'federal' && (
+            <View style={styles.sourceBadge}>
+              <Text style={styles.sourceBadgeText}>Federal</Text>
+            </View>
+          )}
+        </View>
+
+        {!!job.agency && <Text style={styles.agency}>{job.agency}</Text>}
+
+        <View style={styles.metaGrid}>
+          <MetaItem label="Salary" value={salary} />
+          <MetaItem label="Location" value={job.workLocation} />
+          <MetaItem label="Category" value={job.jobCategory} />
+          <MetaItem label="Type" value={job.fullTimePartTimeIndicator} />
+          {posted && <MetaItem label="Posted" value={posted} />}
+          {deadline && <MetaItem label="Closes" value={deadline} />}
+          {!!job.level && <MetaItem label="Level" value={job.level} />}
+          {!!job.hoursShift && <MetaItem label="Hours" value={job.hoursShift} />}
+        </View>
+
+        <View style={styles.actions}>
+          {user && (
+            <TouchableOpacity
+              style={[styles.actionButton, job.isSaved && styles.actionButtonSaved]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              <Text style={[styles.actionButtonText, job.isSaved && styles.actionButtonTextSaved]}>
+                {saving ? '...' : job.isSaved ? 'Saved' : 'Save Job'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {hasApplyLink && (
+            <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
+              <Text style={styles.applyButtonText}>Apply</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {!!job.jobDescription && (
+          <Section title="Description" text={job.jobDescription} />
         )}
-      </View>
-
-      {!!job.agency && <Text style={styles.agency}>{job.agency}</Text>}
-
-      <View style={styles.metaGrid}>
-        <MetaItem label="Salary" value={salary} />
-        <MetaItem label="Location" value={job.workLocation} />
-        <MetaItem label="Category" value={job.jobCategory} />
-        <MetaItem label="Type" value={job.fullTimePartTimeIndicator} />
-        {posted && <MetaItem label="Posted" value={posted} />}
-        {deadline && <MetaItem label="Closes" value={deadline} />}
-        {!!job.level && <MetaItem label="Level" value={job.level} />}
-        {!!job.hoursShift && <MetaItem label="Hours" value={job.hoursShift} />}
-      </View>
-
-      <View style={styles.actions}>
-        {user && (
-          <TouchableOpacity
-            style={[styles.actionButton, job.isSaved && styles.actionButtonSaved]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            <Text style={[styles.actionButtonText, job.isSaved && styles.actionButtonTextSaved]}>
-              {saving ? '...' : job.isSaved ? 'Saved' : 'Save Job'}
-            </Text>
-          </TouchableOpacity>
+        {!!job.minimumQualRequirements && (
+          <Section title="Minimum Qualifications" text={job.minimumQualRequirements} />
         )}
-        {hasApplyLink && (
-          <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
-            <Text style={styles.applyButtonText}>Apply</Text>
-          </TouchableOpacity>
+        {!!job.preferredSkills && (
+          <Section title="Preferred Skills" text={job.preferredSkills} />
         )}
-      </View>
-
-      {!!job.jobDescription && (
-        <Section title="Description" text={job.jobDescription} />
-      )}
-      {!!job.minimumQualRequirements && (
-        <Section title="Minimum Qualifications" text={job.minimumQualRequirements} />
-      )}
-      {!!job.preferredSkills && (
-        <Section title="Preferred Skills" text={job.preferredSkills} />
-      )}
-      {!!job.additionalInformation && (
-        <Section title="Additional Information" text={job.additionalInformation} />
-      )}
-      {!!job.residencyRequirement && (
-        <Section title="Residency Requirement" text={job.residencyRequirement} />
-      )}
-    </ScrollView>
+        {!!job.additionalInformation && (
+          <Section title="Additional Information" text={job.additionalInformation} />
+        )}
+        {!!job.residencyRequirement && (
+          <Section title="Residency Requirement" text={job.residencyRequirement} />
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -192,7 +240,21 @@ function Section({ title, text }: { title: string; text: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  screen: { flex: 1, backgroundColor: '#F9FAFB' },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: { width: 60 },
+  backText: { fontSize: 16, color: '#3B82F6', fontWeight: '500' },
+  navTitle: { fontSize: 17, fontWeight: '600', color: '#111827' },
+  container: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorText: { color: '#DC2626', fontSize: 15, textAlign: 'center' },

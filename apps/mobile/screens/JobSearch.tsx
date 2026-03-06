@@ -110,7 +110,7 @@ export default function JobSearchScreen() {
     return (
       <TouchableOpacity
         style={styles.card}
-        onPress={() => router.push(`/job/${item.jobId}?source=${item.source || 'nyc'}`)}
+        onPress={() => router.navigate({ pathname: '/job/[id]', params: { id: item.jobId, source: item.source || 'nyc' } })}
         activeOpacity={0.7}
       >
         <Text style={styles.title} numberOfLines={2}>{item.businessTitle}</Text>

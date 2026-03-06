@@ -6,17 +6,33 @@ const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
-api.interceptors.request.use(async (config) => {
-  const token = await storage.getItem('token');
+// Keep token in memory so the request interceptor is synchronous and reliable.
+// storage (AsyncStorage) is used only for persistence across app restarts.
+let memoryToken: string | null = null;
 
+export const setToken = (token: string | null) => {
+  memoryToken = token;
   if (token) {
-    config.headers.set('Authorization', `Bearer ${token}`);
+    storage.setItem('token', token);
+  } else {
+    storage.removeItem('token');
   }
+};
 
+export const loadToken = async (): Promise<string | null> => {
+  if (memoryToken) return memoryToken;
+  memoryToken = await storage.getItem('token');
+  return memoryToken;
+};
+
+api.interceptors.request.use((config) => {
+  if (memoryToken) {
+    config.headers.Authorization = `Bearer ${memoryToken}`;
+  }
   return config;
 });
 
-// 401 response interceptor — clear stored token so stale auth doesn't persist
+// 401 response interceptor — clear token so stale auth doesn't persist
 let onUnauthorized: (() => void) | null = null;
 
 export const setOnUnauthorized = (cb: () => void) => {
@@ -25,9 +41,9 @@ export const setOnUnauthorized = (cb: () => void) => {
 
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
+  (error) => {
     if (error?.response?.status === 401) {
-      await storage.removeItem('token');
+      setToken(null);
       onUnauthorized?.();
     }
     return Promise.reject(error);
