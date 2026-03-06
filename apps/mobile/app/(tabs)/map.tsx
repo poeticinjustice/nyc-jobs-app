@@ -124,9 +124,9 @@ export default function MapScreen() {
                     {!!job.agency && (
                       <Text style={styles.calloutMeta} numberOfLines={1}>{job.agency}</Text>
                     )}
-                    {formatSalary(job.salaryRangeFrom, job.salaryRangeTo) && (
+                    {formatSalary(job.salaryRangeFrom, job.salaryRangeTo, job.salaryFrequency) && (
                       <Text style={styles.calloutSalary}>
-                        {formatSalary(job.salaryRangeFrom, job.salaryRangeTo)}
+                        {formatSalary(job.salaryRangeFrom, job.salaryRangeTo, job.salaryFrequency)}
                       </Text>
                     )}
                     <Text style={styles.calloutLink}>Tap for details</Text>

@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import api from '@/lib/api';
@@ -93,17 +93,7 @@ export default function JobDetailScreen() {
     if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) return;
 
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        const cleaned = url.replace(/:443(?=\/|$)/, '');
-        if (cleaned !== url) {
-          await Linking.openURL(cleaned);
-        } else {
-          Alert.alert('Cannot Open Link', 'Unable to open this URL on your device.');
-        }
-      }
+      await WebBrowser.openBrowserAsync(url);
     } catch {
       Alert.alert('Cannot Open Link', 'Unable to open this URL on your device.');
     }

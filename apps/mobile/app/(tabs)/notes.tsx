@@ -300,10 +300,10 @@ export default function NotesScreen() {
       </View>
 
       {/* Type filter pills */}
+      <View style={styles.filterWrapper}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.filterRow}
         contentContainerStyle={styles.filterContent}
       >
         {TYPE_OPTIONS.map((f) => (
@@ -330,6 +330,7 @@ export default function NotesScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+      </View>
 
       {loading && !refreshing ? (
         <View style={styles.center}>
@@ -530,17 +531,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   addButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  filterRow: { maxHeight: 48, marginTop: 8 },
+  filterWrapper: { paddingVertical: 10, marginTop: 4 },
   filterContent: { paddingHorizontal: 16, gap: 6, alignItems: 'center' },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 18,
     backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  filterChipActive: { backgroundColor: '#2563EB' },
-  filterChipActivePriority: { backgroundColor: '#7C3AED' },
-  filterChipText: { fontSize: 12, fontWeight: '500', color: '#6B7280' },
+  filterChipActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  filterChipActivePriority: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  filterChipText: { fontSize: 13, fontWeight: '500', color: '#6B7280' },
   filterChipTextActive: { color: '#fff' },
   filterDivider: { width: 1, height: 20, backgroundColor: '#D1D5DB', marginHorizontal: 4 },
   list: { padding: 16, paddingTop: 12, gap: 12 },

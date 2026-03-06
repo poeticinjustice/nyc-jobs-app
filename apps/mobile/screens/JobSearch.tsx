@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import api from '@/lib/api';
 import { API_BASE_URL } from '@/lib/config';
 import { formatSalary } from '@/lib/format';
+import FilterPills from '@/components/FilterPills';
 
 type Job = {
   _id: string;
@@ -38,11 +39,20 @@ type Pagination = {
 
 const PAGE_SIZE = 20;
 
+const SORT_OPTIONS = [
+  { value: 'date_desc', label: 'Newest' },
+  { value: 'date_asc', label: 'Oldest' },
+  { value: 'title_asc', label: 'Title A-Z' },
+  { value: 'title_desc', label: 'Title Z-A' },
+  { value: 'salary_desc', label: 'Salary High' },
+  { value: 'salary_asc', label: 'Salary Low' },
+] as const;
 
 export default function JobSearchScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(params.q || '');
+  const [sort, setSort] = useState('date_desc');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -51,7 +61,7 @@ export default function JobSearchScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const router = useRouter();
 
-  const fetchJobs = useCallback(async (q: string, page: number, isRefresh = false) => {
+  const fetchJobs = useCallback(async (q: string, page: number, sortBy: string, isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -60,7 +70,7 @@ export default function JobSearchScreen() {
     setError(null);
     try {
       const res = await api.get('/api/jobs/search', {
-        params: { q: q || '', page, limit: PAGE_SIZE, sort: 'date_desc', source: 'all' },
+        params: { q: q || '', page, limit: PAGE_SIZE, sort: sortBy, source: 'all' },
       });
       setJobs(res.data.jobs || []);
       setPagination(res.data.pagination || null);
@@ -82,26 +92,26 @@ export default function JobSearchScreen() {
 
   useEffect(() => {
     if (params.q != null) setQuery(params.q);
-    void fetchJobs(params.q || '', 1);
-  }, [fetchJobs, params.q]);
+    void fetchJobs(params.q || '', 1, sort);
+  }, [fetchJobs, params.q, sort]);
 
   const handleSearch = () => {
-    void fetchJobs(query.trim(), 1);
+    void fetchJobs(query.trim(), 1, sort);
   };
 
   const handleRefresh = () => {
-    void fetchJobs(query.trim(), 1, true);
+    void fetchJobs(query.trim(), 1, sort, true);
   };
 
   const handleNextPage = () => {
     if (pagination && currentPage < pagination.pages) {
-      void fetchJobs(query.trim(), currentPage + 1);
+      void fetchJobs(query.trim(), currentPage + 1, sort);
     }
   };
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
-      void fetchJobs(query.trim(), currentPage - 1);
+      void fetchJobs(query.trim(), currentPage - 1, sort);
     }
   };
 
@@ -179,6 +189,8 @@ export default function JobSearchScreen() {
         </TouchableOpacity>
       </View>
 
+      <FilterPills options={SORT_OPTIONS} selected={sort} onSelect={setSort} />
+
       {pagination && !loading && (
         <Text style={styles.resultCount}>
           {pagination.total.toLocaleString()} jobs found
@@ -195,7 +207,7 @@ export default function JobSearchScreen() {
       {!loading && error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => fetchJobs(query.trim(), 1)}>
+          <TouchableOpacity style={styles.retryButton} onPress={() => fetchJobs(query.trim(), 1, sort)}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>

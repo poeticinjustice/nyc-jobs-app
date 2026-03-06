@@ -4,7 +4,6 @@ import {
   Alert,
   FlatList,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatSalary, formatDate } from '@/lib/format';
+import FilterPills from '@/components/FilterPills';
 
 const STATUS_FILTERS = [
   { value: '', label: 'All' },
@@ -221,35 +221,11 @@ export default function SavedJobsScreen() {
         </Text>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterRow}
-        contentContainerStyle={styles.filterContent}
-      >
-        {STATUS_FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.value}
-            style={[
-              styles.filterChip,
-              statusFilter === f.value && styles.filterChipActive,
-            ]}
-            onPress={() => {
-              setStatusFilter(f.value);
-              setPage(1);
-            }}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                statusFilter === f.value && styles.filterChipTextActive,
-              ]}
-            >
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <FilterPills
+        options={STATUS_FILTERS}
+        selected={statusFilter}
+        onSelect={(v) => { setStatusFilter(v); setPage(1); }}
+      />
 
       {loading && !refreshing ? (
         <View style={styles.center}>
@@ -305,17 +281,6 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827' },
   subtitle: { fontSize: 14, color: '#6B7280', marginTop: 2 },
-  filterRow: { maxHeight: 48, marginTop: 8 },
-  filterContent: { paddingHorizontal: 16, gap: 8 },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-  },
-  filterChipActive: { backgroundColor: '#2563EB' },
-  filterChipText: { fontSize: 13, fontWeight: '500', color: '#6B7280' },
-  filterChipTextActive: { color: '#fff' },
   list: { padding: 16, paddingTop: 12, gap: 12 },
   card: {
     backgroundColor: '#fff',

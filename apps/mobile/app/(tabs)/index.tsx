@@ -124,7 +124,7 @@ export default function HomeScreen() {
       {user && (
         <TouchableOpacity
           style={styles.logoutButton}
-          onPress={() => logout()}
+          onPress={() => void logout()}
         >
           <Text style={styles.logoutButtonText}>Log Out</Text>
         </TouchableOpacity>
