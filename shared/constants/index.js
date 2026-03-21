@@ -11,7 +11,7 @@ const APPLICATION_STATUSES = [
 ];
 
 // Valid job sources for DB storage
-const JOB_SOURCES = ['nyc', 'federal', 'nys', 'cuny', 'nyu', 'fordham', 'pa'];
+const JOB_SOURCES = ['nyc', 'federal', 'nys', 'cuny', 'nyu', 'fordham', 'pa', 'mountsinai', 'idealist', 'columbia'];
 
 // Source filter options including 'all' (used in search UI and validators)
 const SOURCE_OPTIONS = [
@@ -23,10 +23,13 @@ const SOURCE_OPTIONS = [
   { value: 'nyu', label: 'NYU' },
   { value: 'fordham', label: 'Fordham' },
   { value: 'pa', label: 'Port Authority' },
+  { value: 'mountsinai', label: 'Mount Sinai' },
+  { value: 'idealist', label: 'Non-Profit' },
+  { value: 'columbia', label: 'Columbia' },
 ];
 
 // All valid source filter values (JOB_SOURCES + 'all')
-const VALID_SOURCE_FILTERS = ['nyc', 'federal', 'nys', 'cuny', 'nyu', 'fordham', 'pa', 'all'];
+const VALID_SOURCE_FILTERS = [...JOB_SOURCES, 'all'];
 
 // Sort options with labels
 const SORT_OPTIONS = [

@@ -814,6 +814,335 @@ const refreshPortAuthorityJobs = async (timestamp) => {
 };
 
 // ---------------------------------------------------------------------------
+// Mount Sinai Health System (Jibe JSON API)
+// ---------------------------------------------------------------------------
+
+const MOUNTSINAI_API_URL = 'https://careers.mountsinai.org/api/jobs';
+const MOUNTSINAI_PAGE_SIZE = 100;
+
+const refreshMountSinaiJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Mount Sinai jobs...');
+
+  let allJobs = [];
+  let page = 1;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      const { data } = await axios.get(MOUNTSINAI_API_URL, {
+        params: { page, limit: MOUNTSINAI_PAGE_SIZE },
+        timeout: 30000,
+      });
+
+      if (page === 1) {
+        console.log(`[refresh] Mount Sinai: ${data.totalCount || 0} total jobs`);
+      }
+
+      const jobs = data.jobs || [];
+      if (jobs.length === 0) {
+        hasMore = false;
+      } else {
+        allJobs.push(...jobs);
+        page++;
+      }
+      if (page > 100) break; // safety
+    }
+  } catch (err) {
+    console.warn('[refresh] Mount Sinai fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Fetched ${allJobs.length} Mount Sinai jobs`);
+
+  // Filter to NYC metro area only
+  const metroJobs = allJobs.filter((j) => {
+    const d = j.data || {};
+    const state = (d.state || '').toUpperCase();
+    return state === 'NY' || state === 'NJ';
+  });
+  console.log(`[refresh] Mount Sinai metro area jobs: ${metroJobs.length}/${allJobs.length}`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
+    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const d = raw.data || {};
+      const job = {
+        jobId: d.req_id || d.slug,
+        businessTitle: d.title || null,
+        agency: d.brand || 'Mount Sinai Health System',
+        workLocation: d.city || null,
+        workLocation1: d.full_location || d.short_location || null,
+        divisionWorkUnit: d.department || null,
+        jobDescription: d.description || null,
+        minimumQualRequirements: d.qualifications || null,
+        jobCategory: d.categories?.[0]?.name || null,
+        salaryRangeFrom: d.salary_min_value || null,
+        salaryRangeTo: d.salary_max_value || null,
+        salaryFrequency: d.salary_min_value ? 'Hourly' : null,
+        fullTimePartTimeIndicator: d.employment_type === 'FULL_TIME' ? 'Full-Time' : d.employment_type === 'PART_TIME' ? 'Part-Time' : d.employment_type || null,
+        postDate: d.posted_date || null,
+        externalUrl: d.apply_url || d.meta_data?.canonical_url || null,
+      };
+
+      const lat = d.latitude ? parseFloat(d.latitude) : null;
+      const lng = d.longitude ? parseFloat(d.longitude) : null;
+      const coords = (lat && lng) ? { lat, lng } : geocodeLocationBase(job.workLocation, job.workLocation1, 'mountsinai');
+
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'mountsinai' },
+          update: {
+            $set: { ...job, source: 'mountsinai', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] Mount Sinai: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// Idealist.org Non-Profit Jobs (Algolia API)
+// ---------------------------------------------------------------------------
+
+const IDEALIST_ALGOLIA_URL = 'https://NSV3AUESS7-dsn.algolia.net/1/indexes/idealist7-production/query';
+const IDEALIST_API_KEY = 'c2730ea10ab82787f2f3cc961e8c1e06';
+const IDEALIST_APP_ID = 'NSV3AUESS7';
+
+const refreshIdealistJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Idealist jobs...');
+
+  let allJobs = [];
+  let page = 0;
+  let totalPages = 1;
+
+  try {
+    while (page < totalPages) {
+      const { data } = await axios.post(IDEALIST_ALGOLIA_URL, {
+        query: '',
+        filters: 'type:JOB',
+        aroundLatLng: '40.7128,-74.0060',
+        aroundRadius: 40000, // ~25 miles
+        hitsPerPage: 1000,
+        page,
+      }, {
+        headers: {
+          'X-Algolia-API-Key': IDEALIST_API_KEY,
+          'X-Algolia-Application-Id': IDEALIST_APP_ID,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      });
+
+      if (page === 0) {
+        totalPages = data.nbPages || 1;
+        console.log(`[refresh] Idealist: ${data.nbHits || 0} total jobs, ${totalPages} pages`);
+      }
+
+      if (data.hits) allJobs.push(...data.hits);
+      page++;
+    }
+  } catch (err) {
+    console.warn('[refresh] Idealist fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Fetched ${allJobs.length} Idealist jobs`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
+    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const salaryFrom = raw.salaryMinimum ? parseFloat(raw.salaryMinimum) : null;
+      const salaryTo = raw.salaryMaximum ? parseFloat(raw.salaryMaximum) : null;
+      const period = raw.salaryPeriod === 'YEAR' ? 'Annual' : raw.salaryPeriod === 'HOUR' ? 'Hourly' : raw.salaryPeriod || null;
+
+      const job = {
+        jobId: raw.objectID,
+        businessTitle: raw.name || null,
+        agency: raw.orgName || null,
+        workLocation: raw.city || null,
+        workLocation1: [raw.city, raw.state].filter(Boolean).join(', ') || null,
+        jobDescription: raw.description || null,
+        jobCategory: raw.areasOfFocus?.[0] || null,
+        salaryRangeFrom: salaryFrom,
+        salaryRangeTo: salaryTo,
+        salaryFrequency: salaryFrom ? period : null,
+        fullTimePartTimeIndicator: raw.isFullTime ? 'Full-Time' : 'Part-Time',
+        postDate: raw.published ? new Date(raw.published * 1000) : null,
+        externalUrl: raw.url?.en ? `https://www.idealist.org${raw.url.en}` : null,
+      };
+
+      const lat = raw._geoloc?.lat || null;
+      const lng = raw._geoloc?.lng || null;
+      const coords = (lat && lng) ? { lat, lng } : geocodeLocationBase(job.workLocation, job.workLocation1, 'idealist');
+
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'idealist' },
+          update: {
+            $set: { ...job, source: 'idealist', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] Idealist: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// Columbia University Jobs (PageUp HTML scraping)
+// ---------------------------------------------------------------------------
+
+const COLUMBIA_SITEMAP_URL = 'https://opportunities.columbia.edu/sitemap.xml';
+const COLUMBIA_SEARCH_URL = 'https://opportunities.columbia.edu/jobs/search';
+const COLUMBIA_CRAWL_DELAY = 5500; // robots.txt specifies 5s crawl delay
+
+const refreshColumbiaJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Columbia jobs...');
+
+  // Use sitemap to get all job URLs reliably (avoids pagination rate-limiting)
+  let allJobs = [];
+
+  try {
+    const { data: sitemapXml } = await axios.get(COLUMBIA_SITEMAP_URL, { timeout: 15000 });
+    const $s = cheerio.load(sitemapXml, { xmlMode: true });
+
+    $s('url').each((_, el) => {
+      const loc = $s(el).find('loc').text().trim();
+      const match = loc.match(/\/jobs\/(.+?)$/);
+      if (!match) return;
+      const slug = match[1].replace(/\/$/, '');
+      // Skip search/filter pages
+      if (slug === 'search' || slug === '' || slug.includes('?')) return;
+
+      // Extract title from slug
+      const title = slug
+        .replace(/-united-states.*$/, '')
+        .replace(/-new-york.*$/, '')
+        .replace(/-[a-f0-9]{8}-[a-f0-9]{4}.*$/, '') // remove UUIDs
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      allJobs.push({ slug, title, url: loc });
+    });
+  } catch (err) {
+    console.warn('[refresh] Columbia sitemap fetch failed, falling back to search pages:', err.message);
+
+    // Fallback: paginate search with cookie jar
+    let page = 1;
+    let hasMore = true;
+    let cookies = '';
+
+    while (hasMore) {
+      const headers = cookies ? { Cookie: cookies } : {};
+      const { data, headers: resHeaders } = await axios.get(COLUMBIA_SEARCH_URL, {
+        params: { page },
+        headers,
+        timeout: 15000,
+      });
+
+      // Collect cookies
+      const setCookies = resHeaders['set-cookie'];
+      if (setCookies) {
+        cookies = setCookies.map((c) => c.split(';')[0]).join('; ');
+      }
+
+      const $ = cheerio.load(data);
+      const jobsOnPage = [];
+      $('a[href*="/jobs/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        if (href.includes('/jobs/search') || href.endsWith('/jobs/') || href.endsWith('/jobs')) return;
+        const t = $(el).text().trim();
+        if (!t || t.length < 3) return;
+        const slugMatch = href.match(/\/jobs\/(.+?)(?:\?|#|$)/);
+        if (!slugMatch) return;
+        const s = slugMatch[1].replace(/\/$/, '');
+        if (!s || jobsOnPage.find((j) => j.slug === s)) return;
+        const u = href.startsWith('http') ? href : `https://opportunities.columbia.edu${href}`;
+        jobsOnPage.push({ slug: s, title: t, url: u });
+      });
+
+      allJobs.push(...jobsOnPage);
+      const nextLink = $('a[rel="next"]').length > 0;
+      hasMore = nextLink && jobsOnPage.length > 0;
+      page++;
+      if (page > 30) break;
+      if (hasMore) await new Promise((r) => setTimeout(r, COLUMBIA_CRAWL_DELAY));
+      if (page % 5 === 0) console.log(`[refresh] Columbia pages: ${page - 1}, jobs: ${allJobs.length}`);
+    }
+  }
+
+  console.log(`[refresh] Fetched ${allJobs.length} Columbia jobs`);
+  if (allJobs.length === 0) return { upserted: 0, modified: 0 };
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
+    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const job = {
+        jobId: raw.slug,
+        businessTitle: raw.title,
+        agency: 'Columbia University',
+        workLocation: raw.location || 'New York',
+        workLocation1: null,
+        divisionWorkUnit: raw.department || null,
+        jobCategory: raw.category || null,
+        salaryRangeFrom: null,
+        salaryRangeTo: null,
+        salaryFrequency: null,
+        fullTimePartTimeIndicator: raw.employmentType || null,
+        postDate: null,
+        externalUrl: raw.url,
+        level: raw.grade ? `Grade ${raw.grade}` : null,
+      };
+
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'columbia');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'columbia' },
+          update: {
+            $set: { ...job, source: 'columbia', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] Columbia: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
@@ -828,6 +1157,9 @@ const cleanupStaleJobs = async (timestamp, counts) => {
   if (counts.nyu > 10) sourceFilter.push('nyu');
   if (counts.fordham > 5) sourceFilter.push('fordham');
   if (counts.pa > 3) sourceFilter.push('pa');
+  if (counts.mountsinai > 50) sourceFilter.push('mountsinai');
+  if (counts.idealist > 50) sourceFilter.push('idealist');
+  if (counts.columbia > 20) sourceFilter.push('columbia');
 
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
@@ -875,6 +1207,9 @@ const refreshAllJobs = async () => {
   const nyu = await refreshNyuJobs(timestamp);
   const fordham = await refreshFordhamJobs(timestamp);
   const pa = await refreshPortAuthorityJobs(timestamp);
+  const mountsinai = await refreshMountSinaiJobs(timestamp);
+  const idealist = await refreshIdealistJobs(timestamp);
+  const columbia = await refreshColumbiaJobs(timestamp);
 
   const counts = {
     nyc: nyc.upserted + nyc.modified,
@@ -884,13 +1219,16 @@ const refreshAllJobs = async () => {
     nyu: nyu.upserted + nyu.modified,
     fordham: fordham.upserted + fordham.modified,
     pa: pa.upserted + pa.modified,
+    mountsinai: mountsinai.upserted + mountsinai.modified,
+    idealist: idealist.upserted + idealist.modified,
+    columbia: columbia.upserted + columbia.modified,
   };
   const staleCount = await cleanupStaleJobs(timestamp, counts);
 
   const totalJobs = await Job.estimatedDocumentCount();
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { nyc, federal, nys, cuny, nyu, fordham, pa, staleCount, totalJobs };
+  return { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, staleCount, totalJobs };
 };
 
 // Run standalone

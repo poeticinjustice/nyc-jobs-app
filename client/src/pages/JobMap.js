@@ -19,6 +19,9 @@ const SOURCE_TABS = [
   { value: 'nyu', label: 'NYU' },
   { value: 'fordham', label: 'Fordham' },
   { value: 'pa', label: 'Port Authority' },
+  { value: 'mountsinai', label: 'Mt. Sinai' },
+  { value: 'idealist', label: 'Non-Profit' },
+  { value: 'columbia', label: 'Columbia' },
 ];
 
 // Cluster layer — sized circles by point count
