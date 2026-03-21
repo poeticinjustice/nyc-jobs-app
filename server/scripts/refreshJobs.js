@@ -1230,48 +1230,97 @@ const refreshColumbiaJobs = async (timestamp) => {
 // NewYork-Presbyterian (Workday JSON API)
 // ---------------------------------------------------------------------------
 
-const NYP_API_URL = 'https://nyp.wd1.myworkdayjobs.com/wday/cxs/nyp/nypcareers/jobs';
-const NYP_PAGE_SIZE = 20; // Workday max
+// Shared Workday scraper — works for NYP, New School, and any future Workday employers
+const WORKDAY_PAGE_SIZE = 20;
+const WORKDAY_DETAIL_CONCURRENCY = 5;
+const WORKDAY_DETAIL_DELAY = 200;
 
-const refreshNypJobs = async (timestamp) => {
-  console.log('[refresh] Fetching NYP jobs...');
+const fetchWorkdayDetail = async (baseUrl, externalPath) => {
+  try {
+    const { data } = await axios.get(`${baseUrl}${externalPath}`, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 15000,
+    });
+    const info = data.jobPostingInfo || {};
+    return {
+      description: info.jobDescription || null,
+      timeType: info.timeType || null,
+      startDate: info.startDate || null,
+      endDate: info.endDate || null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const refreshWorkdayJobs = async (timestamp, config) => {
+  const { name, apiUrl, detailBaseUrl, source, agency } = config;
+  console.log(`[refresh] Fetching ${name} jobs...`);
 
   let allJobs = [];
   let offset = 0;
   let total = 0;
 
   try {
-    // First request to get total
-    const { data: first } = await axios.post(NYP_API_URL, {
-      appliedFacets: {},
-      limit: NYP_PAGE_SIZE,
-      offset: 0,
-      searchText: '',
-    }, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
-
-    total = first.total || 0;
-    allJobs.push(...(first.jobPostings || []));
-    offset = NYP_PAGE_SIZE;
-    console.log(`[refresh] NYP: ${total} total jobs`);
-
-    while (offset < total) {
-      const { data } = await axios.post(NYP_API_URL, {
+    while (true) {
+      const { data } = await axios.post(apiUrl, {
         appliedFacets: {},
-        limit: NYP_PAGE_SIZE,
+        limit: WORKDAY_PAGE_SIZE,
         offset,
         searchText: '',
       }, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
 
+      if (offset === 0) {
+        total = data.total || 0;
+        console.log(`[refresh] ${name}: ${total} total jobs`);
+      }
+
       const postings = data.jobPostings || [];
       if (postings.length === 0) break;
       allJobs.push(...postings);
-      offset += NYP_PAGE_SIZE;
+      offset += WORKDAY_PAGE_SIZE;
+      if (offset >= total) break;
     }
   } catch (err) {
-    console.warn('[refresh] NYP fetch error (partial data may be used):', err.message);
+    console.warn(`[refresh] ${name} fetch error (partial data may be used):`, err.message);
   }
 
-  console.log(`[refresh] Fetched ${allJobs.length} NYP jobs`);
+  console.log(`[refresh] Fetched ${allJobs.length} ${name} jobs`);
+  if (allJobs.length === 0) return { upserted: 0, modified: 0 };
+
+  // Fetch detail pages for jobs missing descriptions
+  const existingJobs = await Job.find(
+    { source, jobId: { $in: allJobs.map((j) => j.bulletFields?.[0] || j.externalPath) } },
+    { jobId: 1, jobDescription: 1 }
+  ).lean();
+  const hasDesc = new Set(existingJobs.filter((j) => j.jobDescription).map((j) => j.jobId));
+
+  const needsDetail = allJobs.filter((j) => {
+    const reqId = j.bulletFields?.[0] || j.externalPath;
+    return !hasDesc.has(reqId) && j.externalPath;
+  });
+
+  console.log(`[refresh] ${name}: fetching ${needsDetail.length} detail pages (${allJobs.length - needsDetail.length} cached)`);
+
+  const detailMap = new Map();
+  for (let i = 0; i < needsDetail.length; i += WORKDAY_DETAIL_CONCURRENCY) {
+    const batch = needsDetail.slice(i, i + WORKDAY_DETAIL_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((j) => fetchWorkdayDetail(detailBaseUrl, j.externalPath))
+    );
+    for (let k = 0; k < results.length; k++) {
+      if (results[k].status === 'fulfilled' && results[k].value) {
+        const reqId = batch[k].bulletFields?.[0] || batch[k].externalPath;
+        detailMap.set(reqId, results[k].value);
+      }
+    }
+    if (i + WORKDAY_DETAIL_CONCURRENCY < needsDetail.length) {
+      await new Promise((r) => setTimeout(r, WORKDAY_DETAIL_DELAY));
+    }
+    if ((i + WORKDAY_DETAIL_CONCURRENCY) % 50 === 0) {
+      console.log(`[refresh] ${name} detail pages: ${i + WORKDAY_DETAIL_CONCURRENCY}/${needsDetail.length}`);
+    }
+  }
 
   let totalUpserted = 0;
   let totalModified = 0;
@@ -1279,30 +1328,37 @@ const refreshNypJobs = async (timestamp) => {
   for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
     const slice = allJobs.slice(i, i + UPSERT_BATCH);
     const ops = slice.map((raw) => {
-      // Extract job req ID from bulletFields
       const reqId = raw.bulletFields?.[0] || raw.externalPath?.match(/_([\w]+)$/)?.[1] || raw.externalPath;
+      const detail = detailMap.get(reqId);
+      const existing = existingJobs.find((j) => j.jobId === reqId);
+
+      // Parse salary from detail description
+      const desc = detail?.description || existing?.jobDescription || null;
+      const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc || '');
 
       const job = {
         jobId: reqId,
         businessTitle: raw.title || null,
-        agency: 'NewYork-Presbyterian',
+        agency,
         workLocation: raw.locationsText || 'New York',
         workLocation1: raw.locationsText || null,
+        jobDescription: desc,
         jobCategory: null,
-        salaryRangeFrom: null,
-        salaryRangeTo: null,
-        salaryFrequency: null,
-        fullTimePartTimeIndicator: null,
-        postDate: raw.postedOn && !raw.postedOn.startsWith('Posted') ? new Date(raw.postedOn) : null,
-        externalUrl: raw.externalPath ? `https://nyp.wd1.myworkdayjobs.com/nypcareers${raw.externalPath}` : null,
+        salaryRangeFrom: salaryFrom,
+        salaryRangeTo: salaryTo,
+        salaryFrequency: salaryFrequency,
+        fullTimePartTimeIndicator: detail?.timeType || null,
+        postDate: raw.postedOn && !raw.postedOn.startsWith('Posted') ? new Date(raw.postedOn) : (detail?.startDate || null),
+        postUntil: detail?.endDate || null,
+        externalUrl: raw.externalPath ? `${detailBaseUrl}${raw.externalPath}` : null,
       };
 
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyp');
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, source);
       return {
         updateOne: {
-          filter: { jobId: job.jobId, source: 'nyp' },
+          filter: { jobId: job.jobId, source },
           update: {
-            $set: { ...job, source: 'nyp', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $set: { ...job, source, coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
             $setOnInsert: { savedBy: [] },
           },
           upsert: true,
@@ -1315,9 +1371,17 @@ const refreshNypJobs = async (timestamp) => {
     totalModified += result.modifiedCount;
   }
 
-  console.log(`[refresh] NYP: ${totalUpserted} inserted, ${totalModified} updated`);
+  console.log(`[refresh] ${name}: ${totalUpserted} inserted, ${totalModified} updated`);
   return { upserted: totalUpserted, modified: totalModified };
 };
+
+const refreshNypJobs = (timestamp) => refreshWorkdayJobs(timestamp, {
+  name: 'NYP',
+  apiUrl: 'https://nyp.wd1.myworkdayjobs.com/wday/cxs/nyp/nypcareers/jobs',
+  detailBaseUrl: 'https://nyp.wd1.myworkdayjobs.com/wday/cxs/nyp/nypcareers',
+  source: 'nyp',
+  agency: 'NewYork-Presbyterian',
+});
 
 // ---------------------------------------------------------------------------
 // Northwell Health (Oracle HCM REST API)
@@ -1529,86 +1593,16 @@ const refreshNyuLangoneJobs = async (timestamp) => {
 };
 
 // ---------------------------------------------------------------------------
-// The New School (Workday JSON API)
+// The New School (Workday JSON API — uses shared refreshWorkdayJobs)
 // ---------------------------------------------------------------------------
 
-const NEWSCHOOL_API_URL = 'https://newschool.wd1.myworkdayjobs.com/wday/cxs/newschool/External/jobs';
-
-const refreshNewSchoolJobs = async (timestamp) => {
-  console.log('[refresh] Fetching New School jobs...');
-
-  let allJobs = [];
-  let offset = 0;
-  let total = 0;
-
-  try {
-    while (true) {
-      const { data } = await axios.post(NEWSCHOOL_API_URL, {
-        appliedFacets: {},
-        limit: 20,
-        offset,
-        searchText: '',
-      }, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
-
-      if (offset === 0) {
-        total = data.total || 0;
-        console.log(`[refresh] New School: ${total} total jobs`);
-      }
-
-      const postings = data.jobPostings || [];
-      if (postings.length === 0) break;
-      allJobs.push(...postings);
-      offset += 20;
-      if (offset >= total) break;
-    }
-  } catch (err) {
-    console.warn('[refresh] New School fetch error (partial data may be used):', err.message);
-  }
-
-  console.log(`[refresh] Fetched ${allJobs.length} New School jobs`);
-
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  const ops = allJobs.map((raw) => {
-    const reqId = raw.bulletFields?.[0] || raw.externalPath;
-    const job = {
-      jobId: reqId,
-      businessTitle: raw.title || null,
-      agency: 'The New School',
-      workLocation: raw.locationsText || 'New York',
-      workLocation1: raw.locationsText || null,
-      jobCategory: null,
-      salaryRangeFrom: null,
-      salaryRangeTo: null,
-      salaryFrequency: null,
-      fullTimePartTimeIndicator: null,
-      postDate: raw.postedOn && !raw.postedOn.startsWith('Posted') ? new Date(raw.postedOn) : null,
-      externalUrl: raw.externalPath ? `https://newschool.wd1.myworkdayjobs.com/External${raw.externalPath}` : null,
-    };
-
-    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'newschool');
-    return {
-      updateOne: {
-        filter: { jobId: job.jobId, source: 'newschool' },
-        update: {
-          $set: { ...job, source: 'newschool', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-          $setOnInsert: { savedBy: [] },
-        },
-        upsert: true,
-      },
-    };
-  });
-
-  if (ops.length > 0) {
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted = result.upsertedCount;
-    totalModified = result.modifiedCount;
-  }
-
-  console.log(`[refresh] New School: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
-};
+const refreshNewSchoolJobs = (timestamp) => refreshWorkdayJobs(timestamp, {
+  name: 'New School',
+  apiUrl: 'https://newschool.wd1.myworkdayjobs.com/wday/cxs/newschool/External/jobs',
+  detailBaseUrl: 'https://newschool.wd1.myworkdayjobs.com/wday/cxs/newschool/External',
+  source: 'newschool',
+  agency: 'The New School',
+});
 
 // ---------------------------------------------------------------------------
 // Amtrak (SuccessFactors HTML scraping)

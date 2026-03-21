@@ -10,6 +10,27 @@ const hasRichHtml = (str) => /<(?:p|ul|ol|li|h[1-6]|div|table|section|b|strong|e
 
 // Render plain text / <br>-only content (NYC Open Data style)
 const renderPlainText = (htmlString) => {
+  // If no <br> tags at all, try splitting on known heading patterns
+  const hasBr = /<br/i.test(htmlString);
+  const decoded = decode(htmlString.replace(/<[^>]+>/g, ''));
+
+  if (!hasBr) {
+    // Split on common section headings (e.g., "About Us", "Responsibilities:", "Qualifications")
+    const sections = decoded.split(/(?=(?:About |Position |Key |Primary |Essential |Minimum |Preferred |Required |Qualifications|Responsibilities|Requirements|Duties|Benefits|Compensation|How to Apply|Equal ))/i);
+    if (sections.length > 1) {
+      return sections.map((section, index) => {
+        if (!section.trim()) return null;
+        return (
+          <p key={index} className='mb-4 last:mb-0'>
+            {section.trim()}
+          </p>
+        );
+      }).filter(Boolean);
+    }
+    // No recognizable sections — just render as a single paragraph
+    return [<p key={0} className='mb-4'>{decoded}</p>];
+  }
+
   const paragraphs = htmlString.split(/<br\s*\/?><br\s*\/?>/);
 
   return paragraphs
