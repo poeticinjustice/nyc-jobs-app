@@ -305,7 +305,7 @@ const transformUsaJob = (usaItem) => {
     additionalInformation: details.Education || null,
     toApply: desc.ApplyURI?.[0] || null,
     externalUrl: desc.ApplyURI?.[0] || null,
-    hoursShift: null,
+    hoursShift: details.WorkSchedule || null,
     workLocation1: null,
     residencyRequirement: null,
     postDate: desc.PublicationStartDate || null,
@@ -322,11 +322,13 @@ const transformNysJob = (nys) => {
   let salaryRangeTo = null;
   let salaryFrequency = null;
   const salaryStr = nys['Salary Range'] || '';
-  const rangeMatch = salaryStr.match(/\$?([\d,]+).*?\$?([\d,]+)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
-  const singleMatch = !rangeMatch && salaryStr.match(/\$?([\d,]+)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
+  const rangeMatch = salaryStr.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(?:to|-)\s*\$\s*([\d,]+(?:\.\d+)?)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
+  const singleMatch = !rangeMatch && salaryStr.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
   if (rangeMatch) {
     salaryRangeFrom = parseFloat(rangeMatch[1].replace(/,/g, ''));
     salaryRangeTo = parseFloat(rangeMatch[2].replace(/,/g, ''));
+    // If from === to, it's a single rate (e.g., "$22.59 to $22.59 Hourly")
+    if (salaryRangeFrom === salaryRangeTo) salaryRangeTo = null;
     salaryFrequency = rangeMatch[3] || 'Annual';
   } else if (singleMatch) {
     salaryRangeFrom = parseFloat(singleMatch[1].replace(/,/g, ''));

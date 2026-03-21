@@ -24,15 +24,15 @@ const MAX_NYC_API_OFFSET = 50000;
 const MAX_RETRIES = 3;
 const BASE_DELAY = 1000;
 
-// Shared salary parsing regex
-const SALARY_REGEX = /\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)/;
+// Shared salary parsing — handles "$X to $Y", "USD $X to USD $Y", "$X - $Y"
+const SALARY_REGEX = /(?:USD\s*)?\$\s*([\d,]+(?:\.\d+)?)(?:\s*[-–]\s*|\s+to\s+)(?:USD\s*)?\$\s*([\d,]+(?:\.\d+)?)/i;
 const parseSalaryRange = (text) => {
   if (!text) return { from: null, to: null, frequency: null };
   const match = text.match(SALARY_REGEX);
   if (!match) return { from: null, to: null, frequency: null };
   const from = parseFloat(match[1].replace(/,/g, ''));
   const to = parseFloat(match[2].replace(/,/g, ''));
-  const frequency = /hour/i.test(text) ? 'Hourly' : /year|annual/i.test(text) ? 'Annual' : null;
+  const frequency = /hour/i.test(text) ? 'Hourly' : /year|annual|per year/i.test(text) ? 'Annual' : null;
   return { from, to, frequency };
 };
 
@@ -619,22 +619,31 @@ const scrapeFordhamDetail = async (url) => {
   const $ = cheerio.load(data);
   const fields = {};
 
-  // PeopleAdmin detail pages use label/value pairs
-  const bodyText = $.text();
+  // PeopleAdmin detail pages use label/value pairs in the page text
+  // Extract structured fields from the page
+  const extractField = (label) => {
+    const regex = new RegExp(label + '\\s*[:\\n]\\s*([^\\n]+)', 'i');
+    const match = $.text().match(regex);
+    return match ? match[1].trim() : null;
+  };
 
-  // Campus location
-  const campusMatch = bodyText.match(/Campus\s*(?:Location)?\s*[:\n]\s*([^\n]+)/i);
-  if (campusMatch) fields.campus = campusMatch[1].trim();
+  fields.campus = extractField('Campus') || extractField('Location');
+  fields.positionType = extractField('Position Type') || extractField('Type');
+  fields.hours = extractField('Hours') || extractField('Work Schedule');
 
   // Salary
-  const minSalaryMatch = bodyText.match(/Minimum\s*Starting\s*Salary\s*[:\n]?\s*\$?([\d,]+(?:\.\d+)?)/i);
-  const maxSalaryMatch = bodyText.match(/Maximum\s*Starting\s*Salary\s*[:\n]?\s*\$?([\d,]+(?:\.\d+)?)/i);
+  const minSalaryMatch = $.text().match(/Minimum\s*Starting\s*Salary\s*[:\n]?\s*\$?([\d,]+(?:\.\d+)?)/i);
+  const maxSalaryMatch = $.text().match(/Maximum\s*Starting\s*Salary\s*[:\n]?\s*\$?([\d,]+(?:\.\d+)?)/i);
   if (minSalaryMatch) fields.salaryFrom = parseFloat(minSalaryMatch[1].replace(/,/g, ''));
   if (maxSalaryMatch) fields.salaryTo = parseFloat(maxSalaryMatch[1].replace(/,/g, ''));
 
-  // Position type
-  const typeMatch = bodyText.match(/Position\s*Type\s*[:\n]\s*([^\n]+)/i);
-  if (typeMatch) fields.positionType = typeMatch[1].trim();
+  // Try to get richer description from the detail page
+  const descSection = $('[id*="description"], [class*="description"], .posting-details').html();
+  if (descSection && descSection.length > 100) fields.richDescription = descSection;
+
+  // Qualifications
+  const qualSection = $('[id*="qualifications"], [id*="requirements"]').html();
+  if (qualSection) fields.qualifications = qualSection;
 
   return fields;
 };
@@ -696,12 +705,14 @@ const refreshFordhamJobs = async (timestamp) => {
       workLocation: raw.campus || 'New York',
       workLocation1: null,
       divisionWorkUnit: raw.department || null,
-      jobDescription: raw.description || null,
+      jobDescription: raw.richDescription || raw.description || null,
+      minimumQualRequirements: raw.qualifications || null,
       jobCategory: raw.positionType || null,
       salaryRangeFrom: raw.salaryFrom || null,
       salaryRangeTo: raw.salaryTo || null,
       salaryFrequency: raw.salaryFrom ? 'Annual' : null,
       fullTimePartTimeIndicator: raw.positionType || null,
+      hoursShift: raw.hours || null,
       postDate: raw.postDate || null,
       externalUrl: raw.url,
     };
