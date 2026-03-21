@@ -1143,6 +1143,318 @@ const refreshColumbiaJobs = async (timestamp) => {
 };
 
 // ---------------------------------------------------------------------------
+// NewYork-Presbyterian (Workday JSON API)
+// ---------------------------------------------------------------------------
+
+const NYP_API_URL = 'https://nyp.wd1.myworkdayjobs.com/wday/cxs/nyp/nypcareers/jobs';
+const NYP_PAGE_SIZE = 20; // Workday max
+
+const refreshNypJobs = async (timestamp) => {
+  console.log('[refresh] Fetching NYP jobs...');
+
+  let allJobs = [];
+  let offset = 0;
+  let total = 0;
+
+  try {
+    // First request to get total
+    const { data: first } = await axios.post(NYP_API_URL, {
+      appliedFacets: {},
+      limit: NYP_PAGE_SIZE,
+      offset: 0,
+      searchText: '',
+    }, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
+
+    total = first.total || 0;
+    allJobs.push(...(first.jobPostings || []));
+    offset = NYP_PAGE_SIZE;
+    console.log(`[refresh] NYP: ${total} total jobs`);
+
+    while (offset < total) {
+      const { data } = await axios.post(NYP_API_URL, {
+        appliedFacets: {},
+        limit: NYP_PAGE_SIZE,
+        offset,
+        searchText: '',
+      }, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
+
+      const postings = data.jobPostings || [];
+      if (postings.length === 0) break;
+      allJobs.push(...postings);
+      offset += NYP_PAGE_SIZE;
+    }
+  } catch (err) {
+    console.warn('[refresh] NYP fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Fetched ${allJobs.length} NYP jobs`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
+    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      // Extract job req ID from bulletFields
+      const reqId = raw.bulletFields?.[0] || raw.externalPath?.match(/_([\w]+)$/)?.[1] || raw.externalPath;
+
+      const job = {
+        jobId: reqId,
+        businessTitle: raw.title || null,
+        agency: 'NewYork-Presbyterian',
+        workLocation: raw.locationsText || 'New York',
+        workLocation1: raw.locationsText || null,
+        jobCategory: null,
+        salaryRangeFrom: null,
+        salaryRangeTo: null,
+        salaryFrequency: null,
+        fullTimePartTimeIndicator: null,
+        postDate: raw.postedOn && !raw.postedOn.startsWith('Posted') ? new Date(raw.postedOn) : null,
+        externalUrl: raw.externalPath ? `https://nyp.wd1.myworkdayjobs.com/nypcareers${raw.externalPath}` : null,
+      };
+
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyp');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'nyp' },
+          update: {
+            $set: { ...job, source: 'nyp', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] NYP: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// Northwell Health (Oracle HCM REST API)
+// ---------------------------------------------------------------------------
+
+const NORTHWELL_API_URL = 'https://eppr.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions';
+const NORTHWELL_PAGE_SIZE = 25;
+
+const refreshNorthwellJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Northwell jobs...');
+
+  let allJobs = [];
+  let offset = 0;
+  let totalJobs = 0;
+
+  try {
+    while (true) {
+      const { data } = await axios.get(NORTHWELL_API_URL, {
+        params: {
+          onlyData: true,
+          expand: 'requisitionList.secondaryLocations,flexFieldsFacet.values',
+          finder: `findReqs;siteNumber=CX_2,facetsList=LOCATIONS;WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS,limit=${NORTHWELL_PAGE_SIZE},offset=${offset}`,
+        },
+        timeout: 30000,
+      });
+
+      const items = data.items?.[0]?.requisitionList || [];
+      if (offset === 0) {
+        totalJobs = data.items?.[0]?.TotalJobsCount || 0;
+        console.log(`[refresh] Northwell: ${totalJobs} total jobs`);
+      }
+
+      if (items.length === 0) break;
+      allJobs.push(...items);
+      offset += NORTHWELL_PAGE_SIZE;
+      if (offset >= totalJobs || offset > 5000) break;
+    }
+  } catch (err) {
+    console.warn('[refresh] Northwell fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  // Filter to NYC metro area counties
+  const metroCounties = new Set([
+    'new york', 'kings', 'queens', 'bronx', 'richmond',
+    'nassau', 'suffolk', 'westchester', 'rockland', 'putnam', 'orange', 'dutchess',
+  ]);
+  const metroJobs = allJobs.filter((j) => {
+    const loc = (j.PrimaryLocation || '').toLowerCase();
+    // Location format: "City, County, United States"
+    for (const county of metroCounties) {
+      if (loc.includes(county)) return true;
+    }
+    return false;
+  });
+  console.log(`[refresh] Northwell metro area jobs: ${metroJobs.length}/${allJobs.length}`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
+    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const job = {
+        jobId: String(raw.Id),
+        businessTitle: raw.Title || null,
+        agency: 'Northwell Health',
+        workLocation: raw.PrimaryLocation || null,
+        workLocation1: null,
+        jobDescription: raw.ShortDescriptionStr || null,
+        jobCategory: null,
+        salaryRangeFrom: null,
+        salaryRangeTo: null,
+        salaryFrequency: null,
+        fullTimePartTimeIndicator: raw.WorkplaceTypeCode || null,
+        postDate: raw.PostedDate || null,
+        postUntil: raw.PostingEndDate || null,
+        externalUrl: `https://eppr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/job/${raw.Id}`,
+      };
+
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'northwell');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'northwell' },
+          update: {
+            $set: { ...job, source: 'northwell', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] Northwell: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// NYU Langone Health (SilkRoad RSS feed)
+// ---------------------------------------------------------------------------
+
+const NYULANGONE_RSS_URL = 'https://jobs.silkroad.com/NYULangone/NYULHCareers/Rss';
+
+const refreshNyuLangoneJobs = async (timestamp) => {
+  console.log('[refresh] Fetching NYU Langone jobs...');
+
+  let rssData;
+  try {
+    const { data } = await axios.get(NYULANGONE_RSS_URL, {
+      timeout: 60000,
+      maxContentLength: 20 * 1024 * 1024, // 20MB
+      maxBodyLength: 20 * 1024 * 1024,
+    });
+    rssData = data;
+  } catch (err) {
+    console.warn('[refresh] NYU Langone RSS fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  const $ = cheerio.load(rssData, { xmlMode: true });
+  const allJobs = [];
+
+  $('item').each((_, el) => {
+    const title = $(el).find('title').text().trim();
+    const link = $(el).find('link').text().trim();
+    const description = $(el).find('description').text().trim();
+    const pubDate = $(el).find('pubDate').text().trim();
+
+    // Extract job ID from link
+    const idMatch = link.match(/\/jobs\/(\d+)/);
+    const jobId = idMatch ? idMatch[1] : null;
+    if (!jobId) return;
+
+    // Parse location from title or description
+    let location = 'New York';
+    const locMatch = description.match(/Location:\s*([^<\n]+)/i) || description.match(/([\w\s]+),\s*NY/);
+    if (locMatch) location = locMatch[1].trim();
+
+    // Parse salary from description
+    let salaryFrom = null, salaryTo = null, salaryFrequency = null;
+    const salaryMatch = description.match(/\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)\s*(Annual|Hour|Per Year)?/i);
+    if (salaryMatch) {
+      salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
+      salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
+      salaryFrequency = (salaryMatch[3] || '').toLowerCase().includes('hour') ? 'Hourly' : 'Annual';
+    }
+
+    allJobs.push({
+      jobId,
+      title,
+      link,
+      description,
+      pubDate,
+      location,
+      salaryFrom,
+      salaryTo,
+      salaryFrequency,
+    });
+  });
+
+  // Filter to NY/NJ metro area
+  const metroJobs = allJobs.filter((j) => {
+    const loc = (j.location || '').toLowerCase();
+    if (loc.includes('florida') || loc.includes(' fl') || loc.includes('nevada') || loc.includes(' nv')) return false;
+    return true;
+  });
+
+  console.log(`[refresh] NYU Langone: ${metroJobs.length} metro jobs / ${allJobs.length} total from RSS`);
+  if (metroJobs.length === 0) return { upserted: 0, modified: 0 };
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
+    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const job = {
+        jobId: raw.jobId,
+        businessTitle: raw.title || null,
+        agency: 'NYU Langone Health',
+        workLocation: raw.location || 'New York',
+        workLocation1: null,
+        jobDescription: raw.description || null,
+        jobCategory: null,
+        salaryRangeFrom: raw.salaryFrom,
+        salaryRangeTo: raw.salaryTo,
+        salaryFrequency: raw.salaryFrequency,
+        fullTimePartTimeIndicator: null,
+        postDate: raw.pubDate ? new Date(raw.pubDate) : null,
+        externalUrl: raw.link || null,
+      };
+
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyulangone');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'nyulangone' },
+          update: {
+            $set: { ...job, source: 'nyulangone', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] NYU Langone: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
@@ -1160,6 +1472,9 @@ const cleanupStaleJobs = async (timestamp, counts) => {
   if (counts.mountsinai > 50) sourceFilter.push('mountsinai');
   if (counts.idealist > 50) sourceFilter.push('idealist');
   if (counts.columbia > 20) sourceFilter.push('columbia');
+  if (counts.nyp > 20) sourceFilter.push('nyp');
+  if (counts.northwell > 50) sourceFilter.push('northwell');
+  if (counts.nyulangone > 50) sourceFilter.push('nyulangone');
 
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
@@ -1210,6 +1525,9 @@ const refreshAllJobs = async () => {
   const mountsinai = await refreshMountSinaiJobs(timestamp);
   const idealist = await refreshIdealistJobs(timestamp);
   const columbia = await refreshColumbiaJobs(timestamp);
+  const nyp = await refreshNypJobs(timestamp);
+  const northwell = await refreshNorthwellJobs(timestamp);
+  const nyulangone = await refreshNyuLangoneJobs(timestamp);
 
   const counts = {
     nyc: nyc.upserted + nyc.modified,
@@ -1222,13 +1540,16 @@ const refreshAllJobs = async () => {
     mountsinai: mountsinai.upserted + mountsinai.modified,
     idealist: idealist.upserted + idealist.modified,
     columbia: columbia.upserted + columbia.modified,
+    nyp: nyp.upserted + nyp.modified,
+    northwell: northwell.upserted + northwell.modified,
+    nyulangone: nyulangone.upserted + nyulangone.modified,
   };
   const staleCount = await cleanupStaleJobs(timestamp, counts);
 
   const totalJobs = await Job.estimatedDocumentCount();
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, staleCount, totalJobs };
+  return { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, nyp, northwell, nyulangone, staleCount, totalJobs };
 };
 
 // Run standalone

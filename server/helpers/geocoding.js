@@ -213,7 +213,7 @@ const geocodeLocationBase = (workLocation, workLocation1, source) => {
   }
 
   // For NYC-area sources, default to NYC center rather than dropping them
-  if (['nyc', 'cuny', 'nyu', 'fordham', 'pa', 'mountsinai', 'idealist', 'columbia'].includes(source)) {
+  if (['nyc', 'cuny', 'nyu', 'fordham', 'pa', 'mountsinai', 'idealist', 'columbia', 'nyp', 'northwell', 'nyulangone'].includes(source)) {
     return { ...NYC_DEFAULT };
   }
 
