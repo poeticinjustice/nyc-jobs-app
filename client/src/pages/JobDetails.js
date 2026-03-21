@@ -307,15 +307,13 @@ const JobDetails = () => {
             <h2 className='text-xl font-semibold text-gray-900 mb-4'>
               Job Description
             </h2>
-            <div className='prose max-w-none'>
-              {currentJob.jobDescription ? (
-                <div className='text-gray-700'>
-                  {renderHtmlContent(currentJob.jobDescription)}
-                </div>
-              ) : (
-                <p className='text-gray-500'>No description available.</p>
-              )}
-            </div>
+            {currentJob.jobDescription ? (
+              <div className='text-gray-700'>
+                {renderHtmlContent(currentJob.jobDescription)}
+              </div>
+            ) : (
+              <p className='text-gray-500'>No description available.</p>
+            )}
           </div>
 
           {/* Minimum Qualifications */}
@@ -324,10 +322,8 @@ const JobDetails = () => {
               <h2 className='text-xl font-semibold text-gray-900 mb-4'>
                 Minimum Qualifications
               </h2>
-              <div className='prose max-w-none'>
-                <div className='text-gray-700'>
-                  {renderHtmlContent(currentJob.minimumQualRequirements)}
-                </div>
+              <div className='text-gray-700'>
+                {renderHtmlContent(currentJob.minimumQualRequirements)}
               </div>
             </div>
           )}
@@ -338,10 +334,8 @@ const JobDetails = () => {
               <h2 className='text-xl font-semibold text-gray-900 mb-4'>
                 Preferred Skills
               </h2>
-              <div className='prose max-w-none'>
-                <div className='text-gray-700'>
-                  {renderHtmlContent(currentJob.preferredSkills)}
-                </div>
+              <div className='text-gray-700'>
+                {renderHtmlContent(currentJob.preferredSkills)}
               </div>
             </div>
           )}
@@ -352,10 +346,8 @@ const JobDetails = () => {
               <h2 className='text-xl font-semibold text-gray-900 mb-4'>
                 Additional Information
               </h2>
-              <div className='prose max-w-none'>
-                <div className='text-gray-700'>
-                  {renderHtmlContent(currentJob.additionalInformation)}
-                </div>
+              <div className='text-gray-700'>
+                {renderHtmlContent(currentJob.additionalInformation)}
               </div>
             </div>
           )}
