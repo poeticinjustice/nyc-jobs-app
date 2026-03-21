@@ -220,6 +220,13 @@ const NYS_DETAIL_URL = 'https://statejobs.ny.gov/public/vacancyDetailsView.cfm';
 const NYS_CONCURRENCY = 10; // parallel detail page fetches
 const NYS_DETAIL_DELAY = 200; // ms between batches to be polite
 
+// Only keep NYS jobs in the NYC metro area (5 boroughs + surrounding counties)
+const NYC_METRO_COUNTIES = new Set([
+  'new york', 'kings', 'queens', 'bronx', 'richmond',       // 5 boroughs
+  'nassau', 'suffolk', 'westchester', 'rockland',            // inner suburbs
+  'putnam', 'orange', 'dutchess',                            // outer suburbs
+]);
+
 const scrapeNysTable = async () => {
   const res = await axios.get(NYS_TABLE_URL, { timeout: 30000 });
   const $ = cheerio.load(res.data);
@@ -281,11 +288,18 @@ const refreshNysJobs = async (timestamp) => {
 
   console.log(`[refresh] Scraped ${allJobs.length} NYS job details`);
 
+  // Filter to NYC metro area only
+  const metroJobs = allJobs.filter((raw) => {
+    const county = (raw['County'] || '').toLowerCase().trim();
+    return NYC_METRO_COUNTIES.has(county);
+  });
+  console.log(`[refresh] NYS metro area jobs: ${metroJobs.length}/${allJobs.length}`);
+
   let totalUpserted = 0;
   let totalModified = 0;
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
+    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
     const ops = slice.map((raw) => {
       const job = transformNysJob(raw);
       const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nys');
@@ -316,6 +330,490 @@ const refreshNysJobs = async (timestamp) => {
 };
 
 // ---------------------------------------------------------------------------
+// CUNY Jobs (DirectEmployers / Solr API)
+// ---------------------------------------------------------------------------
+
+const CUNY_SEARCH_URL = 'https://prod-search-api.jobsyn.org/api/v1/solr/search';
+const CUNY_PAGE_SIZE = 10; // API enforces max 10
+
+const refreshCunyJobs = async (timestamp) => {
+  console.log('[refresh] Fetching CUNY jobs...');
+
+  let allJobs = [];
+  let page = 1;
+  let totalPages = 1;
+
+  try {
+    while (page <= totalPages) {
+      const { data } = await axios.get(CUNY_SEARCH_URL, {
+        params: { q: '', 'job-folder': 'cuny-jobs', source: 'solr', page, num_items: CUNY_PAGE_SIZE, sort: 'date' },
+        headers: { Accept: 'application/json', 'X-Origin': 'cuny.jobs' },
+        timeout: 15000,
+      });
+
+      if (page === 1) {
+        totalPages = data.pagination?.total_pages || 1;
+        console.log(`[refresh] CUNY: ${data.pagination?.total || 0} total jobs, ${totalPages} pages`);
+      }
+
+      if (data.jobs) allJobs.push(...data.jobs);
+      page++;
+    }
+  } catch (err) {
+    console.warn('[refresh] CUNY fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Fetched ${allJobs.length} CUNY jobs`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
+    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      // Parse salary from description text
+      let salaryFrom = null, salaryTo = null, salaryFrequency = null;
+      const desc = raw.description || '';
+      const salaryMatch = desc.match(/\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)/);
+      if (salaryMatch) {
+        salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
+        salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
+        salaryFrequency = 'Annual';
+      }
+
+      const job = {
+        jobId: raw.guid || raw.reqid,
+        businessTitle: raw.title_exact || raw.title,
+        agency: raw.location_name || 'CUNY',
+        workLocation: raw.city_exact || null,
+        workLocation1: raw.location_exact || null,
+        jobDescription: raw.description || null,
+        jobCategory: null,
+        salaryRangeFrom: salaryFrom,
+        salaryRangeTo: salaryTo,
+        salaryFrequency,
+        fullTimePartTimeIndicator: raw.job_type || null,
+        postDate: raw.date_new || raw.date_added || null,
+        externalUrl: `https://cuny.jobs/jobs/${raw.guid || ''}`,
+      };
+
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'cuny');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'cuny' },
+          update: {
+            $set: { ...job, source: 'cuny', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] CUNY: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// NYU Jobs (iCIMS)
+// ---------------------------------------------------------------------------
+
+const NYU_SEARCH_URL = 'https://uscareers-nyu.icims.com/jobs/search';
+const NYU_DETAIL_URL = 'https://uscareers-nyu.icims.com/jobs';
+const NYU_CONCURRENCY = 5;
+const NYU_DETAIL_DELAY = 300;
+
+const scrapeNyuListingPage = async (page) => {
+  const { data } = await axios.get(NYU_SEARCH_URL, {
+    params: { pr: page, in_iframe: 1 },
+    timeout: 15000,
+  });
+  const $ = cheerio.load(data);
+  const jobs = [];
+
+  // iCIMS listing rows contain links to /jobs/{id}/title-slug/job
+  $('a[href*="/jobs/"]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const match = href.match(/\/jobs\/(\d+)\//);
+    if (match) {
+      const id = match[1];
+      if (!jobs.find((j) => j.id === id)) {
+        jobs.push({ id, title: $(el).text().trim(), href });
+      }
+    }
+  });
+
+  // Check if there's a next page
+  const hasMore = $('a[title="next"]').length > 0 || $('a:contains("Next")').length > 0;
+  return { jobs, hasMore };
+};
+
+const scrapeNyuDetail = async (jobId) => {
+  const { data } = await axios.get(`${NYU_DETAIL_URL}/${jobId}/job`, { timeout: 15000 });
+  const $ = cheerio.load(data);
+
+  // Extract JSON-LD
+  let jsonLd = {};
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const parsed = JSON.parse($(el).html());
+      if (parsed['@type'] === 'JobPosting') jsonLd = parsed;
+    } catch { /* ignore */ }
+  });
+
+  // Parse salary from page text
+  let salaryFrom = null, salaryTo = null;
+  const bodyText = $.text();
+  const salaryMatch = bodyText.match(/\$\s*([\d,]+(?:\.\d+)?)\s*to\s*\$\s*([\d,]+(?:\.\d+)?)/i);
+  if (salaryMatch) {
+    salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
+    salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
+  }
+
+  return { jsonLd, salaryFrom, salaryTo };
+};
+
+const refreshNyuJobs = async (timestamp) => {
+  console.log('[refresh] Fetching NYU jobs...');
+
+  // Phase 1: get all job IDs from listing pages
+  const allJobIds = [];
+  let page = 0;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      const result = await scrapeNyuListingPage(page);
+      allJobIds.push(...result.jobs);
+      hasMore = result.hasMore && result.jobs.length > 0;
+      page++;
+      if (page > 50) break; // safety limit
+    }
+  } catch (err) {
+    console.warn('[refresh] NYU listing fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Found ${allJobIds.length} NYU job IDs`);
+  if (allJobIds.length === 0) return { upserted: 0, modified: 0 };
+
+  // Phase 2: fetch detail pages in batches
+  const allJobs = [];
+  for (let i = 0; i < allJobIds.length; i += NYU_CONCURRENCY) {
+    const batch = allJobIds.slice(i, i + NYU_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((j) => scrapeNyuDetail(j.id))
+    );
+    for (let k = 0; k < results.length; k++) {
+      if (results[k].status === 'fulfilled') {
+        allJobs.push({ ...batch[k], ...results[k].value });
+      }
+    }
+    if (i + NYU_CONCURRENCY < allJobIds.length) {
+      await new Promise((r) => setTimeout(r, NYU_DETAIL_DELAY));
+    }
+    if ((i + NYU_CONCURRENCY) % 50 === 0 || i + NYU_CONCURRENCY >= allJobIds.length) {
+      console.log(`[refresh] NYU detail pages: ${Math.min(i + NYU_CONCURRENCY, allJobIds.length)}/${allJobIds.length}`);
+    }
+  }
+
+  console.log(`[refresh] Scraped ${allJobs.length} NYU job details`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
+    const slice = allJobs.slice(i, i + UPSERT_BATCH);
+    const ops = slice.map((raw) => {
+      const ld = raw.jsonLd || {};
+      const loc = ld.jobLocation?.[0]?.address || {};
+
+      const job = {
+        jobId: raw.id,
+        businessTitle: ld.title || raw.title,
+        agency: 'New York University',
+        workLocation: loc.addressLocality || null,
+        workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
+        jobDescription: ld.description || null,
+        jobCategory: ld.occupationalCategory || null,
+        salaryRangeFrom: raw.salaryFrom,
+        salaryRangeTo: raw.salaryTo,
+        salaryFrequency: raw.salaryFrom ? 'Annual' : null,
+        fullTimePartTimeIndicator: ld.employmentType || null,
+        postDate: ld.datePosted || null,
+        postUntil: ld.validThrough || null,
+        externalUrl: ld.url || `${NYU_DETAIL_URL}/${raw.id}/job`,
+      };
+
+      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyu');
+      return {
+        updateOne: {
+          filter: { jobId: job.jobId, source: 'nyu' },
+          update: {
+            $set: { ...job, source: 'nyu', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $setOnInsert: { savedBy: [] },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+
+  console.log(`[refresh] NYU: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// Fordham University Jobs (PeopleAdmin Atom feed + detail scraping)
+// ---------------------------------------------------------------------------
+
+const FORDHAM_FEED_URL = 'https://careers.fordham.edu/postings/all_jobs.atom';
+const FORDHAM_CONCURRENCY = 5;
+const FORDHAM_DETAIL_DELAY = 300;
+
+const scrapeFordhamDetail = async (url) => {
+  const { data } = await axios.get(url, { timeout: 15000 });
+  const $ = cheerio.load(data);
+  const fields = {};
+
+  // PeopleAdmin detail pages use label/value pairs
+  const bodyText = $.text();
+
+  // Campus location
+  const campusMatch = bodyText.match(/Campus\s*(?:Location)?\s*[:\n]\s*([^\n]+)/i);
+  if (campusMatch) fields.campus = campusMatch[1].trim();
+
+  // Salary
+  const minSalaryMatch = bodyText.match(/Minimum\s*Starting\s*Salary\s*[:\n]?\s*\$?([\d,]+(?:\.\d+)?)/i);
+  const maxSalaryMatch = bodyText.match(/Maximum\s*Starting\s*Salary\s*[:\n]?\s*\$?([\d,]+(?:\.\d+)?)/i);
+  if (minSalaryMatch) fields.salaryFrom = parseFloat(minSalaryMatch[1].replace(/,/g, ''));
+  if (maxSalaryMatch) fields.salaryTo = parseFloat(maxSalaryMatch[1].replace(/,/g, ''));
+
+  // Position type
+  const typeMatch = bodyText.match(/Position\s*Type\s*[:\n]\s*([^\n]+)/i);
+  if (typeMatch) fields.positionType = typeMatch[1].trim();
+
+  return fields;
+};
+
+const refreshFordhamJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Fordham jobs...');
+
+  let feedData;
+  try {
+    const { data } = await axios.get(FORDHAM_FEED_URL, { timeout: 15000 });
+    feedData = data;
+  } catch (err) {
+    console.warn('[refresh] Fordham feed fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  const $ = cheerio.load(feedData, { xmlMode: true });
+  const entries = [];
+  $('entry').each((_, el) => {
+    const id = $(el).find('id').text().trim();
+    const postingId = id.match(/postings\/(\d+)/)?.[1];
+    entries.push({
+      postingId,
+      title: $(el).find('title').text().trim(),
+      department: $(el).find('author name').text().trim(),
+      description: $(el).find('content').text().trim(),
+      postDate: $(el).find('published').text().trim(),
+      url: $(el).find('link[rel="alternate"]').attr('href') || id,
+    });
+  });
+
+  console.log(`[refresh] Found ${entries.length} Fordham jobs in feed`);
+  if (entries.length === 0) return { upserted: 0, modified: 0 };
+
+  // Fetch detail pages for salary and location
+  for (let i = 0; i < entries.length; i += FORDHAM_CONCURRENCY) {
+    const batch = entries.slice(i, i + FORDHAM_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((e) => scrapeFordhamDetail(e.url))
+    );
+    for (let k = 0; k < results.length; k++) {
+      if (results[k].status === 'fulfilled') {
+        Object.assign(entries[i + k], results[k].value);
+      }
+    }
+    if (i + FORDHAM_CONCURRENCY < entries.length) {
+      await new Promise((r) => setTimeout(r, FORDHAM_DETAIL_DELAY));
+    }
+  }
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  const ops = entries.map((raw) => {
+    const job = {
+      jobId: raw.postingId || raw.title,
+      businessTitle: raw.title,
+      agency: 'Fordham University',
+      workLocation: raw.campus || 'New York',
+      workLocation1: null,
+      divisionWorkUnit: raw.department || null,
+      jobDescription: raw.description || null,
+      jobCategory: raw.positionType || null,
+      salaryRangeFrom: raw.salaryFrom || null,
+      salaryRangeTo: raw.salaryTo || null,
+      salaryFrequency: raw.salaryFrom ? 'Annual' : null,
+      fullTimePartTimeIndicator: raw.positionType || null,
+      postDate: raw.postDate || null,
+      externalUrl: raw.url,
+    };
+
+    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'fordham');
+    return {
+      updateOne: {
+        filter: { jobId: job.jobId, source: 'fordham' },
+        update: {
+          $set: { ...job, source: 'fordham', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+          $setOnInsert: { savedBy: [] },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+  if (ops.length > 0) {
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted = result.upsertedCount;
+    totalModified = result.modifiedCount;
+  }
+
+  console.log(`[refresh] Fordham: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// Port Authority of NY/NJ Jobs (Jobvite)
+// ---------------------------------------------------------------------------
+
+const PA_LISTING_URL = 'https://jobs.jobvite.com/panynj/jobs';
+const PA_DETAIL_BASE = 'https://jobs.jobvite.com/panynj/job';
+const PA_CONCURRENCY = 5;
+const PA_DETAIL_DELAY = 300;
+
+const refreshPortAuthorityJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Port Authority jobs...');
+
+  let listingHtml;
+  try {
+    const { data } = await axios.get(PA_LISTING_URL, { timeout: 15000 });
+    listingHtml = data;
+  } catch (err) {
+    console.warn('[refresh] Port Authority listing fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  // Extract job IDs from listing page links
+  const $ = cheerio.load(listingHtml);
+  const jobIds = new Set();
+  $('a[href*="/panynj/job/"]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const match = href.match(/\/panynj\/job\/([a-zA-Z0-9]+)/);
+    if (match) jobIds.add(match[1]);
+  });
+
+  const ids = [...jobIds];
+  console.log(`[refresh] Found ${ids.length} Port Authority job IDs`);
+  if (ids.length === 0) return { upserted: 0, modified: 0 };
+
+  // Fetch detail pages for JSON-LD
+  const allJobs = [];
+  for (let i = 0; i < ids.length; i += PA_CONCURRENCY) {
+    const batch = ids.slice(i, i + PA_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (id) => {
+        const { data } = await axios.get(`${PA_DETAIL_BASE}/${id}`, { timeout: 15000 });
+        const $d = cheerio.load(data);
+        let jsonLd = {};
+        $d('script[type="application/ld+json"]').each((_, el) => {
+          try {
+            const parsed = JSON.parse($d(el).html());
+            if (parsed['@type'] === 'JobPosting') jsonLd = parsed;
+          } catch { /* ignore */ }
+        });
+        return { id, jsonLd };
+      })
+    );
+    for (const result of results) {
+      if (result.status === 'fulfilled') allJobs.push(result.value);
+    }
+    if (i + PA_CONCURRENCY < ids.length) {
+      await new Promise((r) => setTimeout(r, PA_DETAIL_DELAY));
+    }
+  }
+
+  console.log(`[refresh] Scraped ${allJobs.length} Port Authority job details`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  const ops = allJobs.map((raw) => {
+    const ld = raw.jsonLd || {};
+    const loc = ld.jobLocation?.[0]?.address || {};
+
+    // Parse salary from description HTML
+    let salaryFrom = null, salaryTo = null;
+    const desc = ld.description || '';
+    const salaryMatch = desc.match(/\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)/);
+    if (salaryMatch) {
+      salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
+      salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
+    }
+
+    const job = {
+      jobId: raw.id,
+      businessTitle: ld.title || null,
+      agency: 'Port Authority of NY & NJ',
+      workLocation: loc.addressLocality || 'New York',
+      workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
+      jobDescription: desc,
+      jobCategory: ld.industry || null,
+      salaryRangeFrom: salaryFrom,
+      salaryRangeTo: salaryTo,
+      salaryFrequency: salaryFrom ? 'Annual' : null,
+      fullTimePartTimeIndicator: ld.employmentType || null,
+      postDate: ld.datePosted || null,
+      externalUrl: `${PA_DETAIL_BASE}/${raw.id}`,
+    };
+
+    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'pa');
+    return {
+      updateOne: {
+        filter: { jobId: job.jobId, source: 'pa' },
+        update: {
+          $set: { ...job, source: 'pa', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+          $setOnInsert: { savedBy: [] },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+  if (ops.length > 0) {
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted = result.upsertedCount;
+    totalModified = result.modifiedCount;
+  }
+
+  console.log(`[refresh] Port Authority: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
@@ -326,13 +824,17 @@ const cleanupStaleJobs = async (timestamp, counts) => {
   if (counts.nyc > 100) sourceFilter.push('nyc');
   if (counts.federal > 10) sourceFilter.push('federal');
   if (counts.nys > 50) sourceFilter.push('nys');
+  if (counts.cuny > 10) sourceFilter.push('cuny');
+  if (counts.nyu > 10) sourceFilter.push('nyu');
+  if (counts.fordham > 5) sourceFilter.push('fordham');
+  if (counts.pa > 3) sourceFilter.push('pa');
 
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
     return 0;
   }
 
-  const validSources = ['nyc', 'federal', 'nys'];
+  const { JOB_SOURCES: validSources } = require('../../shared/constants');
   const result = await Job.deleteMany({
     $or: [
       // Stale jobs from sources we successfully refreshed
@@ -369,18 +871,26 @@ const refreshAllJobs = async () => {
   const nyc = await refreshNycJobs(timestamp);
   const federal = await refreshFederalJobs(timestamp);
   const nys = await refreshNysJobs(timestamp);
+  const cuny = await refreshCunyJobs(timestamp);
+  const nyu = await refreshNyuJobs(timestamp);
+  const fordham = await refreshFordhamJobs(timestamp);
+  const pa = await refreshPortAuthorityJobs(timestamp);
 
   const counts = {
     nyc: nyc.upserted + nyc.modified,
     federal: federal.upserted + federal.modified,
     nys: nys.upserted + nys.modified,
+    cuny: cuny.upserted + cuny.modified,
+    nyu: nyu.upserted + nyu.modified,
+    fordham: fordham.upserted + fordham.modified,
+    pa: pa.upserted + pa.modified,
   };
   const staleCount = await cleanupStaleJobs(timestamp, counts);
 
   const totalJobs = await Job.estimatedDocumentCount();
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { nyc, federal, nys, staleCount, totalJobs };
+  return { nyc, federal, nys, cuny, nyu, fordham, pa, staleCount, totalJobs };
 };
 
 // Run standalone

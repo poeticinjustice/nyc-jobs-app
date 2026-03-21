@@ -13,7 +13,12 @@ const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN;
 const SOURCE_TABS = [
   { value: 'all', label: 'All Jobs' },
   { value: 'nyc', label: 'NYC' },
+  { value: 'nys', label: 'State' },
   { value: 'federal', label: 'Federal' },
+  { value: 'cuny', label: 'CUNY' },
+  { value: 'nyu', label: 'NYU' },
+  { value: 'fordham', label: 'Fordham' },
+  { value: 'pa', label: 'Port Authority' },
 ];
 
 // Cluster layer — sized circles by point count

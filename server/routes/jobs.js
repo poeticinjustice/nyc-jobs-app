@@ -186,7 +186,7 @@ router.get(
       const jobs = await Job.find(filter)
         .select('jobId businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency source postDate jobCategory coordinates')
         .sort({ postDate: -1 })
-        .limit(2000)
+        .limit(5000)
         .lean();
 
       const features = jobs.map((job) => {

@@ -212,8 +212,8 @@ const geocodeLocationBase = (workLocation, workLocation1, source) => {
     return { ...NYS_DEFAULT };
   }
 
-  // For NYC-source jobs, default to NYC center rather than dropping them
-  if (source === 'nyc') {
+  // For NYC-area sources, default to NYC center rather than dropping them
+  if (['nyc', 'cuny', 'nyu', 'fordham', 'pa'].includes(source)) {
     return { ...NYC_DEFAULT };
   }
 
