@@ -7,7 +7,9 @@
  *   node server/scripts/scrapeWithBrowser.js mta      # scrape MTA only
  */
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 const mongoose = require('mongoose');
 const Job = require('../models/Job');
 const { geocodeLocationBase } = require('../helpers/geocoding');
@@ -29,11 +31,30 @@ const scrapeMtaJobs = async (browser, timestamp) => {
   );
 
   try {
-    // Use the correct Phenom search-results path
-    await page.goto('https://careers.mta.org/us/en/search-results', {
-      waitUntil: 'networkidle2',
-      timeout: 60000,
-    });
+    // Navigate with retry — Cloudflare may show "Just a moment..." challenge
+    let loaded = false;
+    for (let attempt = 0; attempt < 3 && !loaded; attempt++) {
+      if (attempt > 0) console.log(`[browser] MTA: Retry attempt ${attempt + 1}...`);
+
+      await page.goto('https://careers.mta.org/us/en/search-results', {
+        waitUntil: 'networkidle2',
+        timeout: 60000,
+      });
+
+      // Wait for Cloudflare challenge to resolve (if present)
+      const title = await page.title();
+      if (title.includes('moment') || title.includes('Cloudflare')) {
+        console.log(`[browser] MTA: Cloudflare challenge detected, waiting...`);
+        await new Promise((r) => setTimeout(r, 10000));
+        // Check again
+        const newTitle = await page.title();
+        if (newTitle.includes('moment')) {
+          console.log(`[browser] MTA: Still on challenge page after wait`);
+          continue;
+        }
+      }
+      loaded = true;
+    }
 
     // Wait for phApp to be populated
     await page.waitForFunction(
