@@ -820,7 +820,7 @@ const refreshPortAuthorityJobs = async (timestamp) => {
       agency: 'Port Authority of NY & NJ',
       workLocation: loc.addressLocality || 'New York',
       workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
-      jobDescription: desc,
+      jobDescription: ld.description || null,
       jobCategory: ld.industry || null,
       salaryRangeFrom: salaryFrom,
       salaryRangeTo: salaryTo,
