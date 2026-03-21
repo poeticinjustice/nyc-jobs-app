@@ -1455,6 +1455,200 @@ const refreshNyuLangoneJobs = async (timestamp) => {
 };
 
 // ---------------------------------------------------------------------------
+// The New School (Workday JSON API)
+// ---------------------------------------------------------------------------
+
+const NEWSCHOOL_API_URL = 'https://newschool.wd1.myworkdayjobs.com/wday/cxs/newschool/External/jobs';
+
+const refreshNewSchoolJobs = async (timestamp) => {
+  console.log('[refresh] Fetching New School jobs...');
+
+  let allJobs = [];
+  let offset = 0;
+  let total = 0;
+
+  try {
+    while (true) {
+      const { data } = await axios.post(NEWSCHOOL_API_URL, {
+        appliedFacets: {},
+        limit: 20,
+        offset,
+        searchText: '',
+      }, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
+
+      if (offset === 0) {
+        total = data.total || 0;
+        console.log(`[refresh] New School: ${total} total jobs`);
+      }
+
+      const postings = data.jobPostings || [];
+      if (postings.length === 0) break;
+      allJobs.push(...postings);
+      offset += 20;
+      if (offset >= total) break;
+    }
+  } catch (err) {
+    console.warn('[refresh] New School fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  console.log(`[refresh] Fetched ${allJobs.length} New School jobs`);
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  const ops = allJobs.map((raw) => {
+    const reqId = raw.bulletFields?.[0] || raw.externalPath;
+    const job = {
+      jobId: reqId,
+      businessTitle: raw.title || null,
+      agency: 'The New School',
+      workLocation: raw.locationsText || 'New York',
+      workLocation1: raw.locationsText || null,
+      jobCategory: null,
+      salaryRangeFrom: null,
+      salaryRangeTo: null,
+      salaryFrequency: null,
+      fullTimePartTimeIndicator: null,
+      postDate: raw.postedOn && !raw.postedOn.startsWith('Posted') ? new Date(raw.postedOn) : null,
+      externalUrl: raw.externalPath ? `https://newschool.wd1.myworkdayjobs.com/External${raw.externalPath}` : null,
+    };
+
+    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'newschool');
+    return {
+      updateOne: {
+        filter: { jobId: job.jobId, source: 'newschool' },
+        update: {
+          $set: { ...job, source: 'newschool', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+          $setOnInsert: { savedBy: [] },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+  if (ops.length > 0) {
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted = result.upsertedCount;
+    totalModified = result.modifiedCount;
+  }
+
+  console.log(`[refresh] New School: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
+// Amtrak (SuccessFactors HTML scraping)
+// ---------------------------------------------------------------------------
+
+const AMTRAK_SEARCH_URL = 'https://careers.amtrak.com/search/';
+
+const refreshAmtrakJobs = async (timestamp) => {
+  console.log('[refresh] Fetching Amtrak jobs...');
+
+  let allJobs = [];
+  let page = 1;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      const params = { q: '', optionsFacetsDD_state: 'New York' };
+      if (page > 1) params.startrow = (page - 1) * 25;
+
+      const { data } = await axios.get(AMTRAK_SEARCH_URL, {
+        params,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+        timeout: 15000,
+      });
+
+      const $ = cheerio.load(data);
+      const jobsOnPage = [];
+
+      $('a[href*="/job/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const title = $(el).text().trim();
+        if (!title || title.length < 5 || jobsOnPage.find((j) => j.href === href)) return;
+
+        // Extract location from URL pattern: /job/City-Title-State-Zip/id/
+        const locMatch = href.match(/\/job\/([^/]+)/);
+        let location = 'New York';
+        if (locMatch) {
+          const parts = locMatch[1].split('-');
+          // First part is usually the city
+          location = parts[0].replace(/%28/g, '(').replace(/%29/g, ')');
+        }
+
+        // Extract job ID from URL
+        const idMatch = href.match(/\/(\d+)\/?$/);
+        const jobId = idMatch ? idMatch[1] : href;
+
+        jobsOnPage.push({ jobId, title, href, location });
+      });
+
+      allJobs.push(...jobsOnPage);
+      hasMore = jobsOnPage.length >= 25;
+      page++;
+      if (page > 10) break; // safety
+    }
+  } catch (err) {
+    console.warn('[refresh] Amtrak fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
+
+  // Deduplicate
+  const seen = new Set();
+  const uniqueJobs = allJobs.filter((j) => {
+    if (seen.has(j.jobId)) return false;
+    seen.add(j.jobId);
+    return true;
+  });
+
+  console.log(`[refresh] Fetched ${uniqueJobs.length} Amtrak NY jobs`);
+  if (uniqueJobs.length === 0) return { upserted: 0, modified: 0 };
+
+  let totalUpserted = 0;
+  let totalModified = 0;
+
+  const ops = uniqueJobs.map((raw) => {
+    const job = {
+      jobId: raw.jobId,
+      businessTitle: raw.title,
+      agency: 'Amtrak',
+      workLocation: raw.location || 'New York',
+      workLocation1: null,
+      jobCategory: null,
+      salaryRangeFrom: null,
+      salaryRangeTo: null,
+      salaryFrequency: null,
+      fullTimePartTimeIndicator: null,
+      postDate: null,
+      externalUrl: raw.href ? `https://careers.amtrak.com${raw.href}` : null,
+    };
+
+    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'amtrak');
+    return {
+      updateOne: {
+        filter: { jobId: job.jobId, source: 'amtrak' },
+        update: {
+          $set: { ...job, source: 'amtrak', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+          $setOnInsert: { savedBy: [] },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+  if (ops.length > 0) {
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted = result.upsertedCount;
+    totalModified = result.modifiedCount;
+  }
+
+  console.log(`[refresh] Amtrak: ${totalUpserted} inserted, ${totalModified} updated`);
+  return { upserted: totalUpserted, modified: totalModified };
+};
+
+// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
@@ -1475,6 +1669,8 @@ const cleanupStaleJobs = async (timestamp, counts) => {
   if (counts.nyp > 20) sourceFilter.push('nyp');
   if (counts.northwell > 50) sourceFilter.push('northwell');
   if (counts.nyulangone > 50) sourceFilter.push('nyulangone');
+  if (counts.newschool > 5) sourceFilter.push('newschool');
+  if (counts.amtrak > 3) sourceFilter.push('amtrak');
 
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
@@ -1528,6 +1724,8 @@ const refreshAllJobs = async () => {
   const nyp = await refreshNypJobs(timestamp);
   const northwell = await refreshNorthwellJobs(timestamp);
   const nyulangone = await refreshNyuLangoneJobs(timestamp);
+  const newschool = await refreshNewSchoolJobs(timestamp);
+  const amtrak = await refreshAmtrakJobs(timestamp);
 
   const counts = {
     nyc: nyc.upserted + nyc.modified,
@@ -1543,13 +1741,15 @@ const refreshAllJobs = async () => {
     nyp: nyp.upserted + nyp.modified,
     northwell: northwell.upserted + northwell.modified,
     nyulangone: nyulangone.upserted + nyulangone.modified,
+    newschool: newschool.upserted + newschool.modified,
+    amtrak: amtrak.upserted + amtrak.modified,
   };
   const staleCount = await cleanupStaleJobs(timestamp, counts);
 
   const totalJobs = await Job.estimatedDocumentCount();
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, nyp, northwell, nyulangone, staleCount, totalJobs };
+  return { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, nyp, northwell, nyulangone, newschool, amtrak, staleCount, totalJobs };
 };
 
 // Run standalone
