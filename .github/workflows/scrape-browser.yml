@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       sources:
-        description: 'Sources to scrape (comma-separated, e.g. "un,mta" or leave empty for all)'
+        description: 'Sources to scrape (comma-separated, e.g. "mta" or leave empty for all)'
         required: false
         default: ''
 
