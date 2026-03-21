@@ -23,6 +23,51 @@ const BATCH_SIZE = 1000; // NYC API page size
 const MAX_NYC_API_OFFSET = 50000;
 const MAX_RETRIES = 3;
 const BASE_DELAY = 1000;
+
+// Shared salary parsing regex
+const SALARY_REGEX = /\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)/;
+const parseSalaryRange = (text) => {
+  if (!text) return { from: null, to: null, frequency: null };
+  const match = text.match(SALARY_REGEX);
+  if (!match) return { from: null, to: null, frequency: null };
+  const from = parseFloat(match[1].replace(/,/g, ''));
+  const to = parseFloat(match[2].replace(/,/g, ''));
+  const frequency = /hour/i.test(text) ? 'Hourly' : /year|annual/i.test(text) ? 'Annual' : null;
+  return { from, to, frequency };
+};
+
+// Shared upsert helper — builds bulkWrite ops for a batch of jobs
+const buildUpsertOps = (jobs, source, timestamp) =>
+  jobs.map((job) => {
+    const coords = (job._lat && job._lng)
+      ? { lat: job._lat, lng: job._lng }
+      : geocodeLocationBase(job.workLocation, job.workLocation1, source);
+    // Remove internal fields
+    const { _lat, _lng, ...jobData } = job;
+    return {
+      updateOne: {
+        filter: { jobId: jobData.jobId, source },
+        update: {
+          $set: { ...jobData, source, coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+          $setOnInsert: { savedBy: [] },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+// Shared batch upsert — runs bulkWrite in batches
+const batchUpsert = async (jobs, source, timestamp) => {
+  let totalUpserted = 0;
+  let totalModified = 0;
+  for (let i = 0; i < jobs.length; i += UPSERT_BATCH) {
+    const ops = buildUpsertOps(jobs.slice(i, i + UPSERT_BATCH), source, timestamp);
+    const result = await Job.bulkWrite(ops, { ordered: false });
+    totalUpserted += result.upsertedCount;
+    totalModified += result.modifiedCount;
+  }
+  return { upserted: totalUpserted, modified: totalModified };
+};
 const UPSERT_BATCH = 500;
 
 // ---------------------------------------------------------------------------
@@ -360,8 +405,7 @@ const refreshCunyJobs = async (timestamp) => {
       page++;
     }
   } catch (err) {
-    console.warn('[refresh] CUNY fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] CUNY fetch error (partial data may be used):', err.message);
   }
 
   console.log(`[refresh] Fetched ${allJobs.length} CUNY jobs`);
@@ -373,14 +417,9 @@ const refreshCunyJobs = async (timestamp) => {
     const slice = allJobs.slice(i, i + UPSERT_BATCH);
     const ops = slice.map((raw) => {
       // Parse salary from description text
-      let salaryFrom = null, salaryTo = null, salaryFrequency = null;
       const desc = raw.description || '';
-      const salaryMatch = desc.match(/\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)/);
-      if (salaryMatch) {
-        salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
-        salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
-        salaryFrequency = 'Annual';
-      }
+      const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc) || {};
+
 
       const job = {
         jobId: raw.guid || raw.reqid,
@@ -468,13 +507,7 @@ const scrapeNyuDetail = async (jobId) => {
   });
 
   // Parse salary from page text
-  let salaryFrom = null, salaryTo = null;
-  const bodyText = $.text();
-  const salaryMatch = bodyText.match(/\$\s*([\d,]+(?:\.\d+)?)\s*to\s*\$\s*([\d,]+(?:\.\d+)?)/i);
-  if (salaryMatch) {
-    salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
-    salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
-  }
+  const { from: salaryFrom, to: salaryTo } = parseSalaryRange($.text());
 
   return { jsonLd, salaryFrom, salaryTo };
 };
@@ -766,13 +799,7 @@ const refreshPortAuthorityJobs = async (timestamp) => {
     const loc = ld.jobLocation?.[0]?.address || {};
 
     // Parse salary from description HTML
-    let salaryFrom = null, salaryTo = null;
-    const desc = ld.description || '';
-    const salaryMatch = desc.match(/\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)/);
-    if (salaryMatch) {
-      salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
-      salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
-    }
+    const { from: salaryFrom, to: salaryTo } = parseSalaryRange(ld.description || '');
 
     const job = {
       jobId: raw.id,
@@ -848,8 +875,7 @@ const refreshMountSinaiJobs = async (timestamp) => {
       if (page > 100) break; // safety
     }
   } catch (err) {
-    console.warn('[refresh] Mount Sinai fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] Mount Sinai fetch error (partial data may be used):', err.message);
   }
 
   console.log(`[refresh] Fetched ${allJobs.length} Mount Sinai jobs`);
@@ -954,8 +980,7 @@ const refreshIdealistJobs = async (timestamp) => {
       page++;
     }
   } catch (err) {
-    console.warn('[refresh] Idealist fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] Idealist fetch error (partial data may be used):', err.message);
   }
 
   console.log(`[refresh] Fetched ${allJobs.length} Idealist jobs`);
@@ -1184,8 +1209,7 @@ const refreshNypJobs = async (timestamp) => {
       offset += NYP_PAGE_SIZE;
     }
   } catch (err) {
-    console.warn('[refresh] NYP fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] NYP fetch error (partial data may be used):', err.message);
   }
 
   console.log(`[refresh] Fetched ${allJobs.length} NYP jobs`);
@@ -1273,22 +1297,15 @@ const refreshNorthwellJobs = async (timestamp) => {
       if (offset >= totalJobs || offset > 5000) break;
     }
   } catch (err) {
-    console.warn('[refresh] Northwell fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] Northwell fetch error (partial data may be used):', err.message);
   }
 
-  // Filter to NYC metro area counties
-  const metroCounties = new Set([
-    'new york', 'kings', 'queens', 'bronx', 'richmond',
-    'nassau', 'suffolk', 'westchester', 'rockland', 'putnam', 'orange', 'dutchess',
-  ]);
+  // Filter to NYC metro area — use state-based check instead of substring county match
   const metroJobs = allJobs.filter((j) => {
     const loc = (j.PrimaryLocation || '').toLowerCase();
-    // Location format: "City, County, United States"
-    for (const county of metroCounties) {
-      if (loc.includes(county)) return true;
-    }
-    return false;
+    // Northwell locations are "City, State, Country" — keep NY/NJ only
+    return loc.includes(', ny,') || loc.endsWith(', ny') || loc.includes('new york') ||
+      loc.includes(', nj,') || loc.endsWith(', nj');
   });
   console.log(`[refresh] Northwell metro area jobs: ${metroJobs.length}/${allJobs.length}`);
 
@@ -1379,13 +1396,7 @@ const refreshNyuLangoneJobs = async (timestamp) => {
     if (locMatch) location = locMatch[1].trim();
 
     // Parse salary from description
-    let salaryFrom = null, salaryTo = null, salaryFrequency = null;
-    const salaryMatch = description.match(/\$\s*([\d,]+(?:\.\d+)?)\s*[-–to]+\s*\$\s*([\d,]+(?:\.\d+)?)\s*(Annual|Hour|Per Year)?/i);
-    if (salaryMatch) {
-      salaryFrom = parseFloat(salaryMatch[1].replace(/,/g, ''));
-      salaryTo = parseFloat(salaryMatch[2].replace(/,/g, ''));
-      salaryFrequency = (salaryMatch[3] || '').toLowerCase().includes('hour') ? 'Hourly' : 'Annual';
-    }
+    const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(description);
 
     allJobs.push({
       jobId,
@@ -1403,8 +1414,12 @@ const refreshNyuLangoneJobs = async (timestamp) => {
   // Filter to NY/NJ metro area
   const metroJobs = allJobs.filter((j) => {
     const loc = (j.location || '').toLowerCase();
-    if (loc.includes('florida') || loc.includes(' fl') || loc.includes('nevada') || loc.includes(' nv')) return false;
-    return true;
+    // Allowlist: only keep NY/NJ metro area locations
+    return loc.includes('new york') || loc.includes(', ny') || loc.includes(', nj') ||
+      loc.includes('manhattan') || loc.includes('brooklyn') || loc.includes('queens') ||
+      loc.includes('bronx') || loc.includes('staten island') || loc.includes('long island') ||
+      loc.includes('mineola') || loc.includes('patchogue') || loc.includes('lake success') ||
+      !loc; // keep jobs with no location (likely NYC)
   });
 
   console.log(`[refresh] NYU Langone: ${metroJobs.length} metro jobs / ${allJobs.length} total from RSS`);
@@ -1488,8 +1503,7 @@ const refreshNewSchoolJobs = async (timestamp) => {
       if (offset >= total) break;
     }
   } catch (err) {
-    console.warn('[refresh] New School fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] New School fetch error (partial data may be used):', err.message);
   }
 
   console.log(`[refresh] Fetched ${allJobs.length} New School jobs`);
@@ -1591,8 +1605,7 @@ const refreshAmtrakJobs = async (timestamp) => {
       if (page > 10) break; // safety
     }
   } catch (err) {
-    console.warn('[refresh] Amtrak fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] Amtrak fetch error (partial data may be used):', err.message);
   }
 
   // Deduplicate
@@ -1687,8 +1700,7 @@ const refreshUnJobs = async (timestamp) => {
       if (page > 10) break; // safety
     }
   } catch (err) {
-    console.warn('[refresh] UN fetch failed:', err.message);
-    return { upserted: 0, modified: 0 };
+    console.warn('[refresh] UN fetch error (partial data may be used):', err.message);
   }
 
   // Filter out expired jobs

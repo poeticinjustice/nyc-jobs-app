@@ -42,7 +42,7 @@ const scrapeMtaJobs = async (browser, timestamp) => {
     ).catch(() => console.log('[browser] MTA: phApp.ddo not found, trying fallback...'));
 
     // Extract SSR-embedded job data and pagination info
-    const initialData = await page.evaluate(() => {
+    let initialData = await page.evaluate(() => {
       const search = window.phApp?.ddo?.eagerLoadRefineSearch;
       if (search?.data?.jobs) {
         return {
@@ -238,6 +238,21 @@ const main = async () => {
   await browser.close();
 
   console.log('[browser] Results:', JSON.stringify(results, null, 2));
+
+  // Clean up stale jobs for sources that were successfully scraped
+  for (const [source, result] of Object.entries(results)) {
+    const total = result.upserted + result.modified;
+    if (total > 10) {
+      const deleted = await Job.deleteMany({
+        source,
+        lastRefreshedAt: { $lt: timestamp },
+        $or: [{ savedBy: { $size: 0 } }, { savedBy: { $exists: false } }],
+      });
+      if (deleted.deletedCount > 0) {
+        console.log(`[browser] Cleaned up ${deleted.deletedCount} stale ${source} jobs`);
+      }
+    }
+  }
 
   await mongoose.disconnect();
   console.log('[browser] Done');

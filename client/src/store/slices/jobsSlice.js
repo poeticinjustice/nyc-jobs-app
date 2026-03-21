@@ -150,6 +150,7 @@ const initialState = {
   savedJobsLoading: false,
   saveLoading: false,
   statusLoading: false,
+  trackingLoading: false,
   searchError: null,
   detailsError: null,
   savedJobsError: null,
@@ -294,11 +295,11 @@ const jobsSlice = createSlice({
 
       // Update Job Tracking
       .addCase(updateJobTracking.pending, (state) => {
-        state.statusLoading = true;
+        state.trackingLoading = true;
         state.saveError = null;
       })
       .addCase(updateJobTracking.fulfilled, (state, action) => {
-        state.statusLoading = false;
+        state.trackingLoading = false;
         const { jobId, source, applicationDate, interviewDate, followUpDate, documentLinks } = action.payload;
 
         const savedJob = state.savedJobs.find(
@@ -320,7 +321,7 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(updateJobTracking.rejected, (state, action) => {
-        state.statusLoading = false;
+        state.trackingLoading = false;
         state.saveError = action.payload;
       })
 

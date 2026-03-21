@@ -106,15 +106,14 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
       }
     }
     if (salaryConditions.length > 0) {
-      // Combine with any existing $or (location) using $and
+      // Ensure $and exists (it should, from notExpired)
+      if (!filter.$and) filter.$and = [];
+      // Move location $or into $and to avoid conflicts
       if (filter.$or) {
-        filter.$and = [{ $or: filter.$or }, ...salaryConditions];
+        filter.$and.push({ $or: filter.$or });
         delete filter.$or;
-      } else if (salaryConditions.length === 1) {
-        Object.assign(filter, salaryConditions[0]);
-      } else {
-        filter.$and = salaryConditions;
       }
+      filter.$and.push(...salaryConditions);
     }
   }
 

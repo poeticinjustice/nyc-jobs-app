@@ -1,5 +1,6 @@
 // Static geocoding for NYC job locations
 // Maps known location strings to coordinates without external API calls
+const { JOB_SOURCES } = require('../../shared/constants');
 
 const LOCATION_COORDS = {
   // NYC Boroughs (center points)
@@ -212,8 +213,8 @@ const geocodeLocationBase = (workLocation, workLocation1, source) => {
     return { ...NYS_DEFAULT };
   }
 
-  // For NYC-area sources, default to NYC center rather than dropping them
-  if (['nyc', 'cuny', 'nyu', 'fordham', 'pa', 'mountsinai', 'idealist', 'columbia', 'nyp', 'northwell', 'nyulangone', 'newschool', 'amtrak', 'un', 'mta'].includes(source)) {
+  // For any known source, default to NYC center rather than dropping them
+  if (source && source !== 'nys' && JOB_SOURCES.includes(source)) {
     return { ...NYC_DEFAULT };
   }
 

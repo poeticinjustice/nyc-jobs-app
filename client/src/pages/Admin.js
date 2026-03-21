@@ -10,6 +10,8 @@ import {
 } from 'react-icons/hi';
 import { formatDate } from '../utils/formatUtils';
 import Pagination from '../components/UI/Pagination';
+import SourceBadge from '../components/UI/SourceBadge';
+import { SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 import api from '../utils/api';
 
 // --- Reusable sub-components ---
@@ -256,9 +258,9 @@ const JobManagement = () => {
               className='border border-gray-300 rounded-lg px-3 py-2 text-sm'
             >
               <option value=''>All Sources</option>
-              <option value='nyc'>NYC</option>
-              <option value='federal'>Federal</option>
-              <option value='nys'>State</option>
+              {SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
             <button
               onClick={fetchJobs}
@@ -309,11 +311,7 @@ const JobManagement = () => {
                       {job.agency || '-'}
                     </td>
                     <td className='px-3 py-3'>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        job.source === 'federal' ? 'bg-blue-100 text-blue-800' : job.source === 'nys' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        {job.source === 'federal' ? 'Federal' : job.source === 'nys' ? 'State' : 'NYC'}
-                      </span>
+                      <SourceBadge source={job.source} />
                     </td>
                     <td className='px-3 py-3 text-sm text-gray-500 text-center'>
                       {job.saveCount || 0}

@@ -6,30 +6,10 @@ import api from '../utils/api';
 import { formatSalary } from '../utils/formatUtils';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
+import { SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN;
-
-const SOURCE_TABS = [
-  { value: 'all', label: 'All Jobs' },
-  { value: 'nyc', label: 'NYC' },
-  { value: 'nys', label: 'State' },
-  { value: 'federal', label: 'Federal' },
-  { value: 'cuny', label: 'CUNY' },
-  { value: 'nyu', label: 'NYU' },
-  { value: 'fordham', label: 'Fordham' },
-  { value: 'pa', label: 'Port Authority' },
-  { value: 'mountsinai', label: 'Mt. Sinai' },
-  { value: 'idealist', label: 'Non-Profit' },
-  { value: 'columbia', label: 'Columbia' },
-  { value: 'nyp', label: 'NYP' },
-  { value: 'northwell', label: 'Northwell' },
-  { value: 'nyulangone', label: 'NYU Langone' },
-  { value: 'newschool', label: 'New School' },
-  { value: 'amtrak', label: 'Amtrak' },
-  { value: 'un', label: 'United Nations' },
-  { value: 'mta', label: 'MTA' },
-];
 
 // Cluster layer — sized circles by point count
 const clusterLayer = {
@@ -227,7 +207,7 @@ const JobMap = () => {
             onChange={(e) => setSource(e.target.value)}
             className='px-4 py-2 rounded-lg text-sm font-medium bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
           >
-            {SOURCE_TABS.map((tab) => (
+            {SOURCE_OPTIONS.map((tab) => (
               <option key={tab.value} value={tab.value}>
                 {tab.label}
               </option>

@@ -191,6 +191,7 @@ jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
 jobSchema.index({ postDate: -1 });
 jobSchema.index({ updatedAt: -1 });
 jobSchema.index({ source: 1, postDate: -1 });
+jobSchema.index({ postUntil: 1 });
 jobSchema.index(
   { businessTitle: 'text', jobDescription: 'text', agency: 'text', jobCategory: 'text', workLocation: 'text' },
   { weights: { businessTitle: 10, agency: 5, jobCategory: 5, workLocation: 3, jobDescription: 1 } }
