@@ -32,7 +32,9 @@ const parseSalaryRange = (text) => {
   if (!match) return { from: null, to: null, frequency: null };
   const from = parseFloat(match[1].replace(/,/g, ''));
   const to = parseFloat(match[2].replace(/,/g, ''));
-  const frequency = /hour/i.test(text) ? 'Hourly' : /year|annual|per year/i.test(text) ? 'Annual' : null;
+  // Check context near the salary match for frequency — avoid matching "Hours Per Week"
+  const nearby = text.substring(Math.max(0, match.index - 20), match.index + match[0].length + 30);
+  const frequency = /hourly|per hour|\/hr/i.test(nearby) ? 'Hourly' : /annual|yearly|per year|\/yr/i.test(nearby) ? 'Annual' : (from >= 1000 ? 'Annual' : 'Hourly');
   return { from, to, frequency };
 };
 
@@ -1052,13 +1054,56 @@ const refreshIdealistJobs = async (timestamp) => {
 // ---------------------------------------------------------------------------
 
 const COLUMBIA_SITEMAP_URL = 'https://opportunities.columbia.edu/sitemap.xml';
-const COLUMBIA_SEARCH_URL = 'https://opportunities.columbia.edu/jobs/search';
 const COLUMBIA_CRAWL_DELAY = 5500; // robots.txt specifies 5s crawl delay
+
+const scrapeColumbiaDetail = async (url) => {
+  const { data } = await axios.get(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+    timeout: 15000,
+  });
+  const $ = cheerio.load(data);
+  const fields = {};
+
+  // Meta description has structured fields: Job Type, Hours, Salary Range
+  const meta = $('meta[name=description]').attr('content') || '';
+  const bodyText = $('body').text();
+
+  // Title from h1
+  fields.title = $('h1').first().text().trim();
+
+  // Salary from meta or body
+  const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(meta) || parseSalaryRange(bodyText);
+  fields.salaryFrom = salaryFrom;
+  fields.salaryTo = salaryTo;
+  fields.salaryFrequency = salaryFrequency;
+
+  // Hours
+  const hoursMatch = meta.match(/Hours Per Week:\s*(\d+)/i) || bodyText.match(/Hours Per Week:\s*(\d+)/i);
+  if (hoursMatch) fields.hours = `${hoursMatch[1]} hours/week`;
+
+  // Job type
+  const jobTypeMatch = meta.match(/Job Type:\s*([^\n]+)/i);
+  if (jobTypeMatch) fields.jobType = jobTypeMatch[1].trim();
+
+  // Regular/Temporary
+  const regTempMatch = meta.match(/Regular\/Temporary:\s*(\w+)/i);
+  if (regTempMatch) fields.employmentType = regTempMatch[1].trim();
+
+  // Description — extract from the main content area
+  const descMatch = bodyText.match(/(?:Position Summary|Description|Responsibilities)[:\s]*([\s\S]{100,2000}?)(?=Minimum Qualifications|Qualifications|Requirements|Preferred|Other Requirements|Equal Opportunity|Salary Range|\$\d)/i);
+  if (descMatch) fields.description = descMatch[1].trim();
+
+  // Qualifications
+  const qualsMatch = bodyText.match(/(?:Minimum Qualifications|Requirements)[:\s]*([\s\S]{50,1500}?)(?=Preferred|Other Requirements|Equal Opportunity|Salary Range|Additional Information|\$\d)/i);
+  if (qualsMatch) fields.qualifications = qualsMatch[1].trim();
+
+  return fields;
+};
 
 const refreshColumbiaJobs = async (timestamp) => {
   console.log('[refresh] Fetching Columbia jobs...');
 
-  // Use sitemap to get all job URLs reliably (avoids pagination rate-limiting)
+  // Phase 1: get all job URLs from sitemap
   let allJobs = [];
 
   try {
@@ -1067,93 +1112,96 @@ const refreshColumbiaJobs = async (timestamp) => {
 
     $s('url').each((_, el) => {
       const loc = $s(el).find('loc').text().trim();
+      const lastmod = $s(el).find('lastmod').text().trim();
       const match = loc.match(/\/jobs\/(.+?)$/);
       if (!match) return;
       const slug = match[1].replace(/\/$/, '');
-      // Skip search/filter pages
       if (slug === 'search' || slug === '' || slug.includes('?')) return;
 
-      // Extract title from slug
-      const title = slug
-        .replace(/-united-states.*$/, '')
-        .replace(/-new-york.*$/, '')
-        .replace(/-[a-f0-9]{8}-[a-f0-9]{4}.*$/, '') // remove UUIDs
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-
-      allJobs.push({ slug, title, url: loc });
+      allJobs.push({ slug, url: loc, lastmod });
     });
   } catch (err) {
-    console.warn('[refresh] Columbia sitemap fetch failed, falling back to search pages:', err.message);
+    console.warn('[refresh] Columbia sitemap fetch failed:', err.message);
+    return { upserted: 0, modified: 0 };
+  }
 
-    // Fallback: paginate search with cookie jar
-    let page = 1;
-    let hasMore = true;
-    let cookies = '';
+  console.log(`[refresh] Columbia: ${allJobs.length} jobs in sitemap`);
+  if (allJobs.length === 0) return { upserted: 0, modified: 0 };
 
-    while (hasMore) {
-      const headers = cookies ? { Cookie: cookies } : {};
-      const { data, headers: resHeaders } = await axios.get(COLUMBIA_SEARCH_URL, {
-        params: { page },
-        headers,
-        timeout: 15000,
-      });
+  // Phase 2: check which jobs need detail fetching (new or updated since last scrape)
+  const existingJobs = await Job.find(
+    { source: 'columbia', jobId: { $in: allJobs.map((j) => j.slug) } },
+    { jobId: 1, lastRefreshedAt: 1, jobDescription: 1 }
+  ).lean();
+  const existingMap = new Map(existingJobs.map((j) => [j.jobId, j]));
 
-      // Collect cookies
-      const setCookies = resHeaders['set-cookie'];
-      if (setCookies) {
-        cookies = setCookies.map((c) => c.split(';')[0]).join('; ');
-      }
+  const needsDetail = allJobs.filter((j) => {
+    const existing = existingMap.get(j.slug);
+    if (!existing) return true; // new job
+    if (!existing.jobDescription) return true; // no description yet
+    // Check if sitemap lastmod is newer than our last refresh
+    if (j.lastmod && existing.lastRefreshedAt) {
+      return new Date(j.lastmod) > existing.lastRefreshedAt;
+    }
+    return false;
+  });
 
-      const $ = cheerio.load(data);
-      const jobsOnPage = [];
-      $('a[href*="/jobs/"]').each((_, el) => {
-        const href = $(el).attr('href') || '';
-        if (href.includes('/jobs/search') || href.endsWith('/jobs/') || href.endsWith('/jobs')) return;
-        const t = $(el).text().trim();
-        if (!t || t.length < 3) return;
-        const slugMatch = href.match(/\/jobs\/(.+?)(?:\?|#|$)/);
-        if (!slugMatch) return;
-        const s = slugMatch[1].replace(/\/$/, '');
-        if (!s || jobsOnPage.find((j) => j.slug === s)) return;
-        const u = href.startsWith('http') ? href : `https://opportunities.columbia.edu${href}`;
-        jobsOnPage.push({ slug: s, title: t, url: u });
-      });
+  console.log(`[refresh] Columbia: ${needsDetail.length} jobs need detail fetching (${allJobs.length - needsDetail.length} cached)`);
 
-      allJobs.push(...jobsOnPage);
-      const nextLink = $('a[rel="next"]').length > 0;
-      hasMore = nextLink && jobsOnPage.length > 0;
-      page++;
-      if (page > 30) break;
-      if (hasMore) await new Promise((r) => setTimeout(r, COLUMBIA_CRAWL_DELAY));
-      if (page % 5 === 0) console.log(`[refresh] Columbia pages: ${page - 1}, jobs: ${allJobs.length}`);
+  // Phase 3: fetch detail pages for new/changed jobs (respecting crawl delay)
+  const detailResults = new Map();
+  for (let i = 0; i < needsDetail.length; i++) {
+    try {
+      const detail = await scrapeColumbiaDetail(needsDetail[i].url);
+      detailResults.set(needsDetail[i].slug, detail);
+    } catch (err) {
+      // Skip failed detail pages
+    }
+    if (i < needsDetail.length - 1) {
+      await new Promise((r) => setTimeout(r, COLUMBIA_CRAWL_DELAY));
+    }
+    if ((i + 1) % 20 === 0) {
+      console.log(`[refresh] Columbia detail pages: ${i + 1}/${needsDetail.length}`);
     }
   }
 
-  console.log(`[refresh] Fetched ${allJobs.length} Columbia jobs`);
-  if (allJobs.length === 0) return { upserted: 0, modified: 0 };
+  console.log(`[refresh] Columbia: scraped ${detailResults.size} detail pages`);
 
+  // Phase 4: upsert all jobs
   let totalUpserted = 0;
   let totalModified = 0;
 
   for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
     const slice = allJobs.slice(i, i + UPSERT_BATCH);
     const ops = slice.map((raw) => {
+      const detail = detailResults.get(raw.slug) || {};
+      const existing = existingMap.get(raw.slug);
+
+      // Use detail page title if available, otherwise derive from slug
+      const title = detail.title || existing?.businessTitle || raw.slug
+        .replace(/-united-states.*$/, '')
+        .replace(/-new-york.*$/, '')
+        .replace(/-[a-f0-9]{8}-[a-f0-9]{4}.*$/, '')
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
       const job = {
         jobId: raw.slug,
-        businessTitle: raw.title,
+        businessTitle: title,
         agency: 'Columbia University',
-        workLocation: raw.location || 'New York',
+        workLocation: 'New York',
         workLocation1: null,
-        divisionWorkUnit: raw.department || null,
-        jobCategory: raw.category || null,
-        salaryRangeFrom: null,
-        salaryRangeTo: null,
-        salaryFrequency: null,
-        fullTimePartTimeIndicator: raw.employmentType || null,
+        divisionWorkUnit: detail.jobType || null,
+        jobDescription: detail.description || existing?.jobDescription || null,
+        minimumQualRequirements: detail.qualifications || null,
+        jobCategory: detail.jobType || null,
+        salaryRangeFrom: detail.salaryFrom || null,
+        salaryRangeTo: detail.salaryTo || null,
+        salaryFrequency: detail.salaryFrequency || null,
+        fullTimePartTimeIndicator: detail.employmentType || null,
+        hoursShift: detail.hours || null,
         postDate: null,
         externalUrl: raw.url,
-        level: raw.grade ? `Grade ${raw.grade}` : null,
       };
 
       const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'columbia');
