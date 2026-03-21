@@ -415,21 +415,19 @@ const JobDetails = () => {
             </h3>
             <a
               href={
-                effectiveSource === 'federal'
-                  ? currentJob.externalUrl || `https://www.usajobs.gov/job/${currentJob.jobId}`
-                  : effectiveSource === 'nys'
-                    ? currentJob.externalUrl || `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${currentJob.jobId}`
-                    : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
+                currentJob.externalUrl
+                  || (effectiveSource === 'federal' ? `https://www.usajobs.gov/job/${currentJob.jobId}`
+                    : effectiveSource === 'nys' ? `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${currentJob.jobId}`
+                    : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`)
               }
               target='_blank'
               rel='noopener noreferrer'
               className='inline-flex items-center px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors'
             >
-              {effectiveSource === 'federal'
-                ? 'Apply at USAJobs'
-                : effectiveSource === 'nys'
-                  ? 'Apply at StateJobsNY'
-                  : 'Apply at NYC Jobs'}
+              {effectiveSource === 'federal' ? 'Apply at USAJobs'
+                : effectiveSource === 'nys' ? 'Apply at StateJobsNY'
+                : effectiveSource === 'nyc' ? 'Apply at NYC Jobs'
+                : 'Apply on Source Website'}
               <svg
                 className='ml-2 h-4 w-4'
                 fill='none'

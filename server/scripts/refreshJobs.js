@@ -1691,8 +1691,12 @@ const refreshUnJobs = async (timestamp) => {
     return { upserted: 0, modified: 0 };
   }
 
-  console.log(`[refresh] Fetched ${allJobs.length} UN jobs`);
-  if (allJobs.length === 0) return { upserted: 0, modified: 0 };
+  // Filter out expired jobs
+  const now = new Date();
+  const activeJobs = allJobs.filter((j) => !j.endDate || new Date(j.endDate) >= now);
+  console.log(`[refresh] Fetched ${allJobs.length} UN jobs (${activeJobs.length} active, ${allJobs.length - activeJobs.length} expired)`);
+  if (activeJobs.length === 0) return { upserted: 0, modified: 0 };
+  allJobs = activeJobs;
 
   let totalUpserted = 0;
   let totalModified = 0;

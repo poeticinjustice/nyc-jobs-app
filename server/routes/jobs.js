@@ -48,6 +48,16 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
     filter.source = { $in: JOB_SOURCES };
   }
 
+  // Exclude expired jobs (postUntil in the past)
+  const notExpired = {
+    $or: [
+      { postUntil: null },
+      { postUntil: { $exists: false } },
+      { postUntil: { $gte: new Date() } },
+    ],
+  };
+  filter.$and = filter.$and ? [...filter.$and, notExpired] : [notExpired];
+
   if (q) {
     filter.$text = { $search: q };
   }
