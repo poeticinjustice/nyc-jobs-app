@@ -1,0 +1,44 @@
+name: Browser-based job scraper
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC (2 AM ET)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: 'Sources to scrape (comma-separated, e.g. "un,mta" or leave empty for all)'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Puppeteer
+        run: npm install puppeteer@latest
+
+      - name: Run browser scraper
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          SOURCES="${{ github.event.inputs.sources }}"
+          if [ -n "$SOURCES" ]; then
+            # Convert comma-separated to space-separated args
+            node server/scripts/scrapeWithBrowser.js $(echo "$SOURCES" | tr ',' ' ')
+          else
+            node server/scripts/scrapeWithBrowser.js
+          fi

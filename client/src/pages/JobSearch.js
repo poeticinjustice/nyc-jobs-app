@@ -308,22 +308,19 @@ const JobSearch = () => {
 
           {/* Filter Bar: Source Tabs | Salary | Sort */}
           <div className='flex flex-wrap items-center gap-3 justify-between'>
-            {/* Left: Source Tabs */}
-            <div className='flex gap-1'>
-              {SOURCE_OPTIONS.map((tab) => (
-                <button
-                  key={tab.value}
-                  type='button'
-                  onClick={() => handleSourceChange(tab.value)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                    localSearchParams.source === tab.value
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            {/* Left: Source Dropdown */}
+            <div>
+              <select
+                value={localSearchParams.source || 'all'}
+                onChange={(e) => handleSourceChange(e.target.value)}
+                className='px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
+              >
+                {SOURCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Right: Salary + Sort (desktop) */}

@@ -27,6 +27,8 @@ const SOURCE_TABS = [
   { value: 'nyulangone', label: 'NYU Langone' },
   { value: 'newschool', label: 'New School' },
   { value: 'amtrak', label: 'Amtrak' },
+  { value: 'un', label: 'United Nations' },
+  { value: 'mta', label: 'MTA' },
 ];
 
 // Cluster layer — sized circles by point count
@@ -218,21 +220,19 @@ const JobMap = () => {
     <div className='relative' style={{ height: 'calc(100vh - 64px)' }}>
       {/* Filter bar */}
       <div className='absolute top-4 left-4 right-4 z-10 flex items-start gap-3'>
-        {/* Source tabs */}
-        <div className='bg-white rounded-lg shadow-lg border border-gray-200 p-1 flex'>
-          {SOURCE_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setSource(tab.value)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                source === tab.value
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Source dropdown */}
+        <div className='bg-white rounded-lg shadow-lg border border-gray-200'>
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            className='px-4 py-2 rounded-lg text-sm font-medium bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
+          >
+            {SOURCE_TABS.map((tab) => (
+              <option key={tab.value} value={tab.value}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Search bar */}
