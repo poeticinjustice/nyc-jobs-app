@@ -28,6 +28,9 @@ const SOURCE_GROUPS = [
       { label: 'NewYork-Presbyterian', url: 'https://nyp.wd1.myworkdayjobs.com/nypcareers', description: 'NYP hospital network' },
       { label: 'Northwell Health', url: 'https://eppr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2', description: 'Northwell Health system' },
       { label: 'NYU Langone Health', url: 'https://jobs.silkroad.com/NYULangone/NYULHCareers', description: 'NYU Langone hospitals and facilities' },
+      { label: 'Memorial Sloan Kettering', url: 'https://msk.wd108.myworkdayjobs.com/MSKCC_Careers_Primary', description: 'MSK Cancer Center' },
+      { label: 'Montefiore Health System', url: 'https://montefiore.wd12.myworkdayjobs.com/MMC', description: 'Montefiore medical campuses' },
+      { label: 'NYC Health + Hospitals', url: 'https://providercareers.nychealthandhospitals.org/search', description: 'Public hospital system — provider/clinical roles' },
     ],
   },
   {
@@ -47,6 +50,7 @@ const SOURCE_GROUPS = [
   {
     name: 'Non-Profit & Other',
     sources: [
+      { label: 'New York Public Library', url: 'https://nypl.pinpointhq.com/', description: 'NYPL branches across NYC' },
       { label: 'Idealist', url: 'https://www.idealist.org/en/jobs?q=&areasOfFocus=&locationName=New+York&locationType=AREA', description: 'Non-profit jobs in NYC area' },
       { label: 'Amtrak', url: 'https://careers.amtrak.com/search/?q=&optionsFacetsDD_state=New+York', description: 'Amtrak — New York positions' },
       { label: 'United Nations', url: 'https://careers.un.org/', description: 'UN headquarters — New York' },

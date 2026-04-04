@@ -29,6 +29,10 @@ const refreshAmnhJobs = require('../scrapers/amnh');
 const refreshMetMuseumJobs = require('../scrapers/metmuseum');
 const refreshFrickJobs = require('../scrapers/frick');
 const refreshGuggenheimJobs = require('../scrapers/guggenheim');
+const refreshMskJobs = require('../scrapers/msk');
+const refreshMontefioreJobs = require('../scrapers/montefiore');
+const refreshNyplJobs = require('../scrapers/nypl');
+const refreshNychhcJobs = require('../scrapers/nychhc');
 
 // ---------------------------------------------------------------------------
 // Cleanup
@@ -41,7 +45,7 @@ const cleanupStaleJobs = async (timestamp, counts) => {
     nyc: 100, federal: 10, nys: 50, cuny: 10, nyu: 10, fordham: 5, pa: 3,
     mountsinai: 50, idealist: 50, columbia: 20, nyp: 20, northwell: 50,
     nyulangone: 50, newschool: 5, amtrak: 3, un: 10, amnh: 5, metmuseum: 3,
-    frick: 3, guggenheim: 3,
+    frick: 3, guggenheim: 3, msk: 10, montefiore: 20, nypl: 3, nychhc: 10,
   };
 
   const sourceFilter = Object.entries(thresholds)
@@ -108,6 +112,10 @@ const refreshAllJobs = async () => {
     { source: 'metmuseum', fn: refreshMetMuseumJobs },
     { source: 'frick', fn: refreshFrickJobs },
     { source: 'guggenheim', fn: refreshGuggenheimJobs },
+    { source: 'msk', fn: refreshMskJobs },
+    { source: 'montefiore', fn: refreshMontefioreJobs },
+    { source: 'nypl', fn: refreshNyplJobs },
+    { source: 'nychhc', fn: refreshNychhcJobs },
   ];
 
   const BATCH_SIZE = 5;
