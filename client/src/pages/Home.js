@@ -406,7 +406,7 @@ const Home = () => {
             <HiLocationMarker className='h-6 w-6 text-green-600' />
           </div>
           <h3 className='text-lg font-medium text-gray-900 mb-1'>
-            Job Map
+            Map
           </h3>
           <p className='text-sm text-gray-600'>
             Explore jobs by location on an interactive map
