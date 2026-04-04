@@ -87,32 +87,54 @@ const refreshAllJobs = async () => {
   const timestamp = new Date();
   console.log(`[refresh] Starting job refresh at ${timestamp.toISOString()}`);
 
-  const nyc = await refreshNycJobs(timestamp);
-  const federal = await refreshFederalJobs(timestamp);
-  const nys = await refreshNysJobs(timestamp);
-  const cuny = await refreshCunyJobs(timestamp);
-  const nyu = await refreshNyuJobs(timestamp);
-  const fordham = await refreshFordhamJobs(timestamp);
-  const pa = await refreshPortAuthorityJobs(timestamp);
-  const mountsinai = await refreshMountSinaiJobs(timestamp);
-  const idealist = await refreshIdealistJobs(timestamp);
-  const columbia = await refreshColumbiaJobs(timestamp);
-  const nyp = await refreshNypJobs(timestamp);
-  const northwell = await refreshNorthwellJobs(timestamp);
-  const nyulangone = await refreshNyuLangoneJobs(timestamp);
-  const newschool = await refreshNewSchoolJobs(timestamp);
-  const amtrak = await refreshAmtrakJobs(timestamp);
-  const un = await refreshUnJobs(timestamp);
-  const amnh = await refreshAmnhJobs(timestamp);
-  const metmuseum = await refreshMetMuseumJobs(timestamp);
-  const frick = await refreshFrickJobs(timestamp);
-  const guggenheim = await refreshGuggenheimJobs(timestamp);
+  const scrapers = [
+    { source: 'nyc', fn: refreshNycJobs },
+    { source: 'federal', fn: refreshFederalJobs },
+    { source: 'nys', fn: refreshNysJobs },
+    { source: 'cuny', fn: refreshCunyJobs },
+    { source: 'nyu', fn: refreshNyuJobs },
+    { source: 'fordham', fn: refreshFordhamJobs },
+    { source: 'pa', fn: refreshPortAuthorityJobs },
+    { source: 'mountsinai', fn: refreshMountSinaiJobs },
+    { source: 'idealist', fn: refreshIdealistJobs },
+    { source: 'columbia', fn: refreshColumbiaJobs },
+    { source: 'nyp', fn: refreshNypJobs },
+    { source: 'northwell', fn: refreshNorthwellJobs },
+    { source: 'nyulangone', fn: refreshNyuLangoneJobs },
+    { source: 'newschool', fn: refreshNewSchoolJobs },
+    { source: 'amtrak', fn: refreshAmtrakJobs },
+    { source: 'un', fn: refreshUnJobs },
+    { source: 'amnh', fn: refreshAmnhJobs },
+    { source: 'metmuseum', fn: refreshMetMuseumJobs },
+    { source: 'frick', fn: refreshFrickJobs },
+    { source: 'guggenheim', fn: refreshGuggenheimJobs },
+  ];
 
-  const results = { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, nyp, northwell, nyulangone, newschool, amtrak, un, amnh, metmuseum, frick, guggenheim };
-
+  const BATCH_SIZE = 5;
+  const results = {};
   const counts = {};
-  for (const [src, r] of Object.entries(results)) {
-    counts[src] = r.upserted + r.modified;
+
+  for (let i = 0; i < scrapers.length; i += BATCH_SIZE) {
+    const batch = scrapers.slice(i, i + BATCH_SIZE);
+    const batchNames = batch.map((s) => s.source).join(', ');
+    console.log(`[refresh] Running batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchNames}`);
+
+    const settled = await Promise.allSettled(
+      batch.map((s) => s.fn(timestamp))
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      const { source } = batch[j];
+      if (settled[j].status === 'fulfilled') {
+        const r = settled[j].value;
+        results[source] = r;
+        counts[source] = r.upserted + r.modified;
+      } else {
+        console.error(`[refresh] Scraper "${source}" failed:`, settled[j].reason);
+        results[source] = { upserted: 0, modified: 0 };
+        counts[source] = 0;
+      }
+    }
   }
 
   const staleCount = await cleanupStaleJobs(timestamp, counts);

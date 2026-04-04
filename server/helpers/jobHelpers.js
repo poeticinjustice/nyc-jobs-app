@@ -109,128 +109,6 @@ const deduplicateJobs = (jobs) => {
   });
 };
 
-// Filter jobs in-memory based on search parameters
-const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_max }) => {
-  let filtered = jobs;
-
-  if (q) {
-    const term = q.toLowerCase();
-    filtered = filtered.filter(
-      (job) =>
-        job.business_title?.toLowerCase().includes(term) ||
-        job.job_description?.toLowerCase().includes(term) ||
-        job.civil_service_title?.toLowerCase().includes(term) ||
-        job.agency?.toLowerCase().includes(term) ||
-        job.job_category?.toLowerCase().includes(term) ||
-        job.work_location?.toLowerCase().includes(term) ||
-        job.work_location_1?.toLowerCase().includes(term) ||
-        job.division_work_unit?.toLowerCase().includes(term)
-    );
-  }
-
-  if (category) {
-    filtered = filtered.filter(
-      (job) => job.job_category?.toLowerCase() === category.toLowerCase()
-    );
-  }
-
-  if (location) {
-    const term = location.toLowerCase();
-    filtered = filtered.filter(
-      (job) =>
-        job.work_location?.toLowerCase().includes(term) ||
-        job.work_location_1?.toLowerCase().includes(term)
-    );
-  }
-
-  if (agency) {
-    const term = agency.toLowerCase();
-    filtered = filtered.filter(
-      (job) => job.agency?.toLowerCase().includes(term)
-    );
-  }
-
-  if (salary_min) {
-    const min = parseInt(salary_min, 10);
-    if (!isNaN(min)) {
-      filtered = filtered.filter((job) => {
-        const to = parseInt(job.salary_range_to, 10);
-        const from = parseInt(job.salary_range_from, 10);
-        // Include if the job's range overlaps with the minimum
-        if (!isNaN(to)) return to >= min;
-        return !isNaN(from) && from >= min;
-      });
-    }
-  }
-
-  if (salary_max) {
-    const max = parseInt(salary_max, 10);
-    if (!isNaN(max)) {
-      filtered = filtered.filter((job) => {
-        const from = parseInt(job.salary_range_from, 10);
-        const to = parseInt(job.salary_range_to, 10);
-        // Include if the job's range overlaps with the maximum
-        if (!isNaN(from)) return from <= max;
-        return !isNaN(to) && to <= max;
-      });
-    }
-  }
-
-  return filtered;
-};
-
-// Get salary midpoint for sorting (returns null when missing)
-const getSalaryMidpoint = (job, fields) => {
-  const from = parseFloat(job[fields.salaryFrom]);
-  if (isNaN(from)) return null;
-  const to = parseFloat(job[fields.salaryTo]);
-  return (from + (isNaN(to) ? from : to)) / 2;
-};
-
-// Field name maps for snake_case (NYC raw) and camelCase (transformed) data
-const SNAKE_FIELDS = { date: 'posting_date', title: 'business_title', salaryFrom: 'salary_range_from', salaryTo: 'salary_range_to' };
-const CAMEL_FIELDS = { date: 'postDate', title: 'businessTitle', salaryFrom: 'salaryRangeFrom', salaryTo: 'salaryRangeTo' };
-
-// Generic sort function that works with any field name map
-const sortJobsByFields = (jobs, sort, fields) => {
-  const sorted = [...jobs];
-  switch (sort) {
-    case 'date_asc':
-      sorted.sort((a, b) => new Date(a[fields.date] || 0) - new Date(b[fields.date] || 0));
-      break;
-    case 'title_asc':
-      sorted.sort((a, b) => (a[fields.title] || '').localeCompare(b[fields.title] || ''));
-      break;
-    case 'title_desc':
-      sorted.sort((a, b) => (b[fields.title] || '').localeCompare(a[fields.title] || ''));
-      break;
-    case 'salary_desc':
-    case 'salary_asc': {
-      const dir = sort === 'salary_desc' ? -1 : 1;
-      sorted.sort((a, b) => {
-        const sa = getSalaryMidpoint(a, fields);
-        const sb = getSalaryMidpoint(b, fields);
-        if (sa == null && sb == null) return 0;
-        if (sa == null) return 1;
-        if (sb == null) return -1;
-        return dir * (sa - sb);
-      });
-      break;
-    }
-    case 'date_desc':
-    default:
-      sorted.sort((a, b) => new Date(b[fields.date] || 0) - new Date(a[fields.date] || 0));
-      break;
-  }
-  return sorted;
-};
-
-// Sort raw NYC API jobs (snake_case)
-const sortJobs = (jobs, sort) => sortJobsByFields(jobs, sort, SNAKE_FIELDS);
-
-// Sort transformed camelCase jobs (for 'all' mode where NYC + federal are combined)
-const sortMergedJobs = (jobs, sort) => sortJobsByFields(jobs, sort, CAMEL_FIELDS);
-
 // Transform NYC API snake_case fields to camelCase model fields
 const transformNycJob = (nycJob, { clean = false } = {}) => {
   const t = clean ? cleanText : (v) => v;
@@ -420,9 +298,6 @@ module.exports = {
   cleanJobFields,
   formatJobDescription,
   deduplicateJobs,
-  filterJobs,
-  sortJobs,
-  sortMergedJobs,
   transformNycJob,
   transformUsaJob,
   transformNysJob,

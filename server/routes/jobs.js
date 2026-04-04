@@ -42,7 +42,15 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
   const filter = {};
 
   if (source && source !== 'all') {
-    filter.source = source;
+    // Support comma-separated sources (e.g. "nyc,federal,cuny")
+    const sources = source.split(',').filter((s) => JOB_SOURCES.includes(s));
+    if (sources.length === 1) {
+      filter.source = sources[0];
+    } else if (sources.length > 1) {
+      filter.source = { $in: sources };
+    } else {
+      filter.source = { $in: JOB_SOURCES };
+    }
   } else {
     // 'all' still restricts to valid sources — prevents stale/unknown sources from leaking
     filter.source = { $in: JOB_SOURCES };
@@ -153,6 +161,20 @@ const mapMonthlyLimit = (req, res, next) => {
   }
   mapMonthlyCount++;
   next();
+};
+
+// --- Simple TTL cache for categories/agencies ---
+const cache = {};
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+const getCached = async (key, fetchFn) => {
+  const now = Date.now();
+  if (cache[key] && now - cache[key].time < CACHE_TTL) {
+    return cache[key].data;
+  }
+  const data = await fetchFn();
+  cache[key] = { data, time: now };
+  return data;
 };
 
 // --- Routes ---
@@ -273,7 +295,10 @@ router.get(
     query('sort')
       .optional()
       .isIn(SORT_VALUES),
-    query('source').optional().isIn(VALID_SOURCE_FILTERS),
+    query('source').optional().custom((value) => {
+      if (!value) return true;
+      return value.split(',').every((s) => VALID_SOURCE_FILTERS.includes(s));
+    }).withMessage('source must be "all" or valid source names'),
   ],
   async (req, res) => {
     try {
@@ -361,7 +386,7 @@ router.get(
 // Get job categories
 router.get('/categories', async (req, res) => {
   try {
-    const categories = await Job.distinct('jobCategory', { jobCategory: { $ne: null }, source: { $in: JOB_SOURCES } });
+    const categories = await getCached('categories', () => Job.distinct('jobCategory', { jobCategory: { $ne: null }, source: { $in: JOB_SOURCES } }));
     res.json({ categories: categories.sort() });
   } catch (error) {
     console.error('Get categories error:', error);
@@ -372,7 +397,7 @@ router.get('/categories', async (req, res) => {
 // Get agencies list
 router.get('/agencies', async (req, res) => {
   try {
-    const agencies = await Job.distinct('agency', { agency: { $ne: null }, source: { $in: JOB_SOURCES } });
+    const agencies = await getCached('agencies', () => Job.distinct('agency', { agency: { $ne: null }, source: { $in: JOB_SOURCES } }));
     res.json({ agencies: agencies.sort() });
   } catch (error) {
     console.error('Get agencies error:', error);

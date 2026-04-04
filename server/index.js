@@ -19,6 +19,7 @@ if (missingOptional.length > 0) {
 const app = require('./app');
 const Job = require('./models/Job');
 const { refreshAllJobs } = require('./scripts/refreshJobs');
+let refreshRunning = false;
 
 const PORT = process.env.PORT || 8000;
 
@@ -37,10 +38,17 @@ mongoose
       console.log(`Database has ~${count} jobs`);
     }
 
-    // Schedule refresh every 6 hours
+    // Schedule refresh every 6 hours (with overlap protection)
     cron.schedule('0 0,6,12,18 * * *', () => {
+      if (refreshRunning) {
+        console.log('Cron: skipping — previous refresh still running');
+        return;
+      }
       console.log('Cron: starting scheduled job refresh');
-      refreshAllJobs().catch((err) => console.error('Scheduled refresh failed:', err));
+      refreshRunning = true;
+      refreshAllJobs()
+        .catch((err) => console.error('Scheduled refresh failed:', err))
+        .finally(() => { refreshRunning = false; });
     });
 
     const server = app.listen(PORT, () => {

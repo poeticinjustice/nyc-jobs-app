@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
@@ -17,6 +17,7 @@ import {
   HiBookmarkAlt,
   HiStar,
   HiTrash,
+  HiFilter,
 } from 'react-icons/hi';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
@@ -59,6 +60,8 @@ const JobSearch = () => {
   const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState('');
   const [showSavedSearches, setShowSavedSearches] = useState(false);
+  const [showSourceDropdown, setShowSourceDropdown] = useState(false);
+  const sourceDropdownRef = useRef(null);
 
   // Local form state for inputs before submitting
   const [localSearchParams, setLocalSearchParams] = useState({
@@ -125,6 +128,18 @@ const JobSearch = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSortDropdown]);
 
+  // Handle clicking outside source dropdown to close it
+  useEffect(() => {
+    if (!showSourceDropdown) return;
+    const handleClickOutside = (event) => {
+      if (sourceDropdownRef.current && !sourceDropdownRef.current.contains(event.target)) {
+        setShowSourceDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSourceDropdown]);
+
   const handleSearch = (page = 1) => {
     setSearchParams(buildUrlParams(localSearchParams, page, resultsPerPage));
   };
@@ -137,10 +152,30 @@ const JobSearch = () => {
     }));
   };
 
-  const handleSourceChange = (source) => {
-    const updated = { ...localSearchParams, source };
-    setLocalSearchParams(updated);
-    setSearchParams(buildUrlParams(updated, 1, resultsPerPage));
+  const selectedSources = localSearchParams.source === 'all'
+    ? new Set()
+    : new Set(localSearchParams.source.split(',').filter(Boolean));
+  const isAllSelected = selectedSources.size === 0;
+
+  const handleSourceToggle = (sourceValue) => {
+    let next;
+    if (sourceValue === 'all') {
+      next = 'all';
+    } else {
+      const updated = new Set(selectedSources);
+      if (updated.has(sourceValue)) {
+        updated.delete(sourceValue);
+      } else {
+        updated.add(sourceValue);
+      }
+      const allSourceValues = SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((o) => o.value);
+      next = updated.size === 0 || updated.size === allSourceValues.length
+        ? 'all'
+        : Array.from(updated).join(',');
+    }
+    const params = { ...localSearchParams, source: next };
+    setLocalSearchParams(params);
+    setSearchParams(buildUrlParams(params, 1, resultsPerPage));
   };
 
   const handleSortChange = (sortValue) => {
@@ -309,18 +344,54 @@ const JobSearch = () => {
           {/* Filter Bar: Source Tabs | Salary | Sort */}
           <div className='flex flex-wrap items-center gap-3 justify-between'>
             {/* Left: Source Dropdown */}
-            <div>
-              <select
-                value={localSearchParams.source || 'all'}
-                onChange={(e) => handleSourceChange(e.target.value)}
-                className='px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
+            <div className='relative' ref={sourceDropdownRef}>
+              <button
+                type='button'
+                onClick={() => setShowSourceDropdown(!showSourceDropdown)}
+                className='flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors'
               >
-                {SOURCE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <HiFilter className='h-4 w-4' />
+                {isAllSelected
+                  ? 'All Sources'
+                  : selectedSources.size === 1
+                    ? SOURCE_OPTIONS.find((o) => o.value === Array.from(selectedSources)[0])?.label || 'Source'
+                    : `${selectedSources.size} Sources`}
+                <svg className='w-3.5 h-3.5 text-gray-400' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 9l-7 7-7-7' />
+                </svg>
+              </button>
+
+              {showSourceDropdown && (
+                <div className='absolute left-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto'>
+                  <div className='p-2'>
+                    <label className='flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-50 cursor-pointer text-sm font-medium text-gray-900 border-b border-gray-100 mb-1'>
+                      <input
+                        type='checkbox'
+                        checked={isAllSelected}
+                        onChange={() => handleSourceToggle('all')}
+                        className='rounded border-gray-300 text-primary-600 focus:ring-primary-500'
+                      />
+                      All Sources
+                    </label>
+                    <div className='grid grid-cols-2 gap-0.5'>
+                      {SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((opt) => (
+                        <label
+                          key={opt.value}
+                          className='flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer text-sm text-gray-700'
+                        >
+                          <input
+                            type='checkbox'
+                            checked={isAllSelected || selectedSources.has(opt.value)}
+                            onChange={() => handleSourceToggle(opt.value)}
+                            className='rounded border-gray-300 text-primary-600 focus:ring-primary-500'
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Right: Salary + Sort (desktop) */}
@@ -454,9 +525,11 @@ const JobSearch = () => {
                           </span>
                         )}
                         {search.criteria.source && search.criteria.source !== 'all' && (
-                          <span className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                            {SOURCE_OPTIONS.find((o) => o.value === search.criteria.source)?.label || search.criteria.source}
-                          </span>
+                          search.criteria.source.split(',').map((s) => (
+                            <span key={s} className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
+                              {SOURCE_OPTIONS.find((o) => o.value === s)?.label || s}
+                            </span>
+                          ))
                         )}
                       </div>
                     </div>
@@ -505,17 +578,17 @@ const JobSearch = () => {
                 Ready to Search Jobs
               </h3>
               <p className='text-blue-700 max-w-md mx-auto'>
-                Search across NYC city and federal government jobs. Enter keywords, set a salary range, or click Search to see all available jobs.
+                Search across government, universities, hospitals, museums, non-profits, and more. Enter keywords, set a salary range, or click Search to see all available jobs.
               </p>
             </div>
 
             <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
               <div className='bg-white/60 rounded-lg p-4'>
                 <div className='text-blue-600 font-medium mb-1'>
-                  City + Federal
+                  24 Sources
                 </div>
                 <div className='text-blue-700'>
-                  NYC and US government jobs in one place
+                  City, state, federal, universities, hospitals, museums, and more
                 </div>
               </div>
               <div className='bg-white/60 rounded-lg p-4'>
@@ -523,7 +596,7 @@ const JobSearch = () => {
                   Filter by Source
                 </div>
                 <div className='text-blue-700'>
-                  Browse city or federal jobs separately
+                  Browse each employer separately or search all at once
                 </div>
               </div>
               <div className='bg-white/60 rounded-lg p-4'>
@@ -531,7 +604,7 @@ const JobSearch = () => {
                   Save Favorites
                 </div>
                 <div className='text-blue-700'>
-                  Bookmark jobs you're interested in
+                  Bookmark jobs and track your applications
                 </div>
               </div>
             </div>
@@ -572,9 +645,11 @@ const JobSearch = () => {
                       </span>
                     )}
                     {localSearchParams.source && localSearchParams.source !== 'all' && (
-                      <span className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                        {`${SOURCE_OPTIONS.find((o) => o.value === localSearchParams.source)?.label || localSearchParams.source} Jobs`}
-                      </span>
+                      localSearchParams.source.split(',').map((s) => (
+                        <span key={s} className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
+                          {SOURCE_OPTIONS.find((o) => o.value === s)?.label || s}
+                        </span>
+                      ))
                     )}
                     {localSearchParams.salary_min && (
                       <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
