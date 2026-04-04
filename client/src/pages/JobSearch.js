@@ -275,7 +275,7 @@ const JobSearch = () => {
   return (
     <div className='space-y-6'>
       {/* Search Header */}
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 overflow-hidden'>
+      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6'>
         <h1 className='text-2xl font-bold text-gray-900 mb-4'>
           Search Jobs
         </h1>
