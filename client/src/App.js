@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { getProfile } from './store/slices/authSlice';
@@ -11,16 +11,18 @@ import Notes from './pages/Notes';
 import Profile from './pages/Profile';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Admin from './pages/Admin';
-import JobMap from './pages/JobMap';
 import Sources from './pages/Sources';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import AdminRoute from './components/Auth/AdminRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 
+// Code-split heavy routes (Admin, and JobMap with mapbox-gl) into separate chunks
+const Admin = lazy(() => import('./pages/Admin'));
+const JobMap = lazy(() => import('./pages/JobMap'));
+
 function App() {
   const dispatch = useDispatch();
-  const { isAuthenticated, loading, token } = useSelector(
+  const { isAuthenticated, profileLoading, token } = useSelector(
     (state) => state.auth
   );
   useEffect(() => {
@@ -30,7 +32,9 @@ function App() {
     }
   }, [dispatch, token, isAuthenticated]);
 
-  if (loading) {
+  // Only block rendering while restoring a session from a stored token —
+  // login/register submits manage their own loading state inline
+  if (profileLoading && token) {
     return (
       <div className='min-h-screen flex items-center justify-center'>
         <LoadingSpinner size='lg' />
@@ -40,6 +44,13 @@ function App() {
 
   return (
     <div className='App'>
+      <Suspense
+        fallback={
+          <div className='min-h-screen flex items-center justify-center'>
+            <LoadingSpinner size='lg' />
+          </div>
+        }
+      >
       <Routes>
         {/* Public routes */}
         <Route
@@ -144,6 +155,7 @@ function App() {
         {/* Catch all route */}
         <Route path='*' element={<Navigate to='/' replace />} />
       </Routes>
+      </Suspense>
     </div>
   );
 }

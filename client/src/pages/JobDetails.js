@@ -16,6 +16,7 @@ import {
   HiExternalLink,
   HiX,
 } from 'react-icons/hi';
+import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
@@ -73,15 +74,19 @@ const JobDetails = () => {
 
   const effectiveSource = currentJob?.source || source;
 
-  const handleTrackingDateChange = (field, value) => {
-    dispatch(updateJobTracking({
-      jobId: currentJob.jobId,
-      source: effectiveSource,
-      trackingData: { [field]: value || null },
-    }));
+  const handleTrackingDateChange = async (field, value) => {
+    try {
+      await dispatch(updateJobTracking({
+        jobId: currentJob.jobId,
+        source: effectiveSource,
+        trackingData: { [field]: value || null },
+      })).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update tracking date');
+    }
   };
 
-  const handleAddDocLink = () => {
+  const handleAddDocLink = async () => {
     if (!docLabel.trim()) return;
     const urlErr = validateDocUrl(docUrl);
     if (urlErr) {
@@ -90,27 +95,39 @@ const JobDetails = () => {
     }
     setDocError('');
     const updated = [...(currentJob.documentLinks || []), { label: docLabel.trim(), url: docUrl.trim() }];
-    dispatch(updateJobTracking({
-      jobId: currentJob.jobId,
-      source: effectiveSource,
-      trackingData: { documentLinks: updated },
-    }));
-    setDocLabel('');
-    setDocUrl('');
+    try {
+      await dispatch(updateJobTracking({
+        jobId: currentJob.jobId,
+        source: effectiveSource,
+        trackingData: { documentLinks: updated },
+      })).unwrap();
+      setDocLabel('');
+      setDocUrl('');
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to add document link');
+    }
   };
 
-  const handleRemoveDocLink = (idx) => {
+  const handleRemoveDocLink = async (idx) => {
     const updated = (currentJob.documentLinks || []).filter((_, i) => i !== idx);
-    dispatch(updateJobTracking({
-      jobId: currentJob.jobId,
-      source: effectiveSource,
-      trackingData: { documentLinks: updated },
-    }));
+    try {
+      await dispatch(updateJobTracking({
+        jobId: currentJob.jobId,
+        source: effectiveSource,
+        trackingData: { documentLinks: updated },
+      })).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to remove document link');
+    }
   };
 
-  const handleStatusChange = (newStatus) => {
+  const handleStatusChange = async (newStatus) => {
     if (!currentJob) return;
-    dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus, source: effectiveSource }));
+    try {
+      await dispatch(updateJobStatus({ jobId: currentJob.jobId, status: newStatus, source: effectiveSource })).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update status');
+    }
   };
 
   const handleSaveJob = async () => {
@@ -126,8 +143,8 @@ const JobDetails = () => {
       } else {
         await dispatch(saveJob({ jobId: currentJob.jobId, source: effectiveSource })).unwrap();
       }
-    } catch (error) {
-      console.error('Error saving/unsaving job:', error);
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update saved job');
     }
   };
 
@@ -400,41 +417,47 @@ const JobDetails = () => {
             </div>
           </div>
 
-          {/* Application Info */}
-          <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>
-              How to Apply
-            </h3>
-            <a
-              href={
-                currentJob.externalUrl
-                  || (effectiveSource === 'federal' ? `https://www.usajobs.gov/job/${currentJob.jobId}`
-                    : effectiveSource === 'nys' ? `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${currentJob.jobId}`
-                    : `https://cityjobs.nyc.gov/job/${currentJob.jobId}`)
-              }
-              target='_blank'
-              rel='noopener noreferrer'
-              className='inline-flex items-center px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors'
-            >
-              {effectiveSource === 'federal' ? 'Apply at USAJobs'
-                : effectiveSource === 'nys' ? 'Apply at StateJobsNY'
-                : effectiveSource === 'nyc' ? 'Apply at NYC Jobs'
-                : 'Apply on Source Website'}
-              <svg
-                className='ml-2 h-4 w-4'
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth={2}
-                  d='M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
-                />
-              </svg>
-            </a>
-          </div>
+          {/* Application Info — known per-source fallbacks only; other sources
+              without an externalUrl get no apply link at all */}
+          {(() => {
+            const applyUrl = currentJob.externalUrl
+              || (effectiveSource === 'federal' ? `https://www.usajobs.gov/job/${currentJob.jobId}`
+                : effectiveSource === 'nys' ? `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${currentJob.jobId}`
+                : effectiveSource === 'nyc' ? `https://cityjobs.nyc.gov/job/${currentJob.jobId}`
+                : null);
+            if (!applyUrl) return null;
+            return (
+              <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+                <h3 className='text-lg font-semibold text-gray-900 mb-4'>
+                  How to Apply
+                </h3>
+                <a
+                  href={applyUrl}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='inline-flex items-center px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors'
+                >
+                  {effectiveSource === 'federal' ? 'Apply at USAJobs'
+                    : effectiveSource === 'nys' ? 'Apply at StateJobsNY'
+                    : effectiveSource === 'nyc' ? 'Apply at NYC Jobs'
+                    : 'Apply on Source Website'}
+                  <svg
+                    className='ml-2 h-4 w-4'
+                    fill='none'
+                    stroke='currentColor'
+                    viewBox='0 0 24 24'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      strokeWidth={2}
+                      d='M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
+                    />
+                  </svg>
+                </a>
+              </div>
+            );
+          })()}
 
           {/* Important Dates */}
           <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>

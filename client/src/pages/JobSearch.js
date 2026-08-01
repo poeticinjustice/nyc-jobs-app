@@ -19,6 +19,7 @@ import {
   HiTrash,
   HiFilter,
 } from 'react-icons/hi';
+import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import Pagination from '../components/UI/Pagination';
@@ -162,13 +163,14 @@ const JobSearch = () => {
     if (sourceValue === 'all') {
       next = 'all';
     } else {
-      const updated = new Set(selectedSources);
+      const allSourceValues = SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((o) => o.value);
+      // From "all", start with every source checked so unchecking one keeps the rest
+      const updated = isAllSelected ? new Set(allSourceValues) : new Set(selectedSources);
       if (updated.has(sourceValue)) {
         updated.delete(sourceValue);
       } else {
         updated.add(sourceValue);
       }
-      const allSourceValues = SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((o) => o.value);
       next = updated.size === 0 || updated.size === allSourceValues.length
         ? 'all'
         : Array.from(updated).join(',');
@@ -185,15 +187,18 @@ const JobSearch = () => {
     setSearchParams(buildUrlParams(updated, 1, resultsPerPage));
   };
 
-  const handleSaveJob = (job) => {
+  const handleSaveJob = async (job) => {
     if (!isAuthenticated) return;
 
-    if (job.isSaved) {
-      if (window.confirm('Are you sure you want to remove this bookmark?')) {
-        dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
+    try {
+      if (job.isSaved) {
+        if (!window.confirm('Are you sure you want to remove this bookmark?')) return;
+        await dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
+      } else {
+        await dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
       }
-    } else {
-      dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update saved job');
     }
   };
 
@@ -229,8 +234,9 @@ const JobSearch = () => {
       await dispatch(saveSearch({ name: saveSearchName.trim(), criteria })).unwrap();
       setSaveSearchName('');
       setShowSaveSearchModal(false);
-    } catch {
-      // Error is in Redux state; keep modal open so user can retry
+    } catch (err) {
+      // Keep modal open so user can retry
+      toast.error(err?.message || err || 'Failed to save search');
     }
   };
 
@@ -247,9 +253,13 @@ const JobSearch = () => {
     setShowSavedSearches(false);
   };
 
-  const handleDeleteSavedSearch = (id, e) => {
+  const handleDeleteSavedSearch = async (id, e) => {
     e.stopPropagation();
-    dispatch(deleteSavedSearch(id));
+    try {
+      await dispatch(deleteSavedSearch(id)).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to delete saved search');
+    }
   };
 
   const handleClearSearch = () => {
@@ -717,9 +727,9 @@ const JobSearch = () => {
             )}
 
             <div className='space-y-4'>
-              {searchResults.map((job, index) => (
+              {searchResults.map((job) => (
                 <div
-                  key={job.jobId || `job-${index}`}
+                  key={`${job.source}-${job.jobId}`}
                   className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow overflow-hidden'
                 >
                   <div className='flex justify-between items-start'>

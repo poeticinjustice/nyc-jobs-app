@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSelector } from 'react-redux';
+import toast from 'react-hot-toast';
 import {
   HiUsers,
   HiBriefcase,
@@ -56,18 +57,23 @@ const UserManagement = () => {
   const [roleFilter, setRoleFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
+  // Monotonically increasing ticket so stale responses never clobber newer ones
+  const fetchTicketRef = useRef(0);
 
   const fetchUsers = useCallback(async () => {
+    const ticket = ++fetchTicketRef.current;
     setLoading(true);
     try {
       const params = { page, limit: 20 };
       if (roleFilter) params.role = roleFilter;
       if (activeFilter) params.isActive = activeFilter;
       const res = await api.get('/api/users', { params });
+      if (ticket !== fetchTicketRef.current) return;
       setUsers(res.data.users);
       setPagination(res.data.pagination);
-    } catch {
-      // silently fail
+    } catch (err) {
+      if (ticket !== fetchTicketRef.current) return;
+      toast.error(err.response?.data?.message || 'Failed to load users');
     }
     setLoading(false);
   }, [page, roleFilter, activeFilter]);
@@ -83,8 +89,8 @@ const UserManagement = () => {
       setUsers((prev) =>
         prev.map((u) => (u._id === userId ? { ...u, role: newRole } : u))
       );
-    } catch {
-      // silently fail
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update user role');
     }
     setActionLoading(null);
   };
@@ -100,8 +106,11 @@ const UserManagement = () => {
       setUsers((prev) =>
         prev.map((u) => (u._id === userId ? { ...u, isActive: !isActive } : u))
       );
-    } catch {
-      // silently fail
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message
+          || `Failed to ${isActive ? 'deactivate' : 'reactivate'} user`
+      );
     }
     setActionLoading(null);
   };
@@ -220,18 +229,23 @@ const JobManagement = () => {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  // Monotonically increasing ticket so stale responses never clobber newer ones
+  const fetchTicketRef = useRef(0);
 
   const fetchJobs = useCallback(async () => {
+    const ticket = ++fetchTicketRef.current;
     setLoading(true);
     try {
       const params = { page, limit: 20 };
       if (search) params.q = search;
       if (sourceFilter) params.source = sourceFilter;
       const res = await api.get('/api/jobs/admin', { params });
+      if (ticket !== fetchTicketRef.current) return;
       setJobs(res.data.jobs);
       setPagination(res.data.pagination);
-    } catch {
-      // silently fail
+    } catch (err) {
+      if (ticket !== fetchTicketRef.current) return;
+      toast.error(err.response?.data?.message || 'Failed to load jobs');
     }
     setLoading(false);
   }, [page, search, sourceFilter]);
@@ -355,18 +369,23 @@ const NotesManagement = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
+  // Monotonically increasing ticket so stale responses never clobber newer ones
+  const fetchTicketRef = useRef(0);
 
   const fetchNotes = useCallback(async () => {
+    const ticket = ++fetchTicketRef.current;
     setLoading(true);
     try {
       const params = { page, limit: 20 };
       if (typeFilter) params.type = typeFilter;
       if (priorityFilter) params.priority = priorityFilter;
       const res = await api.get('/api/notes/admin', { params });
+      if (ticket !== fetchTicketRef.current) return;
       setNotes(res.data.notes);
       setPagination(res.data.pagination);
-    } catch {
-      // silently fail
+    } catch (err) {
+      if (ticket !== fetchTicketRef.current) return;
+      toast.error(err.response?.data?.message || 'Failed to load notes');
     }
     setLoading(false);
   }, [page, typeFilter, priorityFilter]);
@@ -381,8 +400,8 @@ const NotesManagement = () => {
     try {
       await api.delete(`/api/notes/${noteId}`);
       setNotes((prev) => prev.filter((n) => n._id !== noteId));
-    } catch {
-      // silently fail
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete note');
     }
     setActionLoading(null);
   };
@@ -545,7 +564,7 @@ const Admin = () => {
         });
         setRecentUsers(response.data.recentUsers || []);
       } catch (error) {
-        // Stats are non-critical; silently fail
+        toast.error(error.response?.data?.message || 'Failed to load dashboard stats');
       }
     };
     fetchStats();

@@ -4,7 +4,6 @@ import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { store } from './store';
-import { ToastProvider } from './components/UI/ToastContext';
 import App from './App';
 import './index.css';
 
@@ -13,9 +12,7 @@ root.render(
   <React.StrictMode>
     <Provider store={store}>
       <BrowserRouter>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
+        <App />
         <Toaster
           position='top-right'
           toastOptions={{

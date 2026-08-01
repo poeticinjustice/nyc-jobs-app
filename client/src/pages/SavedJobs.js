@@ -16,6 +16,7 @@ import {
   HiPaperClip,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
@@ -41,7 +42,8 @@ const SavedJobs = () => {
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
 
-  // Sync status filter from URL (e.g. /saved?status=applied from Home)
+  // Sync status filter from URL (e.g. /saved?status=applied from Home) so
+  // Redux state (used for tab highlighting) tracks the URL
   const urlStatus = searchParams.get('status') || '';
   useEffect(() => {
     if (urlStatus !== statusFilter) {
@@ -50,13 +52,15 @@ const SavedJobs = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, urlStatus]);
 
+  // Fetch straight from the URL params — avoids a double fetch on mount while
+  // the Redux statusFilter is still stale
   useEffect(() => {
     if (isAuthenticated) {
       const params = { page: currentPage, limit: PAGE_SIZE };
-      if (statusFilter) params.status = statusFilter;
+      if (urlStatus) params.status = urlStatus;
       dispatch(getSavedJobs(params));
     }
-  }, [dispatch, isAuthenticated, currentPage, statusFilter]);
+  }, [dispatch, isAuthenticated, currentPage, urlStatus]);
 
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
@@ -71,8 +75,12 @@ const SavedJobs = () => {
     if (window.confirm('Are you sure you want to remove this bookmark?')) {
       try {
         await dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
-      } catch {
-        // saveError is displayed in the UI
+        // If that emptied the current page, step back to the previous one
+        if (savedJobs.length === 1 && currentPage > 1) {
+          handlePageChange(currentPage - 1);
+        }
+      } catch (err) {
+        toast.error(err?.message || err || 'Failed to remove saved job');
       }
     }
   };
@@ -82,8 +90,12 @@ const SavedJobs = () => {
     setShowNoteModal(true);
   };
 
-  const handleStatusChange = (job, newStatus) => {
-    dispatch(updateJobStatus({ jobId: job.jobId, status: newStatus, source: job.source || 'nyc' }));
+  const handleStatusChange = async (job, newStatus) => {
+    try {
+      await dispatch(updateJobStatus({ jobId: job.jobId, status: newStatus, source: job.source || 'nyc' })).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update status');
+    }
   };
 
   const handleStatusFilterChange = (status) => {
@@ -105,7 +117,7 @@ const SavedJobs = () => {
       const params = statusFilter ? `?status=${statusFilter}` : '';
       await downloadFile(`/api/jobs/saved/export${params}`, 'saved-jobs.csv');
     } catch (error) {
-      console.error('Export failed:', error);
+      toast.error(error.response?.data?.message || 'Failed to export CSV');
     }
   };
 
@@ -170,9 +182,9 @@ const SavedJobs = () => {
         </div>
       ) : savedJobs.length > 0 ? (
         <div className='space-y-4'>
-          {savedJobs.map((job, index) => (
+          {savedJobs.map((job) => (
             <div
-              key={job.jobId || job._id || `job-${index}`}
+              key={`${job.source}-${job.jobId}`}
               className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
             >
               <div className='flex justify-between items-start'>

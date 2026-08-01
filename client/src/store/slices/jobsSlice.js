@@ -145,6 +145,9 @@ const initialState = {
     pages: 0,
   },
   statusFilter: '',
+  searchLatestRequestId: null,
+  detailsLatestRequestId: null,
+  savedJobsLatestRequestId: null,
   searchLoading: false,
   detailsLoading: false,
   savedJobsLoading: false,
@@ -172,32 +175,39 @@ const jobsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       // Search Jobs
-      .addCase(searchJobs.pending, (state) => {
+      .addCase(searchJobs.pending, (state, action) => {
+        state.searchLatestRequestId = action.meta.requestId;
         state.searchLoading = true;
         state.searchError = null;
       })
       .addCase(searchJobs.fulfilled, (state, action) => {
+        // Ignore stale responses — only the latest request may update state
+        if (action.meta.requestId !== state.searchLatestRequestId) return;
         state.searchLoading = false;
         state.searchResults = action.payload.jobs;
         state.searchPagination = action.payload.pagination;
       })
       .addCase(searchJobs.rejected, (state, action) => {
+        if (action.meta.requestId !== state.searchLatestRequestId) return;
         state.searchLoading = false;
         state.searchError = action.payload;
       })
 
       // Get Job Details — clear currentJob in pending to avoid flash
-      .addCase(getJobDetails.pending, (state) => {
+      .addCase(getJobDetails.pending, (state, action) => {
+        state.detailsLatestRequestId = action.meta.requestId;
         state.detailsLoading = true;
         state.detailsError = null;
         state.currentJob = null;
         state.jobNotes = [];
       })
       .addCase(getJobDetails.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.detailsLatestRequestId) return;
         state.detailsLoading = false;
         state.currentJob = action.payload;
       })
       .addCase(getJobDetails.rejected, (state, action) => {
+        if (action.meta.requestId !== state.detailsLatestRequestId) return;
         state.detailsLoading = false;
         state.detailsError = action.payload;
       })
@@ -339,16 +349,19 @@ const jobsSlice = createSlice({
       })
 
       // Get Saved Jobs
-      .addCase(getSavedJobs.pending, (state) => {
+      .addCase(getSavedJobs.pending, (state, action) => {
+        state.savedJobsLatestRequestId = action.meta.requestId;
         state.savedJobsLoading = true;
         state.savedJobsError = null;
       })
       .addCase(getSavedJobs.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.savedJobsLatestRequestId) return;
         state.savedJobsLoading = false;
         state.savedJobs = action.payload.jobs;
         state.savedPagination = action.payload.pagination;
       })
       .addCase(getSavedJobs.rejected, (state, action) => {
+        if (action.meta.requestId !== state.savedJobsLatestRequestId) return;
         state.savedJobsLoading = false;
         state.savedJobsError = action.payload;
       })

@@ -8,7 +8,14 @@ const SOURCE_GROUPS = [
       { label: 'NYC City Jobs', url: 'https://cityjobs.nyc.gov/', description: 'City of New York agencies' },
       { label: 'New York State', url: 'https://statejobs.ny.gov/public/vacancytable.cfm', description: 'State agencies in NYC metro' },
       { label: 'Federal (USAJobs)', url: 'https://www.usajobs.gov/', description: 'Federal government positions' },
+    ],
+  },
+  {
+    name: 'Transit',
+    sources: [
       { label: 'Port Authority NY/NJ', url: 'https://jobs.jobvite.com/panynj/jobs', description: 'Airports, bridges, tunnels, PATH' },
+      { label: 'MTA', url: 'https://careers.mta.org/us/en/search-results', description: 'Subways, buses, LIRR, Metro-North' },
+      { label: 'Amtrak', url: 'https://careers.amtrak.com/search/?q=&optionsFacetsDD_state=New+York', description: 'Amtrak — New York positions' },
     ],
   },
   {
@@ -52,7 +59,6 @@ const SOURCE_GROUPS = [
     sources: [
       { label: 'New York Public Library', url: 'https://nypl.pinpointhq.com/', description: 'NYPL branches across NYC' },
       { label: 'Idealist', url: 'https://www.idealist.org/en/jobs?q=&areasOfFocus=&locationName=New+York&locationType=AREA', description: 'Non-profit jobs in NYC area' },
-      { label: 'Amtrak', url: 'https://careers.amtrak.com/search/?q=&optionsFacetsDD_state=New+York', description: 'Amtrak — New York positions' },
       { label: 'United Nations', url: 'https://careers.un.org/', description: 'UN headquarters — New York' },
     ],
   },

@@ -10,6 +10,7 @@ const SOURCE_CONFIG = {
   fordham: { label: 'Fordham', shortLabel: 'Ford', className: 'bg-rose-100 text-rose-800' },
   newschool: { label: 'New School', shortLabel: 'TNS', className: 'bg-fuchsia-100 text-fuchsia-800' },
   pa: { label: 'Port Authority', shortLabel: 'PA', className: 'bg-slate-100 text-slate-800' },
+  mta: { label: 'MTA', shortLabel: 'MTA', className: 'bg-indigo-100 text-indigo-800' },
   mountsinai: { label: 'Mount Sinai', shortLabel: 'Sinai', className: 'bg-purple-100 text-purple-800' },
   nyp: { label: 'NYP', shortLabel: 'NYP', className: 'bg-red-100 text-red-800' },
   northwell: { label: 'Northwell', shortLabel: 'NW', className: 'bg-lime-100 text-lime-800' },

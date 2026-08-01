@@ -85,6 +85,7 @@ const initialState = {
   token: localStorage.getItem('token'),
   isAuthenticated: false,
   loading: false,
+  profileLoading: false,
   profileUpdateLoading: false,
   passwordChangeLoading: false,
   error: null,
@@ -143,17 +144,17 @@ const authSlice = createSlice({
 
       // Get Profile
       .addCase(getProfile.pending, (state) => {
-        state.loading = true;
+        state.profileLoading = true;
         state.error = null;
       })
       .addCase(getProfile.fulfilled, (state, action) => {
-        state.loading = false;
+        state.profileLoading = false;
         state.user = action.payload.user;
         state.isAuthenticated = true;
         state.error = null;
       })
       .addCase(getProfile.rejected, (state, action) => {
-        state.loading = false;
+        state.profileLoading = false;
         state.user = null;
         state.token = null;
         state.isAuthenticated = false;

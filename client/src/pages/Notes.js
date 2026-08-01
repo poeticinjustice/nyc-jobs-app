@@ -8,8 +8,10 @@ import {
   HiEye,
   HiExternalLink,
   HiDownload,
+  HiX,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
@@ -34,6 +36,9 @@ const Notes = () => {
   const currentPage = parseInt(searchParams.get('page') || '1');
   const pageSize = 20; // Number of notes per page
 
+  // Deep link from JobDetails: /notes?jobId=... filters notes to one job
+  const jobIdFilter = searchParams.get('jobId') || '';
+
   useEffect(() => {
     // Fetch notes with current filters and pagination
     const updatedFilters = {
@@ -41,8 +46,9 @@ const Notes = () => {
       page: currentPage,
       limit: pageSize,
     };
+    if (jobIdFilter) updatedFilters.jobId = jobIdFilter;
     dispatch(getNotes(updatedFilters));
-  }, [dispatch, filters, currentPage, pageSize]);
+  }, [dispatch, filters, currentPage, pageSize, jobIdFilter]);
 
   // Update URL when page changes
   const handlePageChange = (newPage) => {
@@ -73,12 +79,21 @@ const Notes = () => {
     });
   };
 
+  const handleClearJobFilter = () => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      newParams.delete('jobId');
+      newParams.set('page', '1');
+      return newParams;
+    });
+  };
+
   const handleDeleteNote = async (noteId) => {
     if (window.confirm('Are you sure you want to delete this note?')) {
       try {
         await dispatch(deleteNote(noteId)).unwrap();
-      } catch {
-        // Error displayed via Redux state
+      } catch (err) {
+        toast.error(err?.message || err || 'Failed to delete note');
       }
     }
   };
@@ -107,7 +122,7 @@ const Notes = () => {
     try {
       await downloadFile('/api/notes/export', 'notes.csv');
     } catch (error) {
-      console.error('Export failed:', error);
+      toast.error(error.response?.data?.message || 'Failed to export CSV');
     }
   };
 
@@ -152,6 +167,19 @@ const Notes = () => {
               {pagination?.total || notes.length}{' '}
               {(pagination?.total || notes.length) === 1 ? 'note' : 'notes'}
             </p>
+            {jobIdFilter && (
+              <span className='inline-flex items-center gap-1 mt-2 px-2.5 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium'>
+                Filtered by job
+                <button
+                  onClick={handleClearJobFilter}
+                  className='hover:text-primary-900'
+                  title='Clear job filter'
+                  aria-label='Clear job filter'
+                >
+                  <HiX className='h-3.5 w-3.5' />
+                </button>
+              </span>
+            )}
           </div>
           <div className='flex items-center space-x-2'>
             {notes.length > 0 && (

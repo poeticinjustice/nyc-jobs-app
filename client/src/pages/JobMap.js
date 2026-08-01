@@ -52,6 +52,17 @@ const clusterCountLayer = {
   },
 };
 
+// Marker color groups — covers all JOB_SOURCES (plus 'mta') from shared constants
+const SOURCE_COLOR_GROUPS = [
+  { label: 'City', sources: ['nyc'], color: '#2563eb' },
+  { label: 'State & Transit', sources: ['nys', 'pa', 'mta', 'amtrak'], color: '#4f46e5' },
+  { label: 'Federal & International', sources: ['federal', 'un'], color: '#16a34a' },
+  { label: 'Healthcare', sources: ['mountsinai', 'nyp', 'northwell', 'nyulangone', 'msk', 'montefiore', 'nychhc'], color: '#dc2626' },
+  { label: 'Education', sources: ['cuny', 'nyu', 'fordham', 'columbia', 'newschool'], color: '#9333ea' },
+  { label: 'Culture & Libraries', sources: ['amnh', 'metmuseum', 'frick', 'guggenheim', 'nypl'], color: '#ea580c' },
+  { label: 'Non-Profit', sources: ['idealist'], color: '#0d9488' },
+];
+
 // Individual unclustered markers
 const unclusteredPointLayer = {
   id: 'unclustered-point',
@@ -61,8 +72,11 @@ const unclusteredPointLayer = {
   paint: {
     'circle-color': [
       'match', ['get', 'source'],
-      'federal', '#10b981', // green for federal
-      '#3b82f6', // blue for NYC (default)
+      ...SOURCE_COLOR_GROUPS.flatMap((group) => [
+        group.sources.length === 1 ? group.sources[0] : group.sources,
+        group.color,
+      ]),
+      '#2563eb', // fallback for unknown sources
     ],
     'circle-radius': 7,
     'circle-stroke-width': 2,
@@ -81,20 +95,26 @@ const JobMap = () => {
   const [searchInput, setSearchInput] = useState('');
   const [metadata, setMetadata] = useState(null);
 
+  // Monotonically increasing ticket so stale responses never clobber newer ones
+  const fetchTicketRef = useRef(0);
+
   // Fetch map data
   const fetchMapData = useCallback(async () => {
+    const ticket = ++fetchTicketRef.current;
     setLoading(true);
     setError(null);
     try {
       const params = { source };
       if (keyword) params.keyword = keyword;
       const res = await api.get('/api/jobs/map', { params });
+      if (ticket !== fetchTicketRef.current) return;
       setGeojson(res.data);
       setMetadata(res.data.metadata);
     } catch (err) {
+      if (ticket !== fetchTicketRef.current) return;
       setError(err.response?.data?.message || 'Failed to load map data');
     } finally {
-      setLoading(false);
+      if (ticket === fetchTicketRef.current) setLoading(false);
     }
   }, [source, keyword]);
 
@@ -342,16 +362,17 @@ const JobMap = () => {
       </Map>
 
       {/* Legend */}
-      <div className='absolute bottom-8 left-4 bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 hidden md:block'>
-        <div className='flex items-center gap-4 text-xs text-gray-600'>
-          <div className='flex items-center gap-1.5'>
-            <span className='w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm' />
-            NYC Jobs
-          </div>
-          <div className='flex items-center gap-1.5'>
-            <span className='w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow-sm' />
-            Federal Jobs
-          </div>
+      <div className='absolute bottom-8 left-4 bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 hidden md:block max-w-md'>
+        <div className='flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600'>
+          {SOURCE_COLOR_GROUPS.map((group) => (
+            <div key={group.label} className='flex items-center gap-1.5'>
+              <span
+                className='w-3 h-3 rounded-full border-2 border-white shadow-sm'
+                style={{ backgroundColor: group.color }}
+              />
+              {group.label}
+            </div>
+          ))}
         </div>
       </div>
     </div>

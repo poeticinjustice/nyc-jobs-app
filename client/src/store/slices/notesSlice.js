@@ -71,6 +71,7 @@ const initialState = {
     total: 0,
     pages: 0,
   },
+  notesLatestRequestId: null,
   loading: false,
   error: null,
   createLoading: false,
@@ -117,17 +118,21 @@ const notesSlice = createSlice({
       })
 
       // Get Notes
-      .addCase(getNotes.pending, (state) => {
+      .addCase(getNotes.pending, (state, action) => {
+        state.notesLatestRequestId = action.meta.requestId;
         state.loading = true;
         state.error = null;
       })
       .addCase(getNotes.fulfilled, (state, action) => {
+        // Ignore stale responses — only the latest request may update state
+        if (action.meta.requestId !== state.notesLatestRequestId) return;
         state.loading = false;
         state.notes = action.payload.notes;
         state.pagination = action.payload.pagination;
         state.error = null;
       })
       .addCase(getNotes.rejected, (state, action) => {
+        if (action.meta.requestId !== state.notesLatestRequestId) return;
         state.loading = false;
         state.error = action.payload;
       })
