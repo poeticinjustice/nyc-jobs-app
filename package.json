@@ -19,14 +19,15 @@
     "test:server": "jest --config jest.config.js --forceExit",
     "test:server:watch": "jest --config jest.config.js --watch --forceExit",
     "test:server:coverage": "jest --config jest.config.js --coverage --forceExit",
-    "test:helpers": "jest --config jest.config.js --testPathPattern=helpers --forceExit",
-    "test:auth": "jest --config jest.config.js --testPathPattern=auth --forceExit",
-    "test:jobs": "jest --config jest.config.js --testPathPattern=jobs --forceExit",
-    "test:notes": "jest --config jest.config.js --testPathPattern=notes --forceExit",
-    "test:searches": "jest --config jest.config.js --testPathPattern=searches --forceExit",
-    "test:dashboard": "jest --config jest.config.js --testPathPattern=dashboard --forceExit",
-    "test:middleware": "jest --config jest.config.js --testPathPattern=middleware --forceExit",
-    "refresh-jobs": "node server/scripts/refreshJobs.js"
+    "test:helpers": "jest --config jest.config.js --testPathPatterns=helpers --forceExit",
+    "test:auth": "jest --config jest.config.js --testPathPatterns=auth --forceExit",
+    "test:jobs": "jest --config jest.config.js --testPathPatterns=jobs --forceExit",
+    "test:notes": "jest --config jest.config.js --testPathPatterns=notes --forceExit",
+    "test:searches": "jest --config jest.config.js --testPathPatterns=searches --forceExit",
+    "test:dashboard": "jest --config jest.config.js --testPathPatterns=dashboard --forceExit",
+    "test:middleware": "jest --config jest.config.js --testPathPatterns=middleware --forceExit",
+    "refresh-jobs": "node server/scripts/refreshJobs.js",
+    "send-alerts": "node server/scripts/sendAlerts.js"
   },
   "keywords": [
     "mern",
@@ -51,7 +52,8 @@
     "iconv-lite": "^0.6.3",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^7.5.0",
-    "node-cron": "^4.2.1"
+    "node-cron": "^4.2.1",
+    "nodemailer": "^9.0.3"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

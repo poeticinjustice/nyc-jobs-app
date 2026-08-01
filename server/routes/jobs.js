@@ -3,8 +3,16 @@ const rateLimit = require('express-rate-limit');
 const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
 const Note = require('../models/Note');
+const User = require('../models/User');
+const ScraperRun = require('../models/ScraperRun');
 const { authenticateToken, optionalAuth, requireRole } = require('../middleware/auth');
-const { getUserSaveEntry, escCsv, escapeRegex } = require('../helpers/jobHelpers');
+const {
+  getUserSaveEntry,
+  escCsv,
+  escapeRegex,
+  buildSearchFilter,
+  buildSort,
+} = require('../helpers/jobHelpers');
 const {
   JOB_SOURCES,
   VALID_SOURCE_FILTERS,
@@ -16,116 +24,16 @@ const {
 
 const router = express.Router();
 
+const SEARCH_EXPORT_LIMIT = 5000;
+const BULK_STATUS_MAX = 100;
+const SCRAPER_HISTORY_LIMIT = 200;
+
 // --- Helpers ---
 
 // Validate and default job source from request body or query
 const getSource = (req) => {
   const raw = req.body.source || req.query.source;
   return JOB_SOURCES.includes(raw) ? raw : 'nyc';
-};
-
-// Build Mongoose sort from query param
-const buildSort = (sort) => {
-  switch (sort) {
-    case 'date_asc': return { postDate: 1 };
-    case 'title_asc': return { businessTitle: 1 };
-    case 'title_desc': return { businessTitle: -1 };
-    case 'salary_desc': return { salaryRangeFrom: -1 };
-    case 'salary_asc': return { salaryRangeFrom: 1 };
-    case 'date_desc':
-    default: return { postDate: -1 };
-  }
-};
-
-// Build Mongoose filter from search params
-const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_max, source }) => {
-  const filter = {};
-
-  if (source && source !== 'all') {
-    // Support comma-separated sources (e.g. "nyc,federal,cuny")
-    const sources = source.split(',').filter((s) => JOB_SOURCES.includes(s));
-    if (sources.length === 1) {
-      filter.source = sources[0];
-    } else if (sources.length > 1) {
-      filter.source = { $in: sources };
-    } else {
-      filter.source = { $in: JOB_SOURCES };
-    }
-  } else {
-    // 'all' still restricts to valid sources — prevents stale/unknown sources from leaking
-    filter.source = { $in: JOB_SOURCES };
-  }
-
-  // Exclude expired jobs (postUntil in the past)
-  const notExpired = {
-    $or: [
-      { postUntil: null },
-      { postUntil: { $exists: false } },
-      { postUntil: { $gte: new Date() } },
-    ],
-  };
-  filter.$and = filter.$and ? [...filter.$and, notExpired] : [notExpired];
-
-  if (q) {
-    filter.$text = { $search: q };
-  }
-
-  if (category) {
-    filter.jobCategory = new RegExp(`^${escapeRegex(category)}$`, 'i');
-  }
-
-  if (location) {
-    const locRegex = new RegExp(escapeRegex(location), 'i');
-    filter.$or = [
-      { workLocation: locRegex },
-      { workLocation1: locRegex },
-    ];
-  }
-
-  if (agency) {
-    filter.agency = new RegExp(escapeRegex(agency), 'i');
-  }
-
-  // Salary overlap: job range overlaps with [salary_min, salary_max]
-  if (salary_min || salary_max) {
-    const salaryConditions = [];
-    if (salary_min) {
-      const min = parseInt(salary_min, 10);
-      if (!isNaN(min)) {
-        // Job's upper bound >= min (or lower bound if no upper)
-        salaryConditions.push({
-          $or: [
-            { salaryRangeTo: { $gte: min } },
-            { salaryRangeTo: null, salaryRangeFrom: { $gte: min } },
-          ],
-        });
-      }
-    }
-    if (salary_max) {
-      const max = parseInt(salary_max, 10);
-      if (!isNaN(max)) {
-        // Job's lower bound <= max (or upper bound if no lower)
-        salaryConditions.push({
-          $or: [
-            { salaryRangeFrom: { $lte: max } },
-            { salaryRangeFrom: null, salaryRangeTo: { $lte: max } },
-          ],
-        });
-      }
-    }
-    if (salaryConditions.length > 0) {
-      // Ensure $and exists (it should, from notExpired)
-      if (!filter.$and) filter.$and = [];
-      // Move location $or into $and to avoid conflicts
-      if (filter.$or) {
-        filter.$and.push({ $or: filter.$or });
-        delete filter.$or;
-      }
-      filter.$and.push(...salaryConditions);
-    }
-  }
-
-  return filter;
 };
 
 // Build query filter for a user's saved jobs, optionally filtered by status
@@ -348,14 +256,22 @@ router.get(
       ]);
 
       // Check saved status for authenticated users — the fetched docs already
-      // carry savedBy, so no second query is needed
+      // carry savedBy, so no second query is needed. isNew marks jobs added to
+      // the database since the user last called POST /api/jobs/seen.
       let jobsWithStatus = jobs;
+      let newSinceLastSeen = 0;
       if (req.user) {
         const uid = req.user._id.toString();
-        jobsWithStatus = jobs.map((job) => ({
-          ...job,
-          isSaved: (job.savedBy || []).some((s) => s.user && s.user.toString() === uid),
-        }));
+        const seenAt = req.user.lastJobsSeenAt;
+        jobsWithStatus = jobs.map((job) => {
+          const isNew = Boolean(seenAt && job.createdAt && job.createdAt > seenAt);
+          if (isNew) newSinceLastSeen++;
+          return {
+            ...job,
+            isSaved: (job.savedBy || []).some((s) => s.user && s.user.toString() === uid),
+            isNew,
+          };
+        });
       }
 
       // Strip savedBy from response
@@ -370,6 +286,9 @@ router.get(
           pages: Math.ceil(total / limitNum),
         },
         source,
+        // How many jobs on THIS page are new since the user last looked
+        newSinceLastSeen,
+        lastJobsSeenAt: req.user ? req.user.lastJobsSeenAt : null,
       });
     } catch (error) {
       console.error('Job search error:', error);
@@ -628,6 +547,228 @@ router.get(
     } catch (error) {
       console.error('Admin job list error:', error);
       res.status(500).json({ message: 'Error fetching jobs' });
+    }
+  }
+);
+
+// Export search results as CSV (same filters as GET /search)
+router.get(
+  '/search/export',
+  [
+    optionalAuth,
+    query('q').optional().trim(),
+    query('category').optional().trim(),
+    query('location').optional().trim(),
+    query('agency').optional().trim(),
+    query('salary_min').optional().custom((v) => v === '' || !isNaN(v)),
+    query('salary_max').optional().custom((v) => v === '' || !isNaN(v)),
+    query('sort').optional().isIn(SORT_VALUES),
+    query('source').optional().custom((value) => {
+      if (!value) return true;
+      return value.split(',').every((s) => VALID_SOURCE_FILTERS.includes(s));
+    }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+      }
+
+      const { q, category, location, agency, salary_min, salary_max, sort = 'date_desc', source = 'all' } = req.query;
+
+      const filter = buildSearchFilter({
+        q: q || undefined,
+        category: category || undefined,
+        location: location || undefined,
+        agency: agency || undefined,
+        salary_min,
+        salary_max,
+        source,
+      });
+
+      const mongoSort = q
+        ? { score: { $meta: 'textScore' }, ...buildSort(sort) }
+        : buildSort(sort);
+
+      const jobs = await Job.find(filter, q ? { score: { $meta: 'textScore' } } : {})
+        .select('jobId source businessTitle agency jobCategory workLocation workLocation1 salaryRangeFrom salaryRangeTo salaryFrequency fullTimePartTimeIndicator level postDate postUntil externalUrl')
+        .sort(mongoSort)
+        .limit(SEARCH_EXPORT_LIMIT)
+        .lean();
+
+      const headers = [
+        'Job ID', 'Source', 'Title', 'Agency', 'Category', 'Location',
+        'Salary From', 'Salary To', 'Salary Frequency', 'Full/Part Time',
+        'Level', 'Post Date', 'Closes', 'URL',
+      ];
+      const fmtDate = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
+
+      const rows = jobs.map((job) => [
+        job.jobId,
+        job.source || 'nyc',
+        job.businessTitle,
+        job.agency,
+        job.jobCategory,
+        job.workLocation1 || job.workLocation,
+        job.salaryRangeFrom,
+        job.salaryRangeTo,
+        job.salaryFrequency,
+        job.fullTimePartTimeIndicator,
+        job.level,
+        fmtDate(job.postDate),
+        fmtDate(job.postUntil),
+        job.externalUrl,
+      ].map(escCsv).join(','));
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="job-search-results.csv"');
+      res.send([headers.join(','), ...rows].join('\n'));
+    } catch (error) {
+      console.error('Export search results error:', error);
+      res.status(500).json({ message: 'Error exporting search results' });
+    }
+  }
+);
+
+// Mark all currently-listed jobs as seen (resets "New" badges)
+router.post('/seen', authenticateToken, async (req, res) => {
+  try {
+    const seenAt = new Date();
+    await User.updateOne({ _id: req.user._id }, { $set: { lastJobsSeenAt: seenAt } });
+    res.json({ message: 'Jobs marked as seen', lastJobsSeenAt: seenAt });
+  } catch (error) {
+    console.error('Mark jobs seen error:', error);
+    res.status(500).json({ message: 'Error marking jobs as seen' });
+  }
+});
+
+// Bulk application-status update for saved jobs
+router.put(
+  '/saved/bulk-status',
+  [
+    authenticateToken,
+    body('status').isIn(APPLICATION_STATUS_VALUES),
+    body('jobs').isArray({ min: 1, max: BULK_STATUS_MAX }).withMessage(`Provide 1-${BULK_STATUS_MAX} jobs`),
+    body('jobs.*.jobId').isString().trim().notEmpty(),
+    body('jobs.*.source').optional().isIn(JOB_SOURCES),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+      }
+
+      const { status, jobs } = req.body;
+      const now = new Date();
+
+      const ops = jobs.map(({ jobId, source }) => ({
+        updateOne: {
+          filter: {
+            jobId,
+            source: JOB_SOURCES.includes(source) ? source : 'nyc',
+            'savedBy.user': req.user._id,
+          },
+          update: {
+            $set: {
+              'savedBy.$.applicationStatus': status,
+              'savedBy.$.statusUpdatedAt': now,
+            },
+            $push: {
+              'savedBy.$.statusHistory': {
+                $each: [{ status, changedAt: now }],
+                $slice: -50,
+              },
+            },
+          },
+        },
+      }));
+
+      const result = await Job.bulkWrite(ops, { ordered: false });
+      const updated = result.modifiedCount || 0;
+
+      res.json({
+        message: `Updated ${updated} job${updated === 1 ? '' : 's'}`,
+        status,
+        updated,
+        requested: jobs.length,
+      });
+    } catch (error) {
+      console.error('Bulk status update error:', error);
+      res.status(500).json({ message: 'Error updating application statuses' });
+    }
+  }
+);
+
+// Admin: scraper health — latest run per source plus recent history
+router.get(
+  '/admin/scraper-health',
+  [authenticateToken, requireRole(['admin'])],
+  async (req, res) => {
+    try {
+      const latest = await ScraperRun.aggregate([
+        { $sort: { startedAt: -1 } },
+        {
+          $group: {
+            _id: '$source',
+            latest: { $first: '$$ROOT' },
+            avgFetched: { $avg: { $add: ['$upserted', '$modified'] } },
+            runs: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]);
+
+      const sources = latest.map(({ _id, latest: run, avgFetched, runs }) => {
+        const fetched = (run.upserted || 0) + (run.modified || 0);
+        // Flatline: nothing fetched, an outright failure, or a sharp drop
+        // against this source's trailing average
+        const flatlined =
+          run.status === 'failed' ||
+          run.status === 'empty' ||
+          (runs > 2 && avgFetched > 10 && fetched < avgFetched * 0.25);
+
+        return {
+          source: _id,
+          status: run.status,
+          fetched,
+          upserted: run.upserted || 0,
+          modified: run.modified || 0,
+          storedAfter: run.storedAfter || 0,
+          durationMs: run.durationMs || 0,
+          startedAt: run.startedAt,
+          finishedAt: run.finishedAt,
+          error: run.error || null,
+          avgFetched: Math.round(avgFetched || 0),
+          flatlined,
+        };
+      });
+
+      // Sources that have never reported a run at all
+      const seen = new Set(sources.map((s) => s.source));
+      const missing = [...JOB_SOURCES, 'mta'].filter((s) => !seen.has(s));
+
+      const history = await ScraperRun.find({})
+        .select('runId source status upserted modified storedAfter durationMs startedAt')
+        .sort({ startedAt: -1 })
+        .limit(SCRAPER_HISTORY_LIMIT)
+        .lean();
+
+      res.json({
+        sources,
+        missing,
+        history,
+        summary: {
+          total: sources.length,
+          healthy: sources.filter((s) => !s.flatlined).length,
+          flatlined: sources.filter((s) => s.flatlined).length,
+          neverRan: missing.length,
+        },
+      });
+    } catch (error) {
+      console.error('Scraper health error:', error);
+      res.status(500).json({ message: 'Error fetching scraper health' });
     }
   }
 );

@@ -22,7 +22,32 @@ const savedSearchSchema = new mongoose.Schema(
       salary_min: { type: String, default: '' },
       salary_max: { type: String, default: '' },
       sort: { type: String, default: 'date_desc' },
-      source: { type: String, enum: VALID_SOURCE_FILTERS, default: 'all' },
+      // Mirrors the search endpoint, which accepts 'all' or a comma-separated
+      // list of sources. A plain enum would reject "nyc,nys" and 500 the save.
+      source: {
+        type: String,
+        default: 'all',
+        validate: {
+          validator: (v) =>
+            typeof v === 'string' &&
+            v.split(',').every((s) => VALID_SOURCE_FILTERS.includes(s.trim())),
+          message: (props) => `${props.value} is not a valid source filter`,
+        },
+      },
+    },
+    // Alerting. newCount is derived on read (jobs added since lastSeenAt)
+    // rather than stored, so it can never drift out of sync.
+    alertsEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    lastSeenAt: {
+      type: Date,
+      default: Date.now,
+    },
+    lastNotifiedAt: {
+      type: Date,
+      default: null,
     },
   },
   {
@@ -31,5 +56,6 @@ const savedSearchSchema = new mongoose.Schema(
 );
 
 savedSearchSchema.index({ user: 1, createdAt: -1 });
+savedSearchSchema.index({ alertsEnabled: 1 });
 
 module.exports = mongoose.model('SavedSearch', savedSearchSchema);

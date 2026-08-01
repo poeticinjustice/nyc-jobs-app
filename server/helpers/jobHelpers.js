@@ -1,3 +1,4 @@
+const { JOB_SOURCES } = require('../../shared/constants');
 // Shared helpers for job data transformation, filtering, sorting, and deduplication
 
 // HTML entity decoder
@@ -318,6 +319,112 @@ const escCsv = (val) => {
 // Escape special regex characters for safe use in RegExp constructors
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Build Mongoose sort from a sort query param.
+// Shared by the search routes and the saved-search alert engine.
+const buildSort = (sort) => {
+  switch (sort) {
+    case 'date_asc': return { postDate: 1 };
+    case 'title_asc': return { businessTitle: 1 };
+    case 'title_desc': return { businessTitle: -1 };
+    case 'salary_desc': return { salaryRangeFrom: -1 };
+    case 'salary_asc': return { salaryRangeFrom: 1 };
+    case 'date_desc':
+    default: return { postDate: -1 };
+  }
+};
+
+// Build Mongoose filter from search params
+const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_max, source }) => {
+  const filter = {};
+
+  if (source && source !== 'all') {
+    // Support comma-separated sources (e.g. "nyc,federal,cuny")
+    const sources = source.split(',').filter((s) => JOB_SOURCES.includes(s));
+    if (sources.length === 1) {
+      filter.source = sources[0];
+    } else if (sources.length > 1) {
+      filter.source = { $in: sources };
+    } else {
+      filter.source = { $in: JOB_SOURCES };
+    }
+  } else {
+    // 'all' still restricts to valid sources — prevents stale/unknown sources from leaking
+    filter.source = { $in: JOB_SOURCES };
+  }
+
+  // Exclude expired jobs (postUntil in the past)
+  const notExpired = {
+    $or: [
+      { postUntil: null },
+      { postUntil: { $exists: false } },
+      { postUntil: { $gte: new Date() } },
+    ],
+  };
+  filter.$and = filter.$and ? [...filter.$and, notExpired] : [notExpired];
+
+  if (q) {
+    filter.$text = { $search: q };
+  }
+
+  if (category) {
+    filter.jobCategory = new RegExp(`^${escapeRegex(category)}$`, 'i');
+  }
+
+  if (location) {
+    const locRegex = new RegExp(escapeRegex(location), 'i');
+    filter.$or = [
+      { workLocation: locRegex },
+      { workLocation1: locRegex },
+    ];
+  }
+
+  if (agency) {
+    filter.agency = new RegExp(escapeRegex(agency), 'i');
+  }
+
+  // Salary overlap: job range overlaps with [salary_min, salary_max]
+  if (salary_min || salary_max) {
+    const salaryConditions = [];
+    if (salary_min) {
+      const min = parseInt(salary_min, 10);
+      if (!isNaN(min)) {
+        // Job's upper bound >= min (or lower bound if no upper)
+        salaryConditions.push({
+          $or: [
+            { salaryRangeTo: { $gte: min } },
+            { salaryRangeTo: null, salaryRangeFrom: { $gte: min } },
+          ],
+        });
+      }
+    }
+    if (salary_max) {
+      const max = parseInt(salary_max, 10);
+      if (!isNaN(max)) {
+        // Job's lower bound <= max (or upper bound if no lower)
+        salaryConditions.push({
+          $or: [
+            { salaryRangeFrom: { $lte: max } },
+            { salaryRangeFrom: null, salaryRangeTo: { $lte: max } },
+          ],
+        });
+      }
+    }
+    if (salaryConditions.length > 0) {
+      // Ensure $and exists (it should, from notExpired)
+      if (!filter.$and) filter.$and = [];
+      // Move location $or into $and to avoid conflicts
+      if (filter.$or) {
+        filter.$and.push({ $or: filter.$or });
+        delete filter.$or;
+      }
+      filter.$and.push(...salaryConditions);
+    }
+  }
+
+  return filter;
+};
+
+
 module.exports = {
   cleanText,
   cleanJobFields,
@@ -329,4 +436,6 @@ module.exports = {
   getUserSaveEntry,
   escCsv,
   escapeRegex,
+  buildSearchFilter,
+  buildSort,
 };

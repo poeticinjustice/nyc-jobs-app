@@ -190,6 +190,7 @@ jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
 jobSchema.index({ postDate: -1 });
 jobSchema.index({ updatedAt: -1 });
+jobSchema.index({ createdAt: -1 });
 jobSchema.index({ source: 1, postDate: -1 });
 jobSchema.index({ postUntil: 1 });
 jobSchema.index(

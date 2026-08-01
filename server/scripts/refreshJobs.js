@@ -7,6 +7,8 @@
  */
 
 const Job = require('../models/Job');
+const ScraperRun = require('../models/ScraperRun');
+const { runSavedSearchAlerts } = require('../helpers/savedSearchAlerts');
 
 // Import all scrapers
 const refreshNycJobs = require('../scrapers/nyc');
@@ -109,69 +111,123 @@ const cleanupStaleJobs = async (timestamp, counts) => {
 // Main
 // ---------------------------------------------------------------------------
 
-const refreshAllJobs = async () => {
+const DEFAULT_SCRAPERS = [
+  { source: 'nyc', fn: refreshNycJobs },
+  { source: 'federal', fn: refreshFederalJobs },
+  { source: 'nys', fn: refreshNysJobs },
+  { source: 'cuny', fn: refreshCunyJobs },
+  { source: 'nyu', fn: refreshNyuJobs },
+  { source: 'fordham', fn: refreshFordhamJobs },
+  { source: 'pa', fn: refreshPortAuthorityJobs },
+  { source: 'mountsinai', fn: refreshMountSinaiJobs },
+  { source: 'idealist', fn: refreshIdealistJobs },
+  { source: 'columbia', fn: refreshColumbiaJobs },
+  { source: 'nyp', fn: refreshNypJobs },
+  { source: 'northwell', fn: refreshNorthwellJobs },
+  { source: 'nyulangone', fn: refreshNyuLangoneJobs },
+  { source: 'newschool', fn: refreshNewSchoolJobs },
+  { source: 'amtrak', fn: refreshAmtrakJobs },
+  { source: 'un', fn: refreshUnJobs },
+  { source: 'amnh', fn: refreshAmnhJobs },
+  { source: 'metmuseum', fn: refreshMetMuseumJobs },
+  { source: 'frick', fn: refreshFrickJobs },
+  { source: 'guggenheim', fn: refreshGuggenheimJobs },
+  { source: 'msk', fn: refreshMskJobs },
+  { source: 'montefiore', fn: refreshMontefioreJobs },
+  { source: 'nypl', fn: refreshNyplJobs },
+  { source: 'nychhc', fn: refreshNychhcJobs },
+];
+
+/**
+ * Run every scraper, then clean up stale jobs and record run metrics.
+ *
+ * `scrapers` is injectable so the pipeline itself can be tested without
+ * hitting the network; it defaults to the full production list.
+ */
+const refreshAllJobs = async ({ scrapers = DEFAULT_SCRAPERS } = {}) => {
   const timestamp = new Date();
   console.log(`[refresh] Starting job refresh at ${timestamp.toISOString()}`);
 
-  const scrapers = [
-    { source: 'nyc', fn: refreshNycJobs },
-    { source: 'federal', fn: refreshFederalJobs },
-    { source: 'nys', fn: refreshNysJobs },
-    { source: 'cuny', fn: refreshCunyJobs },
-    { source: 'nyu', fn: refreshNyuJobs },
-    { source: 'fordham', fn: refreshFordhamJobs },
-    { source: 'pa', fn: refreshPortAuthorityJobs },
-    { source: 'mountsinai', fn: refreshMountSinaiJobs },
-    { source: 'idealist', fn: refreshIdealistJobs },
-    { source: 'columbia', fn: refreshColumbiaJobs },
-    { source: 'nyp', fn: refreshNypJobs },
-    { source: 'northwell', fn: refreshNorthwellJobs },
-    { source: 'nyulangone', fn: refreshNyuLangoneJobs },
-    { source: 'newschool', fn: refreshNewSchoolJobs },
-    { source: 'amtrak', fn: refreshAmtrakJobs },
-    { source: 'un', fn: refreshUnJobs },
-    { source: 'amnh', fn: refreshAmnhJobs },
-    { source: 'metmuseum', fn: refreshMetMuseumJobs },
-    { source: 'frick', fn: refreshFrickJobs },
-    { source: 'guggenheim', fn: refreshGuggenheimJobs },
-    { source: 'msk', fn: refreshMskJobs },
-    { source: 'montefiore', fn: refreshMontefioreJobs },
-    { source: 'nypl', fn: refreshNyplJobs },
-    { source: 'nychhc', fn: refreshNychhcJobs },
-  ];
+
 
   const BATCH_SIZE = 5;
   const results = {};
   const counts = {};
+  const metrics = [];
+  const runId = `${timestamp.toISOString()}-${Math.round(timestamp.getTime() % 100000)}`;
 
   for (let i = 0; i < scrapers.length; i += BATCH_SIZE) {
     const batch = scrapers.slice(i, i + BATCH_SIZE);
     const batchNames = batch.map((s) => s.source).join(', ');
     console.log(`[refresh] Running batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchNames}`);
 
+    const batchStartedAt = new Date();
     const settled = await Promise.allSettled(
       batch.map((s) => s.fn(timestamp))
     );
 
     for (let j = 0; j < batch.length; j++) {
       const { source } = batch[j];
+      const finishedAt = new Date();
+      const metric = {
+        runId,
+        source,
+        startedAt: batchStartedAt,
+        finishedAt,
+        durationMs: finishedAt - batchStartedAt,
+      };
+
       if (settled[j].status === 'fulfilled') {
         const r = settled[j].value;
         results[source] = r;
         counts[source] = r.upserted + r.modified;
+        metric.upserted = r.upserted;
+        metric.modified = r.modified;
+        metric.status = counts[source] === 0 ? 'empty' : 'ok';
       } else {
         console.error(`[refresh] Scraper "${source}" failed:`, settled[j].reason);
         results[source] = { upserted: 0, modified: 0 };
         counts[source] = 0;
+        metric.status = 'failed';
+        metric.error = String(settled[j].reason?.message || settled[j].reason).slice(0, 500);
       }
+      metrics.push(metric);
     }
   }
 
   const staleCount = await cleanupStaleJobs(timestamp, counts);
   const totalJobs = await Job.estimatedDocumentCount();
+
+  // Persist per-source metrics for the admin scraper-health view
+  try {
+    const storedBySource = Object.fromEntries(
+      (await Job.aggregate([{ $group: { _id: '$source', n: { $sum: 1 } } }]))
+        .map((g) => [g._id, g.n])
+    );
+    for (const m of metrics) {
+      m.storedAfter = storedBySource[m.source] || 0;
+      // A run that refreshed far less than what's stored looks partial —
+      // the same signal cleanupStaleJobs uses to refuse purging.
+      if (m.status === 'ok' && m.storedAfter >= 10 &&
+          (m.upserted + m.modified) < m.storedAfter * 0.5) {
+        m.status = 'partial';
+      }
+    }
+    if (metrics.length) await ScraperRun.insertMany(metrics, { ordered: false });
+  } catch (err) {
+    console.error('[refresh] Failed to record scraper metrics:', err.message);
+  }
+
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { ...results, staleCount, totalJobs };
+  // Notify users whose saved searches have new matches
+  try {
+    await runSavedSearchAlerts();
+  } catch (err) {
+    console.error('[refresh] Saved-search alerts failed:', err.message);
+  }
+
+  return { ...results, staleCount, totalJobs, runId };
 };
 
 // Run standalone
