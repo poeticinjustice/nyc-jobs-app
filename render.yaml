@@ -14,6 +14,19 @@ services:
         sync: false
       - key: CORS_ORIGIN
         sync: false
+      # Public site URL, used for links in saved-search alert emails
+      - key: APP_URL
+        value: https://nyc-jobs-app.onrender.com
+      # Optional SMTP config for alert emails — set in the Render dashboard.
+      # Unset means alerts stay in-app only.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: ALERT_FROM_EMAIL
+        sync: false
       - key: NYC_JOBS_API_URL
         value: https://data.cityofnewyork.us/resource/kpav-sd4t.json
       - key: RATE_LIMIT_WINDOW_MS

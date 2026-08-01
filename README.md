@@ -79,6 +79,21 @@ Jobs are aggregated from 25 sources (see `shared/constants/index.js` → `JOB_SO
 - **Jobs Admin View** - Browse all jobs with save counts
 - **Notes Admin View** - Browse notes across all users
 
+## 🔔 Saved-Search Alerts
+
+Save a search, switch alerts on, and the app tracks jobs matching those criteria
+that appear after you last looked. The count shows up in the app immediately —
+no configuration required.
+
+Email delivery is optional. Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and
+`APP_URL` for links) and the refresh cycle will also email owners of
+alert-enabled searches; leave them unset and alerts stay in-app only. Alerts run
+automatically after each 6-hour refresh, or on demand:
+
+```bash
+npm run send-alerts
+```
+
 ## 🛠️ Tech Stack
 
 ### Backend
@@ -225,13 +240,17 @@ npm start
 
 ### Jobs (`/api/jobs`)
 
-- `GET /api/jobs/search` - Search with filtering (`q`, `category`, `location`, `agency`, `salary_min`, `salary_max`, `source` — single or comma-separated multi-source), pagination (`page`, `limit`), and sorting (`sort`)
+- `GET /api/jobs/search` - Search with filtering (`q`, `category`, `location`, `agency`, `salary_min`, `salary_max`, `source` — single or comma-separated multi-source), pagination (`page`, `limit`), and sorting (`sort`). For authenticated users each job carries `isNew` (added since you last marked jobs seen) and the response includes `newSinceLastSeen`
+- `GET /api/jobs/search/export` - Export search results as CSV (same filters as `/search`)
+- `POST /api/jobs/seen` - Mark jobs as seen, clearing the "New" badges
 - `GET /api/jobs/map` - GeoJSON FeatureCollection of geocoded jobs (filters: `source`, `keyword`, `salary_min`, `salary_max`)
 - `GET /api/jobs/categories` - All job categories (10-minute in-memory cache)
 - `GET /api/jobs/agencies` - All agencies (10-minute in-memory cache)
 - `GET /api/jobs/saved` - Get user's saved jobs with pagination
 - `GET /api/jobs/saved/export` - Export saved jobs as CSV
+- `PUT /api/jobs/saved/bulk-status` - Set the application status on up to 100 saved jobs at once
 - `GET /api/jobs/admin` - List all jobs with save counts (admin only)
+- `GET /api/jobs/admin/scraper-health` - Per-source scraper metrics, flatline detection, and run history (admin only)
 - `GET /api/jobs/:id?source=<source>` - Job details; `source` query selects the source namespace (defaults to `nyc`)
 - `POST /api/jobs/:id/save` - Save job to user's bookmarks
 - `DELETE /api/jobs/:id/save` - Remove job from saved list
@@ -252,8 +271,12 @@ npm start
 
 ### Saved Searches (`/api/searches`)
 
-- `GET /api/searches` - Get user's saved searches
+- `GET /api/searches` - Get user's saved searches, each with a derived `newCount` of matching jobs added since it was last viewed
 - `POST /api/searches` - Save a search
+- `GET /api/searches/:id` - Get one saved search (used to hydrate `/search?savedSearch=<id>` deep links)
+- `GET /api/searches/:id/matches` - The jobs that are new for this search
+- `PATCH /api/searches/:id/alerts` - Turn email alerts on or off for a search
+- `POST /api/searches/:id/seen` - Mark the search's results viewed (clears its count)
 - `DELETE /api/searches/:id` - Delete a saved search
 
 ### Dashboard (`/api/dashboard`)
