@@ -8,6 +8,8 @@ import {
   HiChartBar,
   HiSearch,
   HiRefresh,
+  HiServer,
+  HiExclamation,
 } from 'react-icons/hi';
 import { formatDate } from '../utils/formatUtils';
 import Pagination from '../components/UI/Pagination';
@@ -539,6 +541,220 @@ const NotesManagement = () => {
   );
 };
 
+// --- Scraper Health Tab ---
+
+const SCRAPER_STATUS_COLORS = {
+  ok: 'bg-green-100 text-green-800',
+  partial: 'bg-yellow-100 text-yellow-800',
+  empty: 'bg-orange-100 text-orange-800',
+  failed: 'bg-red-100 text-red-800',
+};
+
+const sourceLabel = (value) =>
+  SOURCE_OPTIONS.find((o) => o.value === value)?.label || value;
+
+const formatDuration = (ms) => {
+  if (!ms || ms < 0) return '-';
+  if (ms < 1000) return `${ms}ms`;
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes === 0 ? `${seconds}s` : `${minutes}m ${seconds}s`;
+};
+
+const formatRelativeTime = (value) => {
+  if (!value) return 'Never';
+  const then = new Date(value);
+  if (isNaN(then)) return 'Never';
+  const diffMs = Date.now() - then.getTime();
+  if (diffMs < 60 * 1000) return 'just now';
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return formatDate(value);
+};
+
+const ScraperHealth = () => {
+  const [sources, setSources] = useState([]);
+  const [missing, setMissing] = useState([]);
+  const [summary, setSummary] = useState({ total: 0, healthy: 0, flatlined: 0, neverRan: 0 });
+  const [loading, setLoading] = useState(true);
+  // Monotonically increasing ticket so stale responses never clobber newer ones
+  const fetchTicketRef = useRef(0);
+
+  const fetchHealth = useCallback(async () => {
+    const ticket = ++fetchTicketRef.current;
+    setLoading(true);
+    try {
+      const res = await api.get('/api/jobs/admin/scraper-health');
+      if (ticket !== fetchTicketRef.current) return;
+      setSources(res.data.sources || []);
+      setMissing(res.data.missing || []);
+      setSummary(res.data.summary || { total: 0, healthy: 0, flatlined: 0, neverRan: 0 });
+    } catch (err) {
+      if (ticket !== fetchTicketRef.current) return;
+      toast.error(err.response?.data?.message || 'Failed to load scraper health');
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+  }, [fetchHealth]);
+
+  // Problems first (flatlined/failed), then alphabetical by display label
+  const sortedSources = [...sources].sort((a, b) => {
+    const rank = (s) => (s.flatlined || s.status === 'failed' ? 0 : 1);
+    return rank(a) - rank(b) || sourceLabel(a.source).localeCompare(sourceLabel(b.source));
+  });
+  const flatlined = sortedSources.filter((s) => s.flatlined);
+
+  return (
+    <div className='space-y-4'>
+      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
+        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6'>
+          <h2 className='text-xl font-semibold text-gray-900'>Scraper Health</h2>
+          <button
+            onClick={fetchHealth}
+            className='p-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg self-start sm:self-auto'
+            title='Refresh'
+            aria-label='Refresh scraper health'
+          >
+            <HiRefresh className='h-4 w-4' />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className='text-center py-8 text-gray-500'>Loading scraper health...</div>
+        ) : (
+          <div className='space-y-6'>
+            {/* Summary */}
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
+              {[
+                { label: 'Total Sources', value: summary.total, color: 'text-gray-900' },
+                { label: 'Healthy', value: summary.healthy, color: 'text-green-600' },
+                { label: 'Flatlined', value: summary.flatlined, color: 'text-red-600' },
+                { label: 'Never Ran', value: summary.neverRan, color: 'text-orange-600' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className='border border-gray-200 rounded-lg p-4'>
+                  <p className='text-sm font-medium text-gray-500'>{label}</p>
+                  <p className={`text-2xl font-semibold ${color}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Flatline alert */}
+            {flatlined.length > 0 && (
+              <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
+                <div className='flex items-start'>
+                  <HiExclamation className='h-5 w-5 text-red-600 mr-2 flex-shrink-0 mt-0.5' />
+                  <div>
+                    <p className='text-sm font-medium text-red-800'>
+                      {flatlined.length} {flatlined.length === 1 ? 'source needs' : 'sources need'} attention
+                    </p>
+                    <p className='text-sm text-red-700 mt-1'>
+                      {flatlined.map((s) => sourceLabel(s.source)).join(', ')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Per-source table */}
+            {sortedSources.length === 0 ? (
+              <EmptyState icon={HiServer} message='No scraper runs recorded yet' />
+            ) : (
+              <div className='overflow-x-auto'>
+                <table className='min-w-full divide-y divide-gray-200'>
+                  <thead className='bg-gray-50'>
+                    <tr>
+                      <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Source</th>
+                      <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase'>Status</th>
+                      <th className='px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase'>Fetched</th>
+                      <th className='px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase hidden sm:table-cell'>Stored</th>
+                      <th className='px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase hidden md:table-cell'>Duration</th>
+                      <th className='px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap'>Last Run</th>
+                    </tr>
+                  </thead>
+                  <tbody className='bg-white divide-y divide-gray-200'>
+                    {sortedSources.map((s) => (
+                      <React.Fragment key={s.source}>
+                        <tr className={s.flatlined ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                          <td className='px-3 py-3'>
+                            <div className='flex items-center gap-2'>
+                              {s.flatlined && (
+                                <HiExclamation className='h-4 w-4 text-red-600 flex-shrink-0' aria-label='Flatlined' />
+                              )}
+                              <span className='text-sm font-medium text-gray-900'>{sourceLabel(s.source)}</span>
+                            </div>
+                          </td>
+                          <td className='px-3 py-3'>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
+                                SCRAPER_STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-700'
+                              }`}
+                            >
+                              {s.status || 'unknown'}
+                            </span>
+                          </td>
+                          <td className='px-3 py-3 text-sm text-gray-500 text-right whitespace-nowrap'>
+                            {(s.fetched || 0).toLocaleString()}
+                            {s.avgFetched > 0 && (
+                              <span className='block text-xs text-gray-400'>
+                                avg {s.avgFetched.toLocaleString()}
+                              </span>
+                            )}
+                          </td>
+                          <td className='px-3 py-3 text-sm text-gray-500 text-right hidden sm:table-cell'>
+                            {(s.storedAfter || 0).toLocaleString()}
+                          </td>
+                          <td className='px-3 py-3 text-sm text-gray-500 text-right hidden md:table-cell whitespace-nowrap'>
+                            {formatDuration(s.durationMs)}
+                          </td>
+                          <td className='px-3 py-3 text-sm text-gray-500 whitespace-nowrap'>
+                            {formatRelativeTime(s.startedAt)}
+                          </td>
+                        </tr>
+                        {s.error && (
+                          <tr className={s.flatlined ? 'bg-red-50' : ''}>
+                            <td colSpan={6} className='px-3 pb-3 text-xs text-red-700 break-words'>
+                              {s.error}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Never reported a run */}
+            {missing.length > 0 && (
+              <div className='border border-gray-200 rounded-lg p-4'>
+                <h3 className='text-sm font-medium text-gray-900 mb-2'>Never reported a run</h3>
+                <div className='flex flex-wrap gap-2'>
+                  {missing.map((source) => (
+                    <span
+                      key={source}
+                      className='px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700'
+                    >
+                      {sourceLabel(source)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // --- Main Admin Component ---
 
 const Admin = () => {
@@ -575,6 +791,7 @@ const Admin = () => {
     { key: 'users', label: 'User Management', icon: HiUsers },
     { key: 'jobs', label: 'Job Management', icon: HiBriefcase },
     { key: 'notes', label: 'Notes Management', icon: HiDocumentText },
+    { key: 'scrapers', label: 'Scrapers', icon: HiServer },
   ];
 
   return (
@@ -664,6 +881,7 @@ const Admin = () => {
           {activeTab === 'users' && <UserManagement />}
           {activeTab === 'jobs' && <JobManagement />}
           {activeTab === 'notes' && <NotesManagement />}
+          {activeTab === 'scrapers' && <ScraperHealth />}
         </div>
       </div>
 

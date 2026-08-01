@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   getSavedJobs,
   unsaveJob,
   updateJobStatus,
+  bulkUpdateJobStatus,
   setStatusFilter,
 } from '../store/slices/jobsSlice';
 import {
@@ -14,12 +15,15 @@ import {
   HiDownload,
   HiAnnotation,
   HiPaperClip,
+  HiSwitchHorizontal,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import NoteModal from '../components/Notes/NoteModal';
+import JobComparison from '../components/Jobs/JobComparison';
+import SavedSearchAlerts from '../components/Search/SavedSearchAlerts';
 import Pagination from '../components/UI/Pagination';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
@@ -28,6 +32,10 @@ import { APPLICATION_STATUSES, getStatusColor } from '../utils/statusConstants';
 
 const STATUS_FILTER_OPTIONS = [{ value: '', label: 'All' }, ...APPLICATION_STATUSES];
 const PAGE_SIZE = 20;
+const COMPARE_MIN = 2;
+const COMPARE_MAX = 4;
+
+const jobKey = (job) => `${job.source || 'nyc'}-${job.jobId}`;
 
 const SavedJobs = () => {
   const dispatch = useDispatch();
@@ -38,6 +46,10 @@ const SavedJobs = () => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [selectedKeys, setSelectedKeys] = useState([]);
+  const [bulkStatus, setBulkStatus] = useState(APPLICATION_STATUSES[0].value);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
 
   // Get current page from URL params or default to 1
   const currentPage = parseInt(searchParams.get('page') || '1');
@@ -54,13 +66,73 @@ const SavedJobs = () => {
 
   // Fetch straight from the URL params — avoids a double fetch on mount while
   // the Redux statusFilter is still stale
+  const fetchSavedJobs = useCallback(() => {
+    const params = { page: currentPage, limit: PAGE_SIZE };
+    if (urlStatus) params.status = urlStatus;
+    return dispatch(getSavedJobs(params));
+  }, [dispatch, currentPage, urlStatus]);
+
   useEffect(() => {
     if (isAuthenticated) {
-      const params = { page: currentPage, limit: PAGE_SIZE };
-      if (urlStatus) params.status = urlStatus;
-      dispatch(getSavedJobs(params));
+      fetchSavedJobs();
     }
-  }, [dispatch, isAuthenticated, currentPage, urlStatus]);
+  }, [isAuthenticated, fetchSavedJobs]);
+
+  // Selection is per page — reset it whenever the page or status filter changes
+  useEffect(() => {
+    setSelectedKeys([]);
+    setShowComparison(false);
+  }, [currentPage, urlStatus]);
+
+  // Only keys still present on the page count as selected, so an unsaved job
+  // can never linger in the selection
+  const selectedJobs = useMemo(
+    () => savedJobs.filter((job) => selectedKeys.includes(jobKey(job))),
+    [savedJobs, selectedKeys]
+  );
+  const allOnPageSelected =
+    savedJobs.length > 0 && selectedJobs.length === savedJobs.length;
+  const canCompare =
+    selectedJobs.length >= COMPARE_MIN && selectedJobs.length <= COMPARE_MAX;
+
+  const toggleJobSelected = (job) => {
+    const key = jobKey(job);
+    setSelectedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const handleSelectAllOnPage = () => {
+    setSelectedKeys(savedJobs.map(jobKey));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedKeys([]);
+  };
+
+  const handleBulkStatusApply = async () => {
+    if (selectedJobs.length === 0 || bulkSubmitting) return;
+    setBulkSubmitting(true);
+    try {
+      const result = await dispatch(
+        bulkUpdateJobStatus({
+          jobs: selectedJobs.map((job) => ({
+            jobId: job.jobId,
+            source: job.source || 'nyc',
+          })),
+          status: bulkStatus,
+        })
+      ).unwrap();
+      const count = result?.updated ?? selectedJobs.length;
+      toast.success(`Updated ${count} ${count === 1 ? 'job' : 'jobs'}`);
+      setSelectedKeys([]);
+      // Refresh so a status-filtered list drops the jobs that moved out of it
+      fetchSavedJobs();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update statuses');
+    }
+    setBulkSubmitting(false);
+  };
 
   const handlePageChange = (newPage) => {
     setSearchParams((prev) => {
@@ -150,6 +222,9 @@ const SavedJobs = () => {
         </div>
       </div>
 
+      {/* Saved Search Alerts */}
+      <SavedSearchAlerts />
+
       {/* Status Filter Tabs */}
       <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4'>
         <div className='flex flex-wrap gap-2'>
@@ -169,6 +244,80 @@ const SavedJobs = () => {
         </div>
       </div>
 
+      {/* Bulk Selection Toolbar */}
+      {!loading && savedJobs.length > 0 && (
+        <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4'>
+          <div className='flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3'>
+            <div className='flex items-center gap-3'>
+              <button
+                type='button'
+                onClick={handleSelectAllOnPage}
+                disabled={allOnPageSelected}
+                className='text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 disabled:hover:text-primary-600'
+              >
+                Select all on page
+              </button>
+              {selectedJobs.length > 0 && (
+                <>
+                  <button
+                    type='button'
+                    onClick={handleClearSelection}
+                    className='text-sm font-medium text-gray-500 hover:text-gray-700'
+                  >
+                    Clear selection
+                  </button>
+                  <span className='text-sm text-gray-500'>
+                    {selectedJobs.length} selected
+                  </span>
+                </>
+              )}
+            </div>
+
+            {selectedJobs.length > 0 && (
+              <div className='flex flex-wrap items-center gap-2'>
+                <label htmlFor='bulk-status' className='text-sm text-gray-600'>
+                  Set status to
+                </label>
+                <select
+                  id='bulk-status'
+                  value={bulkStatus}
+                  onChange={(e) => setBulkStatus(e.target.value)}
+                  className='text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500'
+                >
+                  {APPLICATION_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type='button'
+                  onClick={handleBulkStatusApply}
+                  disabled={bulkSubmitting}
+                  className='inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors'
+                >
+                  {bulkSubmitting ? 'Applying...' : 'Apply'}
+                </button>
+                <button
+                  type='button'
+                  onClick={() => setShowComparison(true)}
+                  disabled={!canCompare}
+                  title={
+                    canCompare
+                      ? 'Compare the selected jobs'
+                      : `Select ${COMPARE_MIN}-${COMPARE_MAX} jobs to compare`
+                  }
+                  className='inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-white transition-colors'
+                >
+                  <HiSwitchHorizontal className='h-4 w-4 mr-1.5' />
+                  Compare ({selectedJobs.length})
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {(error || saveError) && (
         <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
           <p className='text-red-800'>{error || saveError}</p>
@@ -185,9 +334,20 @@ const SavedJobs = () => {
           {savedJobs.map((job) => (
             <div
               key={`${job.source}-${job.jobId}`}
-              className='bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow'
+              className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow ${
+                selectedKeys.includes(jobKey(job))
+                  ? 'border-primary-400 ring-1 ring-primary-200'
+                  : 'border-gray-200'
+              }`}
             >
               <div className='flex justify-between items-start'>
+                <input
+                  type='checkbox'
+                  checked={selectedKeys.includes(jobKey(job))}
+                  onChange={() => toggleJobSelected(job)}
+                  aria-label={`Select ${job.businessTitle}`}
+                  className='mt-1.5 mr-4 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500'
+                />
                 <div className='flex-1'>
                   <div className='flex items-center gap-3 mb-2'>
                     <h3 className='text-lg font-semibold text-gray-900'>
@@ -374,6 +534,13 @@ const SavedJobs = () => {
           )}
         </div>
       )}
+
+      {/* Job Comparison Modal */}
+      <JobComparison
+        isOpen={showComparison && canCompare}
+        onClose={() => setShowComparison(false)}
+        jobs={selectedJobs}
+      />
 
       {/* Note Modal */}
       <NoteModal

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Map, { Source, Layer, Popup, NavigationControl } from 'react-map-gl';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { HiLocationMarker, HiSearch, HiX } from 'react-icons/hi';
 import api from '../utils/api';
 import { formatSalary } from '../utils/formatUtils';
@@ -84,15 +84,23 @@ const unclusteredPointLayer = {
   },
 };
 
+// The map endpoint only accepts a single known source, so anything else falls back to 'all'
+const VALID_SOURCE_VALUES = new Set(SOURCE_OPTIONS.map((option) => option.value));
+
 const JobMap = () => {
   const mapRef = useRef(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [geojson, setGeojson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [popup, setPopup] = useState(null);
-  const [source, setSource] = useState('all');
-  const [keyword, setKeyword] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  // Seed the filters from the URL so /map?keyword=nurse&source=nychhc lands pre-filtered
+  const [source, setSource] = useState(() => {
+    const fromUrl = searchParams.get('source');
+    return fromUrl && VALID_SOURCE_VALUES.has(fromUrl) ? fromUrl : 'all';
+  });
+  const [keyword, setKeyword] = useState(() => searchParams.get('keyword')?.trim() || '');
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('keyword')?.trim() || '');
   const [metadata, setMetadata] = useState(null);
 
   // Monotonically increasing ticket so stale responses never clobber newer ones
@@ -121,6 +129,24 @@ const JobMap = () => {
   useEffect(() => {
     fetchMapData();
   }, [fetchMapData]);
+
+  // Mirror the active filters back into the URL so the view stays shareable
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (keyword) {
+      nextParams.set('keyword', keyword);
+    } else {
+      nextParams.delete('keyword');
+    }
+    if (source && source !== 'all') {
+      nextParams.set('source', source);
+    } else {
+      nextParams.delete('source');
+    }
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [keyword, source, searchParams, setSearchParams]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -225,6 +251,7 @@ const JobMap = () => {
           <select
             value={source}
             onChange={(e) => setSource(e.target.value)}
+            aria-label='Filter map by job source'
             className='px-4 py-2 rounded-lg text-sm font-medium bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
           >
             {SOURCE_OPTIONS.map((tab) => (
@@ -251,6 +278,7 @@ const JobMap = () => {
             <button
               type='button'
               onClick={clearSearch}
+              aria-label='Clear map search'
               className='pr-3 text-gray-400 hover:text-gray-600'
             >
               <HiX className='h-4 w-4' />

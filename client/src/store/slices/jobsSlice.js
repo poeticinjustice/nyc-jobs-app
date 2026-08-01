@@ -126,6 +126,34 @@ export const getJobNotes = createAsyncThunk(
   }
 );
 
+export const bulkUpdateJobStatus = createAsyncThunk(
+  'jobs/bulkUpdateJobStatus',
+  async ({ jobs, status }, { rejectWithValue }) => {
+    try {
+      const response = await api.put('/api/jobs/saved/bulk-status', { jobs, status });
+      return { ...response.data, jobs, status };
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to update statuses'
+      );
+    }
+  }
+);
+
+export const markJobsSeen = createAsyncThunk(
+  'jobs/markJobsSeen',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.post('/api/jobs/seen');
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to mark jobs as seen'
+      );
+    }
+  }
+);
+
 const initialState = {
   searchResults: [],
   currentJob: null,
@@ -145,6 +173,7 @@ const initialState = {
     pages: 0,
   },
   statusFilter: '',
+  newSinceLastSeen: 0,
   searchLatestRequestId: null,
   detailsLatestRequestId: null,
   savedJobsLatestRequestId: null,
@@ -186,6 +215,7 @@ const jobsSlice = createSlice({
         state.searchLoading = false;
         state.searchResults = action.payload.jobs;
         state.searchPagination = action.payload.pagination;
+        state.newSinceLastSeen = action.payload.newSinceLastSeen || 0;
       })
       .addCase(searchJobs.rejected, (state, action) => {
         if (action.meta.requestId !== state.searchLatestRequestId) return;
@@ -366,6 +396,29 @@ const jobsSlice = createSlice({
         state.savedJobsError = action.payload;
       })
 
+      .addCase(bulkUpdateJobStatus.fulfilled, (state, action) => {
+        const { jobs, status } = action.payload;
+        const touched = new Set(
+          jobs.map((j) => `${j.source || 'nyc'}:${j.jobId}`)
+        );
+        state.savedJobs = state.savedJobs.map((job) =>
+          touched.has(`${job.source || 'nyc'}:${job.jobId}`)
+            ? { ...job, applicationStatus: status }
+            : job
+        );
+      })
+      .addCase(bulkUpdateJobStatus.rejected, (state, action) => {
+        state.saveError = action.payload;
+      })
+
+      .addCase(markJobsSeen.fulfilled, (state) => {
+        state.newSinceLastSeen = 0;
+        state.searchResults = state.searchResults.map((job) => ({
+          ...job,
+          isNew: false,
+        }));
+      })
+
       // Reset user-specific state on logout
       .addCase(logout, (state) => {
         state.currentJob = null;
@@ -373,6 +426,7 @@ const jobsSlice = createSlice({
         state.jobNotes = [];
         state.savedPagination = initialState.savedPagination;
         state.statusFilter = '';
+        state.newSinceLastSeen = 0;
         state.searchError = null;
         state.detailsError = null;
         state.savedJobsError = null;

@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
   clearSearchResults,
   saveJob,
   unsaveJob,
+  markJobsSeen,
 } from '../store/slices/jobsSlice';
 import {
   getSavedSearches,
   saveSearch,
   deleteSavedSearch,
+  fetchSavedSearch,
+  markSearchSeen,
 } from '../store/slices/searchesSlice';
 import {
   HiSearch,
@@ -18,22 +21,38 @@ import {
   HiStar,
   HiTrash,
   HiFilter,
+  HiDownload,
+  HiMap,
+  HiX,
 } from 'react-icons/hi';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
+import NewBadge from '../components/UI/NewBadge';
 import Pagination from '../components/UI/Pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
+import { downloadFile } from '../utils/downloadFile';
 import { SEARCH_NAME_MAX, SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
+// Filters forwarded verbatim to the CSV export endpoint
+const EXPORT_PARAM_KEYS = [
+  'q',
+  'category',
+  'location',
+  'agency',
+  'salary_min',
+  'salary_max',
+  'sort',
+  'source',
+];
 
 // Build URLSearchParams from a params object, always including sort/source
 const buildUrlParams = (params, page = 1, limit = 20) => {
   const newParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === 'page' || key === 'limit') continue;
+    if (key === 'page' || key === 'limit' || key === 'savedSearch') continue;
     if (value && String(value).trim() !== '') {
       newParams.set(key, String(value).trim());
     }
@@ -47,8 +66,13 @@ const buildUrlParams = (params, page = 1, limit = 20) => {
 
 const JobSearch = () => {
   const dispatch = useDispatch();
-  const { searchResults, searchLoading, searchError: error, searchPagination: pagination } =
-    useSelector((state) => state.jobs);
+  const {
+    searchResults,
+    searchLoading,
+    searchError: error,
+    searchPagination: pagination,
+    newSinceLastSeen,
+  } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const { savedSearches } = useSelector((state) => state.searches);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -62,6 +86,8 @@ const JobSearch = () => {
   const [saveSearchName, setSaveSearchName] = useState('');
   const [showSavedSearches, setShowSavedSearches] = useState(false);
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [activeSavedSearch, setActiveSavedSearch] = useState(null);
   const sourceDropdownRef = useRef(null);
 
   // Local form state for inputs before submitting
@@ -82,6 +108,9 @@ const JobSearch = () => {
 
   // Single source of truth: URL drives all searches
   useEffect(() => {
+    // Hold off until the saved-search deep link has swapped in its criteria
+    if (searchParams.get('savedSearch')) return;
+
     const hasParams = Array.from(searchParams.values()).some((value) => value);
 
     if (hasParams) {
@@ -116,6 +145,51 @@ const JobSearch = () => {
       dispatch(clearSearchResults());
     }
   }, [searchParams, dispatch]);
+
+  // Push a saved search's criteria into both the form state and the URL
+  const applySavedSearchCriteria = useCallback((criteria = {}, limit = 20) => {
+    setLocalSearchParams({
+      q: criteria.q || '',
+      salary_min: criteria.salary_min || '',
+      salary_max: criteria.salary_max || '',
+      sort: criteria.sort || 'date_desc',
+      source: criteria.source || 'all',
+    });
+    setSearchParams(buildUrlParams(criteria, 1, limit));
+  }, [setSearchParams]);
+
+  // Deep link: /search?savedSearch=<id> runs that saved search, then drops the param
+  useEffect(() => {
+    const savedSearchId = searchParams.get('savedSearch');
+    if (!savedSearchId) return;
+
+    let cancelled = false;
+
+    const runSavedSearch = async () => {
+      try {
+        const { search } = await dispatch(fetchSavedSearch(savedSearchId)).unwrap();
+        if (cancelled) return;
+        applySavedSearchCriteria(
+          search.criteria || {},
+          parseInt(searchParams.get('limit')) || 20
+        );
+        setActiveSavedSearch({ id: search._id, name: search.name });
+        dispatch(markSearchSeen(savedSearchId));
+      } catch (err) {
+        if (cancelled) return;
+        toast.error(err?.message || err || 'Failed to load saved search');
+        // Drop the param so a refresh doesn't retry a search that isn't there
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('savedSearch');
+        setSearchParams(newParams, { replace: true });
+      }
+    };
+
+    runSavedSearch();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams, dispatch, applySavedSearchCriteria]);
 
   // Handle clicking outside sort dropdown to close it
   useEffect(() => {
@@ -241,15 +315,8 @@ const JobSearch = () => {
   };
 
   const handleLoadSavedSearch = (search) => {
-    const { criteria } = search;
-    setLocalSearchParams({
-      q: criteria.q || '',
-      salary_min: criteria.salary_min || '',
-      salary_max: criteria.salary_max || '',
-      sort: criteria.sort || 'date_desc',
-      source: criteria.source || 'all',
-    });
-    setSearchParams(buildUrlParams(criteria, 1, resultsPerPage));
+    applySavedSearchCriteria(search.criteria || {}, resultsPerPage);
+    setActiveSavedSearch({ id: search._id, name: search.name });
     setShowSavedSearches(false);
   };
 
@@ -264,7 +331,32 @@ const JobSearch = () => {
 
   const handleClearSearch = () => {
     setLocalSearchParams({ q: '', salary_min: '', salary_max: '', sort: 'date_desc', source: 'all' });
+    setActiveSavedSearch(null);
     setSearchParams(new URLSearchParams());
+  };
+
+  const handleMarkJobsSeen = async () => {
+    try {
+      await dispatch(markJobsSeen()).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to mark jobs as seen');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setExportLoading(true);
+    try {
+      const params = new URLSearchParams();
+      EXPORT_PARAM_KEYS.forEach((key) => {
+        const value = searchParams.get(key);
+        if (value && value.trim() !== '') params.set(key, value.trim());
+      });
+      await downloadFile(`/api/jobs/search/export?${params.toString()}`, 'job-search-results.csv');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to export CSV');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const totalPages = pagination?.pages || 0;
@@ -281,6 +373,18 @@ const JobSearch = () => {
     searchParams.get('salary_min') ||
     searchParams.get('salary_max') ||
     (searchParams.get('source') && searchParams.get('source') !== 'all');
+
+  const showNewJobs = isAuthenticated;
+
+  // The map endpoint takes a single source, so only carry one over
+  const mapLinkUrl = (() => {
+    const params = new URLSearchParams();
+    if (localSearchParams.q) params.set('keyword', localSearchParams.q);
+    const sources = (localSearchParams.source || 'all').split(',').filter(Boolean);
+    if (sources.length === 1 && sources[0] !== 'all') params.set('source', sources[0]);
+    const queryString = params.toString();
+    return queryString ? `/map?${queryString}` : '/map';
+  })();
 
   return (
     <div className='space-y-6'>
@@ -560,6 +664,24 @@ const JobSearch = () => {
 
       {/* Search Results */}
       <div className='space-y-4'>
+        {/* Active saved search indicator */}
+        {activeSavedSearch && (
+          <div className='flex'>
+            <span className='inline-flex items-center gap-2 pl-3 pr-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium max-w-full'>
+              <HiStar className='h-3.5 w-3.5 flex-shrink-0' />
+              <span className='truncate'>From saved search: {activeSavedSearch.name}</span>
+              <button
+                type='button'
+                onClick={() => setActiveSavedSearch(null)}
+                aria-label={`Clear saved search indicator for ${activeSavedSearch.name}`}
+                className='p-0.5 rounded-full text-yellow-700 hover:text-yellow-900 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-colors flex-shrink-0'
+              >
+                <HiX className='h-3.5 w-3.5' />
+              </button>
+            </span>
+          </div>
+        )}
+
         {error && (
           <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
             <p className='text-red-800'>{error}</p>
@@ -629,18 +751,64 @@ const JobSearch = () => {
           <>
             {/* Search Results Summary */}
             <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
-              <div className='text-sm text-gray-600'>
-                <span className='font-medium'>
-                  {pagination ? pagination.total.toLocaleString() : searchResults.length}
-                </span>{' '}
-                jobs found
-                {pagination && pagination.total > searchResults.length && (
-                  <span className='ml-2'>
-                    (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
-                    total)
-                  </span>
-                )}
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <div className='text-sm text-gray-600'>
+                  <span className='font-medium'>
+                    {pagination ? pagination.total.toLocaleString() : searchResults.length}
+                  </span>{' '}
+                  jobs found
+                  {pagination && pagination.total > searchResults.length && (
+                    <span className='ml-2'>
+                      (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
+                      total)
+                    </span>
+                  )}
+                </div>
+
+                <div className='flex items-center gap-2'>
+                  <button
+                    type='button'
+                    onClick={handleExportCsv}
+                    disabled={!searchResults.length || exportLoading}
+                    aria-label='Export these search results as CSV'
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                  >
+                    {exportLoading ? (
+                      <LoadingSpinner size='sm' />
+                    ) : (
+                      <HiDownload className='h-4 w-4' />
+                    )}
+                    <span>Export CSV</span>
+                  </button>
+                  <Link
+                    to={mapLinkUrl}
+                    aria-label='Open the current search on the job map'
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors'
+                  >
+                    <HiMap className='h-4 w-4' />
+                    <span>Open in Map</span>
+                  </Link>
+                </div>
               </div>
+
+              {/* New since last seen */}
+              {showNewJobs && newSinceLastSeen > 0 && (
+                <div className='mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm'>
+                  <NewBadge />
+                  <span className='text-gray-700'>
+                    {newSinceLastSeen.toLocaleString()} new since you last looked
+                  </span>
+                  <span className='text-gray-300' aria-hidden='true'>·</span>
+                  <button
+                    type='button'
+                    onClick={handleMarkJobsSeen}
+                    aria-label='Mark all new jobs as seen'
+                    className='font-medium text-primary-600 hover:text-primary-700 underline focus:outline-none focus:ring-2 focus:ring-primary-500 rounded'
+                  >
+                    Mark all seen
+                  </button>
+                </div>
+              )}
 
               {/* Current Search Parameters */}
               {hasActiveFilters && (
@@ -739,6 +907,7 @@ const JobSearch = () => {
                           {job.businessTitle}
                         </h3>
                         <SourceBadge source={job.source} />
+                        {showNewJobs && job.isNew && <NewBadge />}
                         {(() => {
                           const deadline = getDeadlineInfo(job.postUntil);
                           if (!deadline) return null;
