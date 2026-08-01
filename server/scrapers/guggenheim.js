@@ -46,9 +46,11 @@ const scrapeGuggenheimDetail = async (posCode) => {
   const typeMatch = bodyText.match(/(Full-[Tt]ime|Part-[Tt]ime|On-Call|Temporary|Non-Exempt|Exempt)/);
   const employmentType = typeMatch ? typeMatch[1] : null;
 
-  // Extract description from main content area
-  const mainContent = $('main').length ? $('main').html() : $('body .content, body .job-details, body .container').first().html() || $('body').html();
-  const description = mainContent || null;
+  // The posting lives in div.job_listing. There is no <main> on this page, so
+  // the previous fallback chain ended at $('body').html() and stored ~46KB of
+  // nav, the application form, and inline scripts as the job description.
+  const listing = $('div.job_listing').first();
+  const description = listing.length ? (listing.html() || '').trim() || null : null;
 
   return { salaryFrom, salaryTo, salaryFrequency, location, employmentType, description };
 };
