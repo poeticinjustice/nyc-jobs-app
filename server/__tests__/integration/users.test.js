@@ -2,6 +2,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const { setupDB } = require('../setup');
 const app = require('../../app');
+const User = require('../../models/User');
 const {
   createTestUser,
   createAdminUser,
@@ -155,6 +156,63 @@ describe('PUT /api/users/:id', () => {
       .send({ role: 'admin' });
 
     expect(res.status).toBe(403);
+  });
+
+  it('an admin cannot demote themselves out of admin', async () => {
+    const { user: admin, token } = await createAdminUser();
+
+    const res = await request(app)
+      .put(`/api/users/${admin._id}`)
+      .set('Authorization', authHeader(token))
+      .send({ role: 'user' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/own role/i);
+    expect((await User.findById(admin._id)).role).toBe('admin');
+  });
+
+  it('an admin cannot deactivate their own account', async () => {
+    const { user: admin, token } = await createAdminUser();
+
+    const res = await request(app)
+      .put(`/api/users/${admin._id}`)
+      .set('Authorization', authHeader(token))
+      .send({ isActive: false });
+
+    expect(res.status).toBe(400);
+    expect((await User.findById(admin._id)).isActive).toBe(true);
+  });
+
+  it('re-sending an admin their own unchanged role is not treated as a demotion', async () => {
+    const { user: admin, token } = await createAdminUser();
+
+    const res = await request(app)
+      .put(`/api/users/${admin._id}`)
+      .set('Authorization', authHeader(token))
+      .send({ firstName: 'Ada', role: 'admin' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.firstName).toBe('Ada');
+  });
+
+  it('refuses to demote the last active admin', async () => {
+    const { token: firstToken } = await createAdminUser();
+    const { user: second } = await createAdminUser();
+
+    // Two admins: demoting one is fine.
+    const ok = await request(app)
+      .put(`/api/users/${second._id}`)
+      .set('Authorization', authHeader(firstToken))
+      .send({ role: 'user' });
+    expect(ok.status).toBe(200);
+
+    // Now only one admin is left, and a second admin cannot remove them.
+    const { user: third, token: thirdToken } = await createAdminUser();
+    const blocked = await request(app)
+      .put(`/api/users/${third._id}`)
+      .set('Authorization', authHeader(thirdToken))
+      .send({ isActive: false });
+    expect(blocked.status).toBe(400);
   });
 });
 

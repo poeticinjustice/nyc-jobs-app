@@ -53,6 +53,10 @@ const EmptyState = ({ icon: Icon, message }) => (
 // --- User Management Tab ---
 
 const UserManagement = () => {
+  // The signed-in admin appears in this list like anyone else. The server
+  // refuses self role changes and self-deactivation, so grey those controls
+  // out rather than offering an action that always fails.
+  const { user: currentUser } = useSelector((state) => state.auth);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -175,8 +179,9 @@ const UserManagement = () => {
                       <select
                         value={u.role}
                         onChange={(e) => handleRoleChange(u._id, e.target.value)}
-                        disabled={actionLoading === u._id}
-                        className='border border-gray-300 rounded px-2 py-1 text-xs'
+                        disabled={actionLoading === u._id || u._id === currentUser?._id}
+                        title={u._id === currentUser?._id ? 'You cannot change your own role' : undefined}
+                        className='border border-gray-300 rounded px-2 py-1 text-xs disabled:bg-gray-100 disabled:text-gray-500'
                       >
                         <option value='user'>User</option>
                         <option value='admin'>Admin</option>
@@ -190,17 +195,21 @@ const UserManagement = () => {
                       {formatDate(u.createdAt)}
                     </td>
                     <td className='px-4 py-3'>
-                      <button
-                        onClick={() => handleToggleActive(u._id, u.isActive)}
-                        disabled={actionLoading === u._id}
-                        className={`text-xs font-medium px-3 py-1 rounded ${
-                          u.isActive
-                            ? 'text-red-700 bg-red-50 hover:bg-red-100'
-                            : 'text-green-700 bg-green-50 hover:bg-green-100'
-                        } disabled:opacity-50`}
-                      >
-                        {u.isActive ? 'Deactivate' : 'Reactivate'}
-                      </button>
+                      {u._id === currentUser?._id ? (
+                        <span className='text-xs text-gray-400'>You</span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleActive(u._id, u.isActive)}
+                          disabled={actionLoading === u._id}
+                          className={`text-xs font-medium px-3 py-1 rounded ${
+                            u.isActive
+                              ? 'text-red-700 bg-red-50 hover:bg-red-100'
+                              : 'text-green-700 bg-green-50 hover:bg-green-100'
+                          } disabled:opacity-50`}
+                        >
+                          {u.isActive ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

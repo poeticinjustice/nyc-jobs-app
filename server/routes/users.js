@@ -177,6 +177,34 @@ router.put(
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // An admin can reach these fields for their own account, so without a
+      // guard two clicks in the admin UI can strip your own access with no way
+      // back — there is no CLI to restore it. DELETE /:id already refuses
+      // self-deactivation; do the same here.
+      if (isSelf) {
+        if (role !== undefined && role !== user.role) {
+          return res.status(400).json({ message: 'Cannot change your own role' });
+        }
+        if (isActive === false) {
+          return res.status(400).json({ message: 'Cannot deactivate your own account' });
+        }
+      }
+
+      // …and the same applies to the last admin standing, self or not.
+      const losingAdmin =
+        user.role === 'admin' && user.isActive &&
+        ((role !== undefined && role !== 'admin') || isActive === false);
+      if (losingAdmin) {
+        const otherAdmins = await User.countDocuments({
+          _id: { $ne: user._id },
+          role: 'admin',
+          isActive: true,
+        });
+        if (otherAdmins === 0) {
+          return res.status(400).json({ message: 'Cannot remove the last active admin' });
+        }
+      }
+
       const updates = {};
       if (firstName !== undefined) updates.firstName = firstName;
       if (lastName !== undefined) updates.lastName = lastName;
