@@ -8,7 +8,9 @@ const jsxInJs = {
   name: 'jsx-in-js',
   enforce: 'pre',
   async transform(code, id) {
-    if (!/\/src\/.*\.js$/.test(id)) return null;
+    // Only this app's source — a bare /src/ check also matches dependencies
+    // that ship a src/ directory (e.g. axios), which don't need the transform.
+    if (id.includes('node_modules') || !/\/src\/.*\.js$/.test(id)) return null;
     return transformWithEsbuild(code, id, { loader: 'jsx', jsx: 'automatic' });
   },
 };
@@ -60,9 +62,9 @@ export default defineConfig(({ mode }) => {
     test: {
       globals: true,
       environment: 'jsdom',
-      // jsdom pulls in an ESM-only CSS colour parser that the default forks
-      // pool loads through require(), which throws ERR_REQUIRE_ESM.
-      pool: 'threads',
+      // jsdom is pinned to ^26 in package.json: jsdom 27 pulls in an ESM-only
+      // CSS colour parser that Vitest workers load via require(), which throws
+      // ERR_REQUIRE_ESM regardless of pool.
       setupFiles: './src/setupTests.js',
       css: false,
       // Match CRA's convention of colocated *.test.js files

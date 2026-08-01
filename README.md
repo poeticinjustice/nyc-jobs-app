@@ -184,7 +184,7 @@ Create a `.env` file in the root directory:
 cp .env.example .env
 ```
 
-Required variables (the server exits if these are missing): `MONGODB_URI`, `JWT_SECRET`, `NYC_JOBS_API_URL`. Optional: `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `USAJOBS_BASE_URL` (federal jobs are skipped without them), `CORS_ORIGIN`, `PORT`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS`. See `.env.example` for details.
+Required variables (the server exits if these are missing): `MONGODB_URI`, `JWT_SECRET`, `NYC_JOBS_API_URL`. Optional: `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `USAJOBS_BASE_URL` (federal jobs are skipped without them), `CORS_ORIGIN`, `PORT`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS`, `SCRAPER_TIMEOUT_MS` (per-scraper cap during a refresh, default 90 minutes). See `.env.example` for details.
 
 ### 3. Start the Application
 
