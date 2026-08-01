@@ -15,7 +15,7 @@ const visiblePageNumbers = () => {
 };
 
 const setup = (props) => {
-  const onPageChange = jest.fn();
+  const onPageChange = vi.fn();
   const utils = render(
     <Pagination
       currentPage={1}

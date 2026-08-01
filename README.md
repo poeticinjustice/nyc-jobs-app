@@ -137,7 +137,7 @@ NYCJobs/
 │   ├── helpers/              # jobHelpers, geocoding, usaJobsApi
 │   ├── scripts/              # refreshJobs.js (cron), scrapeWithBrowser.js (GitHub Action)
 │   └── __tests__/            # Jest unit + integration tests
-├── client/                   # React web app (Create React App)
+├── client/                   # React web app (Vite)
 │   └── src/
 │       ├── components/       # Auth, Layout, Notes, UI
 │       ├── pages/            # Home, JobSearch, JobDetails, JobMap, SavedJobs,
