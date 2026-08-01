@@ -311,7 +311,8 @@ const escCsv = (val) => {
   if (/^[=+\-@\t\r]/.test(s)) {
     s = "'" + s;
   }
-  return s.includes(',') || s.includes('"') || s.includes('\n')
+  // A bare CR mid-value splits the row in some readers, so quote it too.
+  return /[,"\n\r]/.test(s)
     ? `"${s.replace(/"/g, '""')}"`
     : s;
 };
