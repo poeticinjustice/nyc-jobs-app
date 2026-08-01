@@ -138,17 +138,40 @@ const DEFAULT_SCRAPERS = [
   { source: 'nychhc', fn: refreshNychhcJobs },
 ];
 
+// One scraper must not be able to hold up the whole run. Columbia honours a
+// 5.5s robots.txt crawl delay serially, so a cold start legitimately takes
+// about an hour; this caps the worst case rather than the normal one. A capped
+// scraper reports 0 fetched, which makes cleanupStaleJobs skip its source —
+// so timing out is safe, it just leaves that source unrefreshed this cycle.
+const SCRAPER_TIMEOUT_MS = parseInt(process.env.SCRAPER_TIMEOUT_MS, 10) || 90 * 60 * 1000;
+
+// Timing out does not cancel the scraper — it keeps running to completion in
+// the background. Promise.race subscribes to it, so a late rejection is already
+// handled; the cost is just wasted work until it finishes.
+const withTimeout = (promise, ms, source) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Scraper "${source}" exceeded ${Math.round(ms / 1000)}s`)),
+        ms
+      );
+      // Don't hold the event loop open on the one-shot CLI path.
+      timer.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
+
 /**
  * Run every scraper, then clean up stale jobs and record run metrics.
  *
  * `scrapers` is injectable so the pipeline itself can be tested without
  * hitting the network; it defaults to the full production list.
  */
-const refreshAllJobs = async ({ scrapers = DEFAULT_SCRAPERS } = {}) => {
+const refreshAllJobs = async ({ scrapers = DEFAULT_SCRAPERS, timeoutMs = SCRAPER_TIMEOUT_MS } = {}) => {
   const timestamp = new Date();
   console.log(`[refresh] Starting job refresh at ${timestamp.toISOString()}`);
-
-
 
   const BATCH_SIZE = 5;
   const results = {};
@@ -161,35 +184,45 @@ const refreshAllJobs = async ({ scrapers = DEFAULT_SCRAPERS } = {}) => {
     const batchNames = batch.map((s) => s.source).join(', ');
     console.log(`[refresh] Running batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchNames}`);
 
-    const batchStartedAt = new Date();
-    const settled = await Promise.allSettled(
-      batch.map((s) => s.fn(timestamp))
+    // Time each scraper from its own start to its own finish. Reading the clock
+    // in the results loop instead — after the whole batch had settled — made
+    // every source in a batch report the slowest one's duration.
+    const settled = await Promise.all(
+      batch.map(async (s) => {
+        const startedAt = new Date();
+        try {
+          const value = await withTimeout(s.fn(timestamp), timeoutMs, s.source);
+          return { ok: true, value, startedAt, finishedAt: new Date() };
+        } catch (error) {
+          return { ok: false, error, startedAt, finishedAt: new Date() };
+        }
+      })
     );
 
     for (let j = 0; j < batch.length; j++) {
       const { source } = batch[j];
-      const finishedAt = new Date();
+      const outcome = settled[j];
       const metric = {
         runId,
         source,
-        startedAt: batchStartedAt,
-        finishedAt,
-        durationMs: finishedAt - batchStartedAt,
+        startedAt: outcome.startedAt,
+        finishedAt: outcome.finishedAt,
+        durationMs: outcome.finishedAt - outcome.startedAt,
       };
 
-      if (settled[j].status === 'fulfilled') {
-        const r = settled[j].value;
+      if (outcome.ok) {
+        const r = outcome.value;
         results[source] = r;
         counts[source] = r.upserted + r.modified;
         metric.upserted = r.upserted;
         metric.modified = r.modified;
         metric.status = counts[source] === 0 ? 'empty' : 'ok';
       } else {
-        console.error(`[refresh] Scraper "${source}" failed:`, settled[j].reason);
+        console.error(`[refresh] Scraper "${source}" failed:`, outcome.error);
         results[source] = { upserted: 0, modified: 0 };
         counts[source] = 0;
         metric.status = 'failed';
-        metric.error = String(settled[j].reason?.message || settled[j].reason).slice(0, 500);
+        metric.error = String(outcome.error?.message || outcome.error).slice(0, 500);
       }
       metrics.push(metric);
     }

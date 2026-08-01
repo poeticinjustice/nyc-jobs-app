@@ -70,6 +70,51 @@ describe('refreshAllJobs pipeline', () => {
     expect(await Job.countDocuments({ source: 'nyc' })).toBe(2);
   });
 
+  it('caps a scraper that runs too long and lets the rest of the cycle finish', async () => {
+    // Rejects *after* losing the race — timing out doesn't cancel the scraper,
+    // so the run must survive its late failure.
+    const slowFailure = () =>
+      new Promise((_, reject) => setTimeout(() => reject(new Error('too late')), 120));
+
+    await refreshAllJobs({
+      timeoutMs: 50,
+      scrapers: [
+        { source: 'columbia', fn: slowFailure },
+        { source: 'nyc', fn: fakeScraper('nyc', 2) },
+      ],
+    });
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const columbia = await ScraperRun.findOne({ source: 'columbia' }).lean();
+    expect(columbia.status).toBe('failed');
+    expect(columbia.error).toMatch(/exceeded/);
+
+    // The rest of the cycle completed, and the capped source was left alone
+    // rather than having its stored jobs purged as stale.
+    expect(await Job.countDocuments({ source: 'nyc' })).toBe(2);
+  });
+
+  it('times each scraper separately rather than sharing its batch duration', async () => {
+    const slow = async (timestamp) => {
+      await new Promise((r) => setTimeout(r, 150));
+      return fakeScraper('columbia', 1)(timestamp);
+    };
+
+    await refreshAllJobs({
+      scrapers: [
+        { source: 'columbia', fn: slow },
+        { source: 'nyc', fn: fakeScraper('nyc', 1) },
+      ],
+    });
+
+    const runs = await ScraperRun.find({}).lean();
+    const fast = runs.find((r) => r.source === 'nyc');
+    const slowRun = runs.find((r) => r.source === 'columbia');
+    expect(slowRun.durationMs).toBeGreaterThanOrEqual(150);
+    expect(fast.durationMs).toBeLessThan(slowRun.durationMs);
+  });
+
   it('marks a source that returned nothing as empty', async () => {
     await refreshAllJobs({ scrapers: [{ source: 'frick', fn: fakeScraper('frick', 0) }] });
 
