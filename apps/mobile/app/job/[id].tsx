@@ -349,7 +349,6 @@ export default function JobDetailScreen() {
     effectiveSource === 'federal' ? 'Apply at USAJobs'
     : effectiveSource === 'nyc' ? 'Apply at NYC Jobs'
     : 'Apply on Employer Site';
-  const sc = STATUS_COLORS[job.applicationStatus || 'interested'] || STATUS_COLORS.interested;
 
   return (
     <View style={styles.screen}>

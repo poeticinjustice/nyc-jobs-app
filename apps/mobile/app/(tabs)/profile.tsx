@@ -12,7 +12,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
-import { formatDate } from '@/lib/format';
 import { NAME_MAX, PASSWORD_MIN } from 'nyc-jobs-shared/constants';
 
 export default function ProfileScreen() {
