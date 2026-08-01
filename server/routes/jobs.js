@@ -290,8 +290,8 @@ router.get(
         return !isNaN(value) && Number.isInteger(Number(value));
       })
       .withMessage('salary_max must be a number'),
-    query('page').optional().isNumeric(),
-    query('limit').optional().isNumeric(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
     query('sort')
       .optional()
       .isIn(SORT_VALUES),
@@ -347,19 +347,14 @@ router.get(
           .lean(),
       ]);
 
-      // Check saved status for authenticated users
+      // Check saved status for authenticated users — the fetched docs already
+      // carry savedBy, so no second query is needed
       let jobsWithStatus = jobs;
       if (req.user) {
-        const jobIds = jobs.map((j) => j.jobId);
-        const savedJobs = await Job.find({
-          'savedBy.user': req.user._id,
-          jobId: { $in: jobIds },
-          source: { $in: JOB_SOURCES },
-        }).lean();
-        const savedJobMap = new Set(savedJobs.map((j) => `${j.source}:${j.jobId}`));
+        const uid = req.user._id.toString();
         jobsWithStatus = jobs.map((job) => ({
           ...job,
-          isSaved: savedJobMap.has(`${job.source}:${job.jobId}`),
+          isSaved: (job.savedBy || []).some((s) => s.user && s.user.toString() === uid),
         }));
       }
 
@@ -405,34 +400,71 @@ router.get('/agencies', async (req, res) => {
   }
 });
 
+// Sort options for the saved-jobs list. updated_desc/saved_desc are sorted on
+// the requesting user's OWN savedBy entry (via aggregation) — the job document's
+// updatedAt is bumped by every scraper refresh and by other users saving the
+// same job, which made "recently saved" lists reorder at random.
+const SAVED_SORTS = {
+  updated_desc: 'entry',
+  saved_desc: 'entry',
+  date_desc: { postDate: -1 },
+  date_asc: { postDate: 1 },
+  title_asc: { businessTitle: 1 },
+  title_desc: { businessTitle: -1 },
+  salary_desc: { salaryRangeFrom: -1 },
+  salary_asc: { salaryRangeFrom: 1 },
+};
+
 // Get saved jobs
-router.get('/saved', authenticateToken, async (req, res) => {
+router.get('/saved', [
+  authenticateToken,
+  query('status').optional().isIn(APPLICATION_STATUS_VALUES),
+  query('sort').optional().custom((v) => Object.hasOwn(SAVED_SORTS, v)),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+
     const { page = 1, limit = 20, status, sort = 'updated_desc' } = req.query;
-    const pageNum = parseInt(page) || 1;
-    const limitNum = Math.min(parseInt(limit) || 20, 100);
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(Math.max(1, parseInt(limit) || 20), 100);
 
     const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
-    const savedSortMap = {
-      updated_desc: { updatedAt: -1 },
-      saved_desc: { 'savedBy.savedAt': -1 },
-      date_desc: { postDate: -1 },
-      date_asc: { postDate: 1 },
-      title_asc: { businessTitle: 1 },
-      title_desc: { businessTitle: -1 },
-      salary_desc: { salaryRangeFrom: -1 },
-      salary_asc: { salaryRangeFrom: 1 },
-    };
-    const mongoSort = savedSortMap[sort] || savedSortMap.updated_desc;
+    const sortSpec = Object.hasOwn(SAVED_SORTS, sort) ? SAVED_SORTS[sort] : 'entry';
 
     const total = await Job.countDocuments(queryFilter);
 
-    const jobs = await Job.find(queryFilter)
-      .sort(mongoSort)
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum)
-      .lean();
+    let jobs;
+    if (sortSpec === 'entry') {
+      jobs = await Job.aggregate([
+        { $match: queryFilter },
+        {
+          $addFields: {
+            _userEntry: {
+              $arrayElemAt: [
+                { $filter: { input: '$savedBy', cond: { $eq: ['$$this.user', req.user._id] } } },
+                0,
+              ],
+            },
+          },
+        },
+        { $sort: { '_userEntry.savedAt': -1, _id: 1 } },
+        { $skip: (pageNum - 1) * limitNum },
+        { $limit: limitNum },
+        { $unset: '_userEntry' },
+      ]);
+    } else {
+      jobs = await Job.find(queryFilter)
+        .sort({ ...sortSpec, _id: 1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean();
+    }
 
     // Fetch note counts for the returned jobs in one query
     const jobIds = jobs.map((j) => j.jobId);
@@ -464,8 +496,15 @@ router.get('/saved', authenticateToken, async (req, res) => {
 });
 
 // Export saved jobs as CSV
-router.get('/saved/export', authenticateToken, async (req, res) => {
+router.get('/saved/export', [
+  authenticateToken,
+  query('status').optional().isIn(APPLICATION_STATUS_VALUES),
+], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
     const { status } = req.query;
     const queryFilter = buildSavedJobsFilter(req.user._id, status);
 
@@ -540,12 +579,24 @@ router.get('/saved/export', authenticateToken, async (req, res) => {
 // Admin: list all jobs with save counts
 router.get(
   '/admin',
-  [authenticateToken, requireRole(['admin'])],
+  [
+    authenticateToken,
+    requireRole(['admin']),
+    query('q').optional().isString().trim(),
+    query('source').optional().isIn(VALID_SOURCE_FILTERS),
+    query('agency').optional().isString().trim(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
   async (req, res) => {
     try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+      }
       const { page = 1, limit = 20, q, source, agency } = req.query;
-      const pageNum = parseInt(page) || 1;
-      const limitNum = Math.min(parseInt(limit) || 20, 100);
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(Math.max(1, parseInt(limit) || 20), 100);
 
       const filter = {};
       if (source && source !== 'all') filter.source = source;
@@ -585,8 +636,9 @@ router.get(
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { source } = req.query;
-    const jobSource = source || 'nyc';
+    // getSource rejects non-string / unknown values (e.g. ?source[$ne]=x) and
+    // defaults to 'nyc'
+    const jobSource = getSource(req);
 
     const job = await Job.findOne({ jobId: id, source: jobSource }).lean();
     if (!job) {

@@ -175,11 +175,11 @@ router.get(
   '/',
   [
     authenticateToken,
-    query('jobId').optional(),
-    query('type').optional(),
-    query('priority').optional(),
-    query('page').optional().isNumeric(),
-    query('limit').optional().isNumeric(),
+    query('jobId').optional().isString().trim(),
+    query('type').optional().isIn(NOTE_TYPE_VALUES),
+    query('priority').optional().isIn(NOTE_PRIORITY_VALUES),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
   ],
   async (req, res) => {
     try {
@@ -258,13 +258,18 @@ router.get(
   async (req, res) => {
     try {
       const { page = 1, limit = 20, type, priority, userId } = req.query;
-      const pageNum = parseInt(page) || 1;
-      const limitNum = Math.min(parseInt(limit) || 20, 100);
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(Math.max(1, parseInt(limit) || 20), 100);
 
       const filter = { status: 'active' };
-      if (type) filter.type = type;
-      if (priority) filter.priority = priority;
-      if (userId) filter.user = userId;
+      if (typeof type === 'string' && NOTE_TYPE_VALUES.includes(type)) filter.type = type;
+      if (typeof priority === 'string' && NOTE_PRIORITY_VALUES.includes(priority)) filter.priority = priority;
+      if (userId) {
+        if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId)) {
+          return res.status(400).json({ message: 'Invalid userId' });
+        }
+        filter.user = userId;
+      }
 
       const [total, notes] = await Promise.all([
         Note.countDocuments(filter),

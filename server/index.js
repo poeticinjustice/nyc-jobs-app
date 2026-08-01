@@ -29,11 +29,15 @@ mongoose
   .then(async () => {
     console.log('Connected to MongoDB');
 
-    // Seed on startup if database is empty
+    // Seed on startup if database is empty (holds the overlap lock so a cron
+    // tick during the seed can't start a second concurrent refresh)
     const count = await Job.estimatedDocumentCount();
     if (count === 0) {
       console.log('Database is empty — triggering initial seed...');
-      refreshAllJobs().catch((err) => console.error('Initial seed failed:', err));
+      refreshRunning = true;
+      refreshAllJobs()
+        .catch((err) => console.error('Initial seed failed:', err))
+        .finally(() => { refreshRunning = false; });
     } else {
       console.log(`Database has ~${count} jobs`);
     }

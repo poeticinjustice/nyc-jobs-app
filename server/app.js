@@ -44,7 +44,9 @@ const limiter = rateLimit({
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
-app.use(limiter);
+// Scope to /api only — static assets (JS/CSS chunks, images, index.html) must
+// not count against the quota, or a handful of SPA loads exhausts it.
+app.use('/api', limiter);
 
 // CORS configuration
 app.use(
@@ -58,10 +60,13 @@ app.use(
 );
 
 // Body parsing middleware with proper encoding
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// (largest legitimate payload is a 5000-char note — 1mb is generous headroom)
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Stricter rate limiting for auth routes (disabled in test to avoid flaky tests)
+// Stricter rate limiting for credential attempts (disabled in test to avoid flaky tests).
+// Applies ONLY to POST /login and /register — GET /me runs on every app load to
+// restore the session and must not be starved by this limiter.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: process.env.NODE_ENV === 'test' ? 10000 : 20,
@@ -69,9 +74,15 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const credentialLimiter = (req, res, next) => {
+  if (req.method === 'POST' && (req.path === '/login' || req.path === '/register')) {
+    return authLimiter(req, res, next);
+  }
+  next();
+};
 
 // API Routes
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', credentialLimiter, authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/notes', noteRoutes);
@@ -109,12 +120,15 @@ if (process.env.NODE_ENV !== 'test') {
 // Error handling middleware (must be after all route handlers)
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
-    message: 'Something went wrong!',
+  // Respect the error's own status (body-parser SyntaxError = 400, payload
+  // too large = 413, …) — client errors must not be reported as server faults.
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    message: status >= 500 ? 'Something went wrong!' : err.message || 'Request error',
     error:
       process.env.NODE_ENV === 'development'
         ? err.message
-        : 'Internal server error',
+        : status >= 500 ? 'Internal server error' : undefined,
   });
 });
 

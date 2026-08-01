@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const SavedSearch = require('../models/SavedSearch');
 const { authenticateToken, validateObjectId } = require('../middleware/auth');
-const { SEARCH_NAME_MAX } = require('../../shared/constants');
+const { SEARCH_NAME_MAX, SORT_VALUES, VALID_SOURCE_FILTERS } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -31,6 +31,17 @@ router.post(
     authenticateToken,
     body('name').trim().isLength({ min: 1, max: SEARCH_NAME_MAX }).withMessage('Name is required (max 100 chars)'),
     body('criteria').isObject().withMessage('Criteria must be an object'),
+    // Type-check criteria fields so junk (objects/arrays) 400s instead of CastError-500ing
+    body('criteria.q').optional({ values: 'falsy' }).isString(),
+    body('criteria.category').optional({ values: 'falsy' }).isString(),
+    body('criteria.location').optional({ values: 'falsy' }).isString(),
+    body('criteria.agency').optional({ values: 'falsy' }).isString(),
+    body('criteria.salary_min').optional({ values: 'falsy' }).custom((v) => typeof v === 'string' || typeof v === 'number'),
+    body('criteria.salary_max').optional({ values: 'falsy' }).custom((v) => typeof v === 'string' || typeof v === 'number'),
+    body('criteria.sort').optional({ values: 'falsy' }).isIn(SORT_VALUES),
+    body('criteria.source').optional({ values: 'falsy' }).custom(
+      (v) => typeof v === 'string' && v.split(',').every((s) => VALID_SOURCE_FILTERS.includes(s))
+    ),
   ],
   async (req, res) => {
     try {
