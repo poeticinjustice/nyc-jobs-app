@@ -12,13 +12,8 @@ const setupDB = () => {
     const Job = require('../models/Job');
     await Job.createIndexes();
 
-    process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing';
-    process.env.NYC_JOBS_API_URL = 'https://data.cityofnewyork.us/resource/kpav-sd4t.json';
-    process.env.USAJOBS_API_KEY = 'test-api-key';
-    process.env.USAJOBS_EMAIL = 'test@example.com';
-    process.env.USAJOBS_BASE_URL = 'https://data.usajobs.gov/api/Search';
-    process.env.NODE_ENV = 'test';
-    process.env.RATE_LIMIT_MAX_REQUESTS = '10000';
+    // Env vars live in setupEnv.js — they must be set before app.js is
+    // imported, which is too early for this hook.
   });
 
   afterEach(async () => {
