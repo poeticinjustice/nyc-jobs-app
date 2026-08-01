@@ -6,8 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to the same branch supersedes the previous run
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  server:
+    name: Server + shared tests
     runs-on: ubuntu-latest
 
     strategy:
@@ -26,11 +32,82 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run server tests
-        run: npm run test:server
+      # Coverage thresholds are configured per-area in jest.config.js and fail
+      # the build on a regression.
+      - name: Run server and shared tests with coverage
+        run: npm run test:server:coverage
 
-      - name: Build client
-        run: |
-          cd client
-          npm ci
-          npm run build
+      - name: Upload coverage report
+        if: matrix.node-version == '22.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: coverage/
+          retention-days: 7
+
+  client:
+    name: Web client lint, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      # The client imports the shared package via a file: dependency, so the
+      # root install has to happen first.
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Lint
+        run: npx eslint src/
+        working-directory: client
+
+      - name: Test
+        run: npm run test:ci
+        working-directory: client
+        env:
+          CI: true
+
+      - name: Build
+        run: npm run build
+        working-directory: client
+        env:
+          CI: true
+
+  mobile:
+    name: Mobile typecheck, lint, test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: apps/mobile
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: apps/mobile
+
+      - name: Lint
+        run: npx eslint .
+        working-directory: apps/mobile
+
+      - name: Test
+        run: npm run test:ci
+        working-directory: apps/mobile
+        env:
+          CI: true
