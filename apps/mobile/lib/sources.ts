@@ -30,3 +30,11 @@ export const SOURCE_LABELS: Record<string, string> = {
 
 export const getSourceLabel = (source?: string): string =>
   (source && SOURCE_LABELS[source]) || source || '';
+
+// Selectable source filters, in SOURCE_LABELS order. 'all' is not listed —
+// it's the implicit state when nothing is selected (see lib/searchCriteria).
+export const SOURCE_OPTIONS: { value: string; label: string }[] = Object.entries(
+  SOURCE_LABELS
+).map(([value, label]) => ({ value, label }));
+
+export const SOURCE_VALUES: string[] = SOURCE_OPTIONS.map((o) => o.value);

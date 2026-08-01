@@ -14,6 +14,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatSalary, formatDate } from '@/lib/format';
+import { exportCsv } from '@/lib/exportCsv';
 import FilterPills from '@/components/FilterPills';
 
 const STATUS_FILTERS = [
@@ -71,6 +72,7 @@ export default function SavedJobsScreen() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchSavedJobs = useCallback(async (p: number, filter: string, sortBy: string, append = false) => {
     try {
@@ -135,6 +137,24 @@ export default function SavedJobsScreen() {
     fetchSavedJobs(next, statusFilter, sort, true).finally(() => {
       loadingMoreRef.current = false;
     });
+  };
+
+  // Mirrors the web export: the active status filter narrows the CSV too.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportCsv({
+        path: '/api/jobs/saved/export',
+        filename: 'saved-jobs.csv',
+        params: statusFilter ? { status: statusFilter } : undefined,
+        dialogTitle: 'Export Saved Jobs',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to export CSV');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleUnsave = (job: SavedJob) => {
@@ -267,10 +287,25 @@ export default function SavedJobsScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Saved Jobs</Text>
-        <Text style={styles.subtitle}>
-          {total} {total === 1 ? 'job' : 'jobs'}{statusFilter ? ` · ${statusFilter}` : ''}
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerMain}>
+            <Text style={styles.title}>Saved Jobs</Text>
+            <Text style={styles.subtitle}>
+              {total} {total === 1 ? 'job' : 'jobs'}{statusFilter ? ` · ${statusFilter}` : ''}
+            </Text>
+          </View>
+          {jobs.length > 0 && (
+            <TouchableOpacity
+              style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+              onPress={handleExport}
+              disabled={exporting}
+            >
+              <Text style={styles.exportButtonText}>
+                {exporting ? 'Exporting...' : 'Export'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <FilterPills
@@ -336,6 +371,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  headerMain: { flex: 1 },
+  exportButton: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#fff',
+  },
+  exportButtonDisabled: { opacity: 0.5 },
+  exportButtonText: { color: '#374151', fontWeight: '600', fontSize: 14 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827' },
   subtitle: { fontSize: 14, color: '#6B7280', marginTop: 2 },
   list: { padding: 16, paddingTop: 12, gap: 12 },

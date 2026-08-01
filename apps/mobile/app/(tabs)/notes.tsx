@@ -17,6 +17,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { exportCsv } from '@/lib/exportCsv';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
@@ -28,7 +29,7 @@ const TYPE_OPTIONS = [
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: '', label: 'All' },
+  { value: '', label: 'All Priorities' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
@@ -92,6 +93,7 @@ export default function NotesScreen() {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [form, setForm] = useState<NoteForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchNotes = useCallback(async (p: number, type: string, priority: string, append = false) => {
     try {
@@ -163,6 +165,22 @@ export default function NotesScreen() {
     fetchNotes(next, typeFilter, priorityFilter, true).finally(() => {
       loadingMoreRef.current = false;
     });
+  };
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportCsv({
+        path: '/api/notes/export',
+        filename: 'notes.csv',
+        dialogTitle: 'Export Notes',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to export CSV');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const openCreate = () => {
@@ -326,9 +344,22 @@ export default function NotesScreen() {
             <Text style={styles.title}>My Notes</Text>
             <Text style={styles.subtitle}>{total} {total === 1 ? 'note' : 'notes'}</Text>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={openCreate}>
-            <Text style={styles.addButtonText}>+ New</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {notes.length > 0 && (
+              <TouchableOpacity
+                style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+                onPress={handleExport}
+                disabled={exporting}
+              >
+                <Text style={styles.exportButtonText}>
+                  {exporting ? 'Exporting...' : 'Export'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.addButton} onPress={openCreate}>
+              <Text style={styles.addButtonText}>+ New</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -564,6 +595,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   addButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  exportButton: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#fff',
+  },
+  exportButtonDisabled: { opacity: 0.5 },
+  exportButtonText: { color: '#374151', fontWeight: '600', fontSize: 14 },
   filterWrapper: { paddingVertical: 10, marginTop: 4 },
   filterContent: { paddingHorizontal: 16, gap: 6, alignItems: 'center' },
   filterChip: {
