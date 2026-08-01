@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -27,6 +28,13 @@ export default function HomeScreen() {
 
   const handleBrowseAll = () => {
     router.push('/(tabs)/search');
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Log Out', style: 'destructive', onPress: () => void logout() },
+    ]);
   };
 
   return (
@@ -124,7 +132,7 @@ export default function HomeScreen() {
       {user && (
         <TouchableOpacity
           style={styles.logoutButton}
-          onPress={() => void logout()}
+          onPress={handleLogout}
         >
           <Text style={styles.logoutButtonText}>Log Out</Text>
         </TouchableOpacity>

@@ -1,50 +1,30 @@
-# Welcome to your Expo app 👋
+# NYC Jobs Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo (React Native) client for the NYC Jobs app. Search NYC city, state, federal, and other New York job listings; save jobs, track application status, and keep notes. Talks to the same Express backend as the web client.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run locally
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Open the app in the iOS simulator, an Android emulator, or Expo Go. Screens live in `app/` (Expo Router file-based routing).
 
-## Learn more
+## API base URL
 
-To learn more about developing your project with Expo, look at the following resources:
+The app resolves the backend URL in this order:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+1. `EXPO_PUBLIC_API_BASE_URL` env var (set it in a `.env` file or your shell). On a physical device, point it at your dev machine's LAN IP, e.g. `http://192.168.1.100:8000`.
+2. In dev, the Expo dev-server host with port 8000 (works for simulators and devices on the same network).
+3. In production builds, `https://nyc-jobs-app.onrender.com`.
 
-## Join the community
+## Builds (EAS)
 
-Join our community of developers creating universal apps.
+`eas.json` defines three profiles:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `development` — internal distribution with the dev client: `eas build --profile development`
+- `preview` — internal distribution build: `eas build --profile preview`
+- `production` — store build: `eas build --profile production`
+
+Preview and production builds pin `EXPO_PUBLIC_API_BASE_URL` to the deployed backend. You need an Expo account and the EAS CLI (`npm i -g eas-cli`, then `eas login`).

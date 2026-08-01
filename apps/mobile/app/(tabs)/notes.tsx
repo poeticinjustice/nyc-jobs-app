@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/format';
@@ -101,22 +101,48 @@ export default function NotesScreen() {
       const res = await api.get('/api/notes', { params });
       const fetched = res.data.notes || [];
       if (append) {
-        setNotes((prev) => [...prev, ...fetched]);
+        // Dedupe by id in case overlapping pages return the same note.
+        setNotes((prev) => {
+          const seen = new Set(prev.map((n) => n._id));
+          const additions = (fetched as Note[]).filter((n) => !seen.has(n._id));
+          return [...prev, ...additions];
+        });
       } else {
         setNotes(fetched);
       }
       setTotal(res.data.pagination?.total || fetched.length);
       setHasMore(p < (res.data.pagination?.pages || 1));
     } catch (err: any) {
+      if (!append) {
+        // Clear any stale list (e.g. a previous account's notes) rather than
+        // keep rendering it after a failed page-1 fetch.
+        setNotes([]);
+        setTotal(0);
+        setHasMore(false);
+      }
       Alert.alert('Error', err?.response?.data?.message || 'Failed to load notes');
     }
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    fetchNotes(1, typeFilter, priorityFilter).finally(() => setLoading(false));
-  }, [user, typeFilter, priorityFilter, fetchNotes]);
+  // Tracks the last filter combo so focus-regain refetches are silent while
+  // first load and filter changes still show the spinner.
+  const lastQueryKey = useRef<string | null>(null);
+
+  // Refetch page 1 on initial load, filter changes, and whenever the tab
+  // regains focus (so notes added on other screens are reflected).
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      const queryKey = `${typeFilter}|${priorityFilter}`;
+      const showSpinner = lastQueryKey.current !== queryKey;
+      lastQueryKey.current = queryKey;
+      if (showSpinner) setLoading(true);
+      setPage(1);
+      fetchNotes(1, typeFilter, priorityFilter).finally(() => {
+        if (showSpinner) setLoading(false);
+      });
+    }, [user, typeFilter, priorityFilter, fetchNotes])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -125,11 +151,18 @@ export default function NotesScreen() {
     setRefreshing(false);
   };
 
+  // Guards against onEndReached firing again while an append is in flight,
+  // which would fetch the same next page twice.
+  const loadingMoreRef = useRef(false);
+
   const onEndReached = () => {
-    if (!hasMore || loading) return;
+    if (!hasMore || loading || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     const next = page + 1;
     setPage(next);
-    fetchNotes(next, typeFilter, priorityFilter, true);
+    fetchNotes(next, typeFilter, priorityFilter, true).finally(() => {
+      loadingMoreRef.current = false;
+    });
   };
 
   const openCreate = () => {

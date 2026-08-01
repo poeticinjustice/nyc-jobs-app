@@ -108,10 +108,10 @@ export default function JobDetailScreen() {
 
     const fetchJob = async () => {
       try {
-        const res = await api.get(`/api/jobs/${id}`, { params: { source: source || 'nyc' } });
+        const res = await api.get(`/api/jobs/${encodeURIComponent(id)}`, { params: { source: source || 'nyc' } });
         setJob(res.data);
         if (res.data.isSaved) {
-          const notesRes = await api.get(`/api/notes/job/${id}`, { params: { limit: 5 } });
+          const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
           setNotes(notesRes.data.notes || []);
         }
       } catch (e: any) {
@@ -134,6 +134,13 @@ export default function JobDetailScreen() {
       } else {
         await api.post(`/api/jobs/${job.jobId}/save`, { source: job.source || 'nyc' });
         setJob({ ...job, isSaved: true, applicationStatus: 'interested', statusHistory: [{ status: 'interested', changedAt: new Date().toISOString() }] });
+        // Re-saving a previously saved job: fetch any notes that still exist for it.
+        try {
+          const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
+          setNotes(notesRes.data.notes || []);
+        } catch {
+          // Non-fatal: notes section will show empty until next load.
+        }
       }
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.message || 'Could not update saved status');
@@ -258,7 +265,7 @@ export default function JobDetailScreen() {
         type: 'general',
         priority: 'medium',
       });
-      const notesRes = await api.get(`/api/notes/job/${id}`, { params: { limit: 5 } });
+      const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
       setNotes(notesRes.data.notes || []);
       setJob(job ? { ...job, noteCount: (job.noteCount || 0) + 1 } : job);
       setNoteModalVisible(false);
@@ -276,8 +283,12 @@ export default function JobDetailScreen() {
     const explicit = job.externalUrl || job.toApply;
     if (explicit?.startsWith('http://') || explicit?.startsWith('https://')) return explicit;
     const effectiveSource = job.source || source || 'nyc';
-    if (effectiveSource === 'federal') return `https://www.usajobs.gov/job/${job.jobId}`;
-    return `https://cityjobs.nyc.gov/job/${job.jobId}`;
+    const encodedId = encodeURIComponent(job.jobId);
+    if (effectiveSource === 'federal') return `https://www.usajobs.gov/job/${encodedId}`;
+    if (effectiveSource === 'nys') return `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${encodedId}`;
+    if (effectiveSource === 'nyc') return `https://cityjobs.nyc.gov/job/${encodedId}`;
+    // Other sources have no derivable apply URL — the apply button is hidden.
+    return null;
   };
 
   const handleApplyLink = async () => {
@@ -324,7 +335,11 @@ export default function JobDetailScreen() {
   const posted = formatDate(job.postDate);
   const deadline = formatDate(job.postUntil);
   const effectiveSource = job.source || source || 'nyc';
-  const applyLabel = effectiveSource === 'federal' ? 'Apply at USAJobs' : 'Apply at NYC Jobs';
+  const applyUrl = getApplyUrl();
+  const applyLabel =
+    effectiveSource === 'federal' ? 'Apply at USAJobs'
+    : effectiveSource === 'nyc' ? 'Apply at NYC Jobs'
+    : 'Apply on Employer Site';
   const sc = STATUS_COLORS[job.applicationStatus || 'interested'] || STATUS_COLORS.interested;
 
   return (
@@ -363,9 +378,11 @@ export default function JobDetailScreen() {
               </Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
-            <Text style={styles.applyButtonText}>{applyLabel}</Text>
-          </TouchableOpacity>
+          {applyUrl && (
+            <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
+              <Text style={styles.applyButtonText}>{applyLabel}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Important Dates */}
@@ -563,47 +580,54 @@ export default function JobDetailScreen() {
         )}
       </ScrollView>
 
-      {/* Date Picker Modal */}
-      {datePicker && (
+      {/* Date Picker — Android shows the native dialog directly (wrapping it in a
+          transparent Modal would leave a dimmed overlay behind the system dialog). */}
+      {datePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={datePicker.value}
+          mode="date"
+          display="default"
+          onChange={(_, date) => {
+            const dp = datePicker;
+            setDatePicker(null);
+            if (date && dp.field === 'timeline' && dp.timelineIndex != null) {
+              handleTimelineDateSave(dp.timelineIndex, date);
+            } else if (date) {
+              void handleDateSave(dp.field, date);
+            }
+          }}
+        />
+      )}
+
+      {/* Date Picker Modal (iOS spinner) */}
+      {datePicker && Platform.OS !== 'android' && (
         <Modal transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.datePickerCard}>
               <DateTimePicker
                 value={datePicker.value}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display="spinner"
                 onChange={(_, date) => {
-                  if (Platform.OS === 'android') {
-                    const dp = datePicker;
-                    setDatePicker(null);
-                    if (date && dp.field === 'timeline' && dp.timelineIndex != null) {
-                      handleTimelineDateSave(dp.timelineIndex, date);
-                    } else if (date) {
-                      void handleDateSave(dp.field, date);
-                    }
-                  } else {
-                    if (date) setDatePicker({ ...datePicker, value: date });
-                  }
+                  if (date) setDatePicker({ ...datePicker, value: date });
                 }}
               />
-              {Platform.OS === 'ios' && (
-                <View style={styles.datePickerActions}>
-                  <TouchableOpacity onPress={() => setDatePicker(null)}>
-                    <Text style={styles.datePickerCancel}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => {
-                    const dp = datePicker;
-                    setDatePicker(null);
-                    if (dp.field === 'timeline' && dp.timelineIndex != null) {
-                      handleTimelineDateSave(dp.timelineIndex, dp.value);
-                    } else {
-                      void handleDateSave(dp.field, dp.value);
-                    }
-                  }}>
-                    <Text style={styles.datePickerDone}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+              <View style={styles.datePickerActions}>
+                <TouchableOpacity onPress={() => setDatePicker(null)}>
+                  <Text style={styles.datePickerCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {
+                  const dp = datePicker;
+                  setDatePicker(null);
+                  if (dp.field === 'timeline' && dp.timelineIndex != null) {
+                    handleTimelineDateSave(dp.timelineIndex, dp.value);
+                  } else {
+                    void handleDateSave(dp.field, dp.value);
+                  }
+                }}>
+                  <Text style={styles.datePickerDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>

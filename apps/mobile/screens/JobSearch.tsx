@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import api from '@/lib/api';
 import { API_BASE_URL } from '@/lib/config';
 import { formatSalary } from '@/lib/format';
+import { getSourceLabel } from '@/lib/sources';
 import FilterPills from '@/components/FilterPills';
 
 type Job = {
@@ -90,10 +91,27 @@ export default function JobSearchScreen() {
     }
   }, []);
 
+  // A new navigation param (e.g. searching from Home) starts a fresh search.
   useEffect(() => {
     if (params.q != null) setQuery(params.q);
     void fetchJobs(params.q || '', 1, sort);
-  }, [fetchJobs, params.q, sort]);
+    // `sort` is intentionally excluded: sort changes are handled below using
+    // the user's current query, not the original navigation param.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchJobs, params.q]);
+
+  // Changing sort re-runs the current search (whatever the user last typed),
+  // not the original navigation param.
+  const skipInitialSortFetch = useRef(true);
+  useEffect(() => {
+    if (skipInitialSortFetch.current) {
+      skipInitialSortFetch.current = false;
+      return;
+    }
+    void fetchJobs(query.trim(), 1, sort);
+    // `query` is intentionally excluded: typing alone shouldn't refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchJobs, sort]);
 
   const handleSearch = () => {
     void fetchJobs(query.trim(), 1, sort);
@@ -128,7 +146,7 @@ export default function JobSearchScreen() {
           {item.source && item.source !== 'nyc' && (
             <View style={[styles.sourceBadge, item.source === 'nys' && styles.sourceBadgeNys]}>
               <Text style={[styles.sourceBadgeText, item.source === 'nys' && styles.sourceBadgeTextNys]}>
-                {item.source === 'federal' ? 'Federal' : 'State'}
+                {getSourceLabel(item.source)}
               </Text>
             </View>
           )}

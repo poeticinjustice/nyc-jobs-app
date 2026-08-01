@@ -17,6 +17,10 @@ export default function RegisterScreen() {
       Alert.alert('Missing fields', 'Please enter your first name.');
       return;
     }
+    if (!lastName.trim()) {
+      Alert.alert('Missing fields', 'Please enter your last name.');
+      return;
+    }
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       Alert.alert('Missing fields', 'Please enter your email.');

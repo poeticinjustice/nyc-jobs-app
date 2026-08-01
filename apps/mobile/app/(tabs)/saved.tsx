@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatSalary, formatDate } from '@/lib/format';
@@ -80,7 +80,12 @@ export default function SavedJobsScreen() {
       const data = res.data;
       const fetched = data.jobs || data.savedJobs || [];
       if (append) {
-        setJobs((prev) => [...prev, ...fetched]);
+        // Dedupe by source+jobId in case overlapping pages return the same job.
+        setJobs((prev) => {
+          const seen = new Set(prev.map((j) => `${j.source}-${j.jobId}`));
+          const additions = (fetched as SavedJob[]).filter((j) => !seen.has(`${j.source}-${j.jobId}`));
+          return [...prev, ...additions];
+        });
       } else {
         setJobs(fetched);
       }
@@ -91,11 +96,25 @@ export default function SavedJobsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    fetchSavedJobs(1, statusFilter, sort).finally(() => setLoading(false));
-  }, [user, statusFilter, sort, fetchSavedJobs]);
+  // Tracks the last filter/sort combo so focus-regain refetches are silent
+  // while first load and filter/sort changes still show the spinner.
+  const lastQueryKey = useRef<string | null>(null);
+
+  // Refetch page 1 on initial load, filter/sort changes, and whenever the tab
+  // regains focus (so edits made on other screens are reflected).
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      const queryKey = `${statusFilter}|${sort}`;
+      const showSpinner = lastQueryKey.current !== queryKey;
+      lastQueryKey.current = queryKey;
+      if (showSpinner) setLoading(true);
+      setPage(1);
+      fetchSavedJobs(1, statusFilter, sort).finally(() => {
+        if (showSpinner) setLoading(false);
+      });
+    }, [user, statusFilter, sort, fetchSavedJobs])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -104,11 +123,18 @@ export default function SavedJobsScreen() {
     setRefreshing(false);
   };
 
+  // Guards against onEndReached firing again while an append is in flight,
+  // which would fetch the same next page twice.
+  const loadingMoreRef = useRef(false);
+
   const onEndReached = () => {
-    if (!hasMore || loading) return;
+    if (!hasMore || loading || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     const next = page + 1;
     setPage(next);
-    fetchSavedJobs(next, statusFilter, sort, true);
+    fetchSavedJobs(next, statusFilter, sort, true).finally(() => {
+      loadingMoreRef.current = false;
+    });
   };
 
   const handleUnsave = (job: SavedJob) => {
@@ -122,7 +148,12 @@ export default function SavedJobsScreen() {
             await api.delete(`/api/jobs/${job.jobId}/save`, {
               params: { source: job.source || 'nyc' },
             });
-            setJobs((prev) => prev.filter((j) => j.jobId !== job.jobId));
+            // Match on source AND jobId — different sources can share a jobId.
+            setJobs((prev) =>
+              prev.filter(
+                (j) => !(j.jobId === job.jobId && (j.source || 'nyc') === (job.source || 'nyc'))
+              )
+            );
             setTotal((t) => t - 1);
           } catch (err: any) {
             Alert.alert('Error', err?.response?.data?.message || 'Could not unsave job');
@@ -140,7 +171,9 @@ export default function SavedJobsScreen() {
       });
       setJobs((prev) =>
         prev.map((j) =>
-          j.jobId === job.jobId ? { ...j, applicationStatus: newStatus } : j
+          j.jobId === job.jobId && (j.source || 'nyc') === (job.source || 'nyc')
+            ? { ...j, applicationStatus: newStatus }
+            : j
         )
       );
     } catch (err: any) {
