@@ -16,16 +16,27 @@ import api from '@/lib/api';
 import { formatSalary, formatDate } from '@/lib/format';
 import { exportCsv } from '@/lib/exportCsv';
 import FilterPills from '@/components/FilterPills';
+import {
+  PagedState,
+  initialPagedState,
+  nextPage,
+  patchCriteria,
+  resetPage,
+} from '@/lib/searchCriteria';
+import { APPLICATION_STATUS_VALUES, APPLICATION_STATUSES } from 'nyc-jobs-shared/constants';
 
-const STATUS_FILTERS = [
-  { value: '', label: 'All' },
-  { value: 'interested', label: 'Interested' },
-  { value: 'applied', label: 'Applied' },
-  { value: 'interviewing', label: 'Interviewing' },
-  { value: 'offered', label: 'Offered' },
-  { value: 'rejected', label: 'Rejected' },
-];
+// What this list is querying. '' status means "any status".
+type SavedJobsCriteria = { status: string; sort: string };
 
+const DEFAULT_SAVED_CRITERIA: SavedJobsCriteria = { status: '', sort: 'updated_desc' };
+
+// Values and labels come from the shared package; '' is the mobile-only
+// "no filter" pill and is not a stored status.
+const STATUS_FILTERS = [{ value: '', label: 'All' }, ...APPLICATION_STATUSES];
+
+// Saved-jobs sorting is deliberately NOT shared SORT_OPTIONS: this list adds
+// updated_desc/saved_desc (which only exist for saved jobs) and uses shorter
+// labels that fit the pill row on a phone.
 const SORT_OPTIONS = [
   { value: 'updated_desc', label: 'Recently Updated' },
   { value: 'saved_desc', label: 'Recently Saved' },
@@ -67,9 +78,12 @@ export default function SavedJobsScreen() {
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [sort, setSort] = useState('updated_desc');
-  const [page, setPage] = useState(1);
+  // Criteria + page in one state so lib/searchCriteria enforces the page reset.
+  const [search, setSearch] = useState<PagedState<SavedJobsCriteria>>(() =>
+    initialPagedState(DEFAULT_SAVED_CRITERIA)
+  );
+  const { criteria, page } = search;
+  const { status: statusFilter, sort } = criteria;
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -111,7 +125,7 @@ export default function SavedJobsScreen() {
       const showSpinner = lastQueryKey.current !== queryKey;
       lastQueryKey.current = queryKey;
       if (showSpinner) setLoading(true);
-      setPage(1);
+      setSearch(resetPage);
       fetchSavedJobs(1, statusFilter, sort).finally(() => {
         if (showSpinner) setLoading(false);
       });
@@ -120,7 +134,7 @@ export default function SavedJobsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setPage(1);
+    setSearch(resetPage);
     await fetchSavedJobs(1, statusFilter, sort);
     setRefreshing(false);
   };
@@ -133,7 +147,7 @@ export default function SavedJobsScreen() {
     if (!hasMore || loading || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     const next = page + 1;
-    setPage(next);
+    setSearch(nextPage);
     fetchSavedJobs(next, statusFilter, sort, true).finally(() => {
       loadingMoreRef.current = false;
     });
@@ -266,7 +280,7 @@ export default function SavedJobsScreen() {
             <TouchableOpacity
               style={styles.statusButton}
               onPress={() => {
-                const statuses = ['interested', 'applied', 'interviewing', 'offered', 'rejected'];
+                const statuses = APPLICATION_STATUS_VALUES;
                 const current = item.applicationStatus || 'interested';
                 const idx = statuses.indexOf(current);
                 const next = statuses[(idx + 1) % statuses.length];
@@ -311,12 +325,12 @@ export default function SavedJobsScreen() {
       <FilterPills
         options={STATUS_FILTERS}
         selected={statusFilter}
-        onSelect={(v) => { setStatusFilter(v); setPage(1); }}
+        onSelect={(v) => setSearch((prev) => patchCriteria(prev, { status: v }))}
       />
       <FilterPills
         options={SORT_OPTIONS}
         selected={sort}
-        onSelect={(v) => { setSort(v); setPage(1); }}
+        onSelect={(v) => setSearch((prev) => patchCriteria(prev, { sort: v }))}
       />
 
       {loading && !refreshing ? (
@@ -347,7 +361,7 @@ export default function SavedJobsScreen() {
               {statusFilter ? (
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={() => setStatusFilter('')}
+                  onPress={() => setSearch((prev) => patchCriteria(prev, { status: '' }))}
                 >
                   <Text style={styles.primaryButtonText}>Show All</Text>
                 </TouchableOpacity>

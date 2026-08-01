@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { NAME_MAX, PASSWORD_MIN } from 'nyc-jobs-shared/constants';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -90,8 +91,8 @@ export default function ProfileScreen() {
       Alert.alert('Required', 'Please fill in all password fields.');
       return;
     }
-    if (newPassword.length < 6) {
-      Alert.alert('Weak Password', 'New password must be at least 6 characters.');
+    if (newPassword.length < PASSWORD_MIN) {
+      Alert.alert('Weak Password', `New password must be at least ${PASSWORD_MIN} characters.`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -166,7 +167,7 @@ export default function ProfileScreen() {
             value={firstName}
             onChangeText={setFirstName}
             placeholder="First name"
-            maxLength={50}
+            maxLength={NAME_MAX}
           />
 
           <Text style={styles.fieldLabel}>Last Name (required)</Text>
@@ -175,7 +176,7 @@ export default function ProfileScreen() {
             value={lastName}
             onChangeText={setLastName}
             placeholder="Last name"
-            maxLength={50}
+            maxLength={NAME_MAX}
           />
 
           <Text style={styles.fieldLabel}>Email</Text>
@@ -214,7 +215,7 @@ export default function ProfileScreen() {
             style={styles.input}
             value={newPassword}
             onChangeText={setNewPassword}
-            placeholder="New password (min 6 chars)"
+            placeholder={`New password (min ${PASSWORD_MIN} chars)`}
             secureTextEntry
           />
 

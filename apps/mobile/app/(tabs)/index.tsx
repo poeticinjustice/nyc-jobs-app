@@ -16,9 +16,11 @@ import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatSalary, formatDate } from '@/lib/format';
 import { getSourceLabel } from '@/lib/sources';
+import { APPLICATION_STATUS_VALUES } from 'nyc-jobs-shared/constants';
 
-// Mirrors shared/constants APPLICATION_STATUS_VALUES order.
-const STATUS_ORDER = ['interested', 'applied', 'interviewing', 'offered', 'rejected'] as const;
+// The canonical status order comes from the shared package (it backs the
+// Mongoose enum); only the palette below is mobile-specific.
+const STATUS_ORDER = APPLICATION_STATUS_VALUES;
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; bar: string }> = {
   interested: { bg: '#DBEAFE', text: '#1D4ED8', bar: '#3B82F6' },

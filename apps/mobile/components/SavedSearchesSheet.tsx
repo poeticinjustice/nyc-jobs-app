@@ -15,9 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SavedSearch } from '@/hooks/use-saved-searches';
 import { getSourceLabel } from '@/lib/sources';
 import { SearchCriteria, describeSources, parseSources } from '@/lib/searchCriteria';
-
-// Mirrors shared/constants SEARCH_NAME_MAX.
-const SEARCH_NAME_MAX = 100;
+import { SEARCH_NAME_MAX } from 'nyc-jobs-shared/constants';
 
 type Props = {
   visible: boolean;

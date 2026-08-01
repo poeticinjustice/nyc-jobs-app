@@ -18,22 +18,52 @@ import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/format';
 import { exportCsv } from '@/lib/exportCsv';
+import {
+  PagedState,
+  initialPagedState,
+  nextPage,
+  patchCriteria,
+  resetPage,
+} from '@/lib/searchCriteria';
+import {
+  NOTE_CONTENT_MAX,
+  NOTE_PRIORITY_VALUES,
+  NOTE_TITLE_MAX,
+  NOTE_TYPE_VALUES,
+} from 'nyc-jobs-shared/constants';
 
+// The shared package owns the *values* (they back the Mongoose enums); it does
+// not ship display labels for note types/priorities, so those live here.
+// Anything the shared list gains without a label here still shows up, title-cased.
+const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+
+const TYPE_LABELS: Record<string, string> = {
+  general: 'General',
+  interview: 'Interview',
+  application: 'Application',
+  followup: 'Follow-up',
+  research: 'Research',
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
+// '' is the mobile-only "no filter" pill, not a stored value.
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
-  { value: 'general', label: 'General' },
-  { value: 'interview', label: 'Interview' },
-  { value: 'application', label: 'Application' },
-  { value: 'followup', label: 'Follow-up' },
-  { value: 'research', label: 'Research' },
+  ...NOTE_TYPE_VALUES.map((value) => ({ value, label: TYPE_LABELS[value] || titleCase(value) })),
 ];
 
 const PRIORITY_OPTIONS = [
   { value: '', label: 'All Priorities' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'urgent', label: 'Urgent' },
+  ...NOTE_PRIORITY_VALUES.map((value) => ({
+    value,
+    label: PRIORITY_LABELS[value] || titleCase(value),
+  })),
 ];
 
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
@@ -74,6 +104,11 @@ type NoteForm = {
 
 const emptyForm: NoteForm = { title: '', content: '', type: 'general', priority: 'medium', tags: '' };
 
+// What this list is querying. '' means "any" for either facet.
+type NotesCriteria = { type: string; priority: string };
+
+const DEFAULT_NOTES_CRITERIA: NotesCriteria = { type: '', priority: '' };
+
 export default function NotesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -81,9 +116,12 @@ export default function NotesScreen() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [typeFilter, setTypeFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  const [page, setPage] = useState(1);
+  // Criteria + page in one state so lib/searchCriteria enforces the page reset.
+  const [search, setSearch] = useState<PagedState<NotesCriteria>>(() =>
+    initialPagedState(DEFAULT_NOTES_CRITERIA)
+  );
+  const { criteria, page } = search;
+  const { type: typeFilter, priority: priorityFilter } = criteria;
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
@@ -139,7 +177,7 @@ export default function NotesScreen() {
       const showSpinner = lastQueryKey.current !== queryKey;
       lastQueryKey.current = queryKey;
       if (showSpinner) setLoading(true);
-      setPage(1);
+      setSearch(resetPage);
       fetchNotes(1, typeFilter, priorityFilter).finally(() => {
         if (showSpinner) setLoading(false);
       });
@@ -148,7 +186,7 @@ export default function NotesScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setPage(1);
+    setSearch(resetPage);
     await fetchNotes(1, typeFilter, priorityFilter);
     setRefreshing(false);
   };
@@ -161,7 +199,7 @@ export default function NotesScreen() {
     if (!hasMore || loading || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     const next = page + 1;
-    setPage(next);
+    setSearch(nextPage);
     fetchNotes(next, typeFilter, priorityFilter, true).finally(() => {
       loadingMoreRef.current = false;
     });
@@ -239,7 +277,7 @@ export default function NotesScreen() {
         await api.post('/api/notes', payload);
         // Refresh list to get server-assigned fields
         await fetchNotes(1, typeFilter, priorityFilter);
-        setPage(1);
+        setSearch(resetPage);
       }
       setModalVisible(false);
     } catch (err: any) {
@@ -374,7 +412,7 @@ export default function NotesScreen() {
           <TouchableOpacity
             key={f.value}
             style={[styles.filterChip, typeFilter === f.value && styles.filterChipActive]}
-            onPress={() => { setTypeFilter(f.value); setPage(1); }}
+            onPress={() => setSearch((prev) => patchCriteria(prev, { type: f.value }))}
           >
             <Text style={[styles.filterChipText, typeFilter === f.value && styles.filterChipTextActive]}>
               {f.label}
@@ -386,7 +424,7 @@ export default function NotesScreen() {
           <TouchableOpacity
             key={`p-${f.value}`}
             style={[styles.filterChip, priorityFilter === f.value && styles.filterChipActivePriority]}
-            onPress={() => { setPriorityFilter(f.value); setPage(1); }}
+            onPress={() => setSearch((prev) => patchCriteria(prev, { priority: f.value }))}
           >
             <Text style={[styles.filterChipText, priorityFilter === f.value && styles.filterChipTextActive]}>
               {f.label}
@@ -495,7 +533,7 @@ export default function NotesScreen() {
                   value={form.title}
                   onChangeText={(t) => setForm((f) => ({ ...f, title: t }))}
                   placeholder="Note title"
-                  maxLength={200}
+                  maxLength={NOTE_TITLE_MAX}
                 />
 
                 <Text style={styles.fieldLabel}>Content</Text>
@@ -505,7 +543,7 @@ export default function NotesScreen() {
                   onChangeText={(t) => setForm((f) => ({ ...f, content: t }))}
                   placeholder="Write your note..."
                   multiline
-                  maxLength={5000}
+                  maxLength={NOTE_CONTENT_MAX}
                   textAlignVertical="top"
                 />
 

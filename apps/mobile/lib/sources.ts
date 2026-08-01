@@ -1,40 +1,26 @@
-// Mirrors shared/constants/index.js SOURCE_OPTIONS (plus 'mta').
-// Keep in sync manually until the shared package is wired into Metro.
-export const SOURCE_LABELS: Record<string, string> = {
-  nyc: 'City',
-  nys: 'State',
-  federal: 'Federal',
-  cuny: 'CUNY',
-  nyu: 'NYU',
-  fordham: 'Fordham',
-  pa: 'Port Authority',
-  mountsinai: 'Mount Sinai',
-  idealist: 'Non-Profit',
-  columbia: 'Columbia',
-  nyp: 'NYP',
-  northwell: 'Northwell',
-  nyulangone: 'NYU Langone',
-  newschool: 'New School',
-  amtrak: 'Amtrak',
-  un: 'United Nations',
-  amnh: 'AMNH',
-  metmuseum: 'Met Museum',
-  frick: 'Frick Collection',
-  guggenheim: 'Guggenheim',
-  msk: 'MSK',
-  montefiore: 'Montefiore',
-  nypl: 'NYPL',
-  nychhc: 'NYC H+H',
-  mta: 'MTA',
-};
+import {
+  JOB_SOURCES,
+  SOURCE_OPTIONS as SHARED_SOURCE_OPTIONS,
+} from 'nyc-jobs-shared/constants';
 
+// Selectable source filters, in shared SOURCE_OPTIONS order. 'all' is dropped —
+// on mobile it's the implicit state when nothing is selected (see
+// lib/searchCriteria), not a listed option.
+export const SOURCE_OPTIONS: { value: string; label: string }[] = SHARED_SOURCE_OPTIONS.filter(
+  (option) => option.value !== 'all'
+).map((option) => ({ value: option.value, label: option.label }));
+
+export const SOURCE_LABELS: Record<string, string> = Object.fromEntries(
+  SOURCE_OPTIONS.map((option) => [option.value, option.label])
+);
+
+export const SOURCE_VALUES: string[] = SOURCE_OPTIONS.map((o) => o.value);
+
+// Every DB-valid source has a label in shared SOURCE_OPTIONS; anything that
+// list forgets falls back to its raw key rather than rendering nothing.
 export const getSourceLabel = (source?: string): string =>
   (source && SOURCE_LABELS[source]) || source || '';
 
-// Selectable source filters, in SOURCE_LABELS order. 'all' is not listed —
-// it's the implicit state when nothing is selected (see lib/searchCriteria).
-export const SOURCE_OPTIONS: { value: string; label: string }[] = Object.entries(
-  SOURCE_LABELS
-).map(([value, label]) => ({ value, label }));
-
-export const SOURCE_VALUES: string[] = SOURCE_OPTIONS.map((o) => o.value);
+// The canonical DB-valid source list, re-exported so callers can check
+// membership without importing the shared package directly.
+export const JOB_SOURCE_VALUES: string[] = [...JOB_SOURCES];

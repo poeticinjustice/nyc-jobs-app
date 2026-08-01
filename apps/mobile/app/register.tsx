@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
+import { NAME_MAX, PASSWORD_MIN } from 'nyc-jobs-shared/constants';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -26,8 +27,8 @@ export default function RegisterScreen() {
       Alert.alert('Missing fields', 'Please enter your email.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Weak password', 'Password must be at least 6 characters.');
+    if (password.length < PASSWORD_MIN) {
+      Alert.alert('Weak password', `Password must be at least ${PASSWORD_MIN} characters.`);
       return;
     }
 
@@ -58,12 +59,14 @@ export default function RegisterScreen() {
         value={firstName}
         onChangeText={setFirstName}
         style={styles.input}
+        maxLength={NAME_MAX}
       />
       <TextInput
         placeholder="Last name"
         value={lastName}
         onChangeText={setLastName}
         style={styles.input}
+        maxLength={NAME_MAX}
       />
       <TextInput
         placeholder="Email"
@@ -74,7 +77,7 @@ export default function RegisterScreen() {
         style={styles.input}
       />
       <TextInput
-        placeholder="Password (min 6 characters)"
+        placeholder={`Password (min ${PASSWORD_MIN} characters)`}
         secureTextEntry
         value={password}
         onChangeText={setPassword}

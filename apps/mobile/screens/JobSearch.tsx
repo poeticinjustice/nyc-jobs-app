@@ -18,18 +18,25 @@ import { formatSalary } from '@/lib/format';
 import { getSourceLabel } from '@/lib/sources';
 import {
   DEFAULT_CRITERIA,
+  PagedState,
   SearchCriteria,
   countActiveFilters,
   criteriaFromSaved,
   describeSources,
+  initialPagedState,
+  nextPage,
+  prevPage,
+  resetPage,
   toRequestParams,
   toSavedCriteria,
+  withCriteria,
 } from '@/lib/searchCriteria';
 import { useAuth } from '@/auth/AuthContext';
 import { useSavedSearches, type SavedSearch } from '@/hooks/use-saved-searches';
 import FilterPills from '@/components/FilterPills';
 import SearchFilterSheet from '@/components/SearchFilterSheet';
 import SavedSearchesSheet from '@/components/SavedSearchesSheet';
+import { SORT_OPTIONS as SHARED_SORT_OPTIONS } from 'nyc-jobs-shared/constants';
 
 type Job = {
   _id: string;
@@ -56,14 +63,23 @@ type Pagination = {
 
 const PAGE_SIZE = 20;
 
-const SORT_OPTIONS = [
-  { value: 'date_desc', label: 'Newest' },
-  { value: 'date_asc', label: 'Oldest' },
-  { value: 'title_asc', label: 'Title A-Z' },
-  { value: 'title_desc', label: 'Title Z-A' },
-  { value: 'salary_desc', label: 'Salary High' },
-  { value: 'salary_asc', label: 'Salary Low' },
-] as const;
+// Sort *values* come from the shared package (the server validates against the
+// same list). The labels are deliberately shorter than the web ones — they have
+// to fit a pill row on a phone — so shared labels are only the fallback for a
+// sort that gets added without a mobile label.
+const SORT_LABELS: Record<string, string> = {
+  date_desc: 'Newest',
+  date_asc: 'Oldest',
+  title_asc: 'Title A-Z',
+  title_desc: 'Title Z-A',
+  salary_desc: 'Salary High',
+  salary_asc: 'Salary Low',
+};
+
+const SORT_OPTIONS = SHARED_SORT_OPTIONS.map(({ value, label }) => ({
+  value,
+  label: SORT_LABELS[value] || label,
+}));
 
 // Different sources reuse jobIds, so a job is only identified by source + id.
 const jobKey = (job: { jobId: string; source?: string }) => `${job.source || 'nyc'}-${job.jobId}`;
@@ -77,13 +93,14 @@ export default function JobSearchScreen() {
   const router = useRouter();
   const { user } = useAuth();
 
-  // `query` is the text field's draft; `criteria` is what's actually running.
+  // `query` is the text field's draft; `search` is what's actually running.
+  // Criteria and page live in one PagedState so the "any criteria change goes
+  // back to page 1" invariant is enforced by lib/searchCriteria, not by hand.
   const [query, setQuery] = useState(params.q || '');
-  const [criteria, setCriteria] = useState<SearchCriteria>({
-    ...DEFAULT_CRITERIA,
-    q: params.q || '',
-  });
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState<PagedState<SearchCriteria>>(() =>
+    initialPagedState({ ...DEFAULT_CRITERIA, q: params.q || '' })
+  );
+  const { criteria, page } = search;
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -168,8 +185,11 @@ export default function JobSearchScreen() {
   useEffect(() => {
     if (paramQ == null) return;
     setQuery(paramQ);
-    setCriteria((prev) => (prev.q === paramQ ? prev : { ...prev, q: paramQ }));
-    setPage(1);
+    setSearch((prev) =>
+      prev.criteria.q === paramQ
+        ? resetPage(prev)
+        : withCriteria(prev, (c) => ({ ...c, q: paramQ }))
+    );
   }, [paramQ]);
 
   // Latest criteria/page for the focus effect, which must not re-subscribe
@@ -194,10 +214,10 @@ export default function JobSearchScreen() {
     }, [fetchJobs, refreshSavedSearches])
   );
 
-  // Any criteria change resets to page 1, matching the web client.
+  // Any criteria change resets to page 1, matching the web client. The reset
+  // itself lives in lib/searchCriteria's `withCriteria` so it stays testable.
   const applyCriteria = useCallback((next: SearchCriteria) => {
-    setCriteria(next);
-    setPage(1);
+    setSearch((prev) => withCriteria(prev, next));
   }, []);
 
   const handleSearch = () => applyCriteria({ ...criteria, q: query.trim() });
@@ -220,20 +240,20 @@ export default function JobSearchScreen() {
 
   const handleNextPage = () => {
     if (loading || refreshing) return;
-    if (pagination && page < pagination.pages) setPage(page + 1);
+    if (pagination && page < pagination.pages) setSearch(nextPage);
   };
 
   const handlePrevPage = () => {
     if (loading || refreshing) return;
-    if (page > 1) setPage(page - 1);
+    if (page > 1) setSearch(prevPage);
   };
 
-  const handleRunSavedSearch = (search: SavedSearch) => {
-    const next = criteriaFromSaved(search.criteria);
+  const handleRunSavedSearch = (saved: SavedSearch) => {
+    const next = criteriaFromSaved(saved.criteria);
     setSavedSearchesVisible(false);
     setQuery(next.q);
     applyCriteria(next);
-    void markSeen(search._id);
+    void markSeen(saved._id);
   };
 
   const handleCreateSavedSearch = useCallback(

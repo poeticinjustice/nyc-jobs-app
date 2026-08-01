@@ -1,15 +1,23 @@
 import {
   DEFAULT_CRITERIA,
   FILTER_KEYS,
+  FIRST_PAGE,
   SearchCriteria,
   countActiveFilters,
   criteriaFromSaved,
   describeSources,
+  initialPagedState,
   isSourceSelected,
+  nextPage,
   parseSources,
+  patchCriteria,
+  prevPage,
+  resetPage,
   toRequestParams,
   toSavedCriteria,
   toggleSource,
+  withCriteria,
+  withPage,
 } from '../searchCriteria';
 import { SOURCE_VALUES } from '../sources';
 
@@ -268,5 +276,208 @@ describe('toSavedCriteria', () => {
     expect(Object.keys(toSavedCriteria(DEFAULT_CRITERIA)).sort()).toEqual(
       ['agency', 'category', 'location', 'q', 'salary_max', 'salary_min', 'sort', 'source'].sort()
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Paged state — the invariant every list screen depends on: changing what you
+// are querying always takes you back to page 1. This used to be an inlined
+// `setCriteria(next); setPage(1)` in JobSearch/saved/notes with no coverage.
+// ---------------------------------------------------------------------------
+
+// A distinct, non-default value for every criterion, so "change any one field"
+// can be exercised exhaustively rather than on a hand-picked sample.
+const CHANGED_VALUES: { [K in keyof SearchCriteria]: SearchCriteria[K] } = {
+  q: 'nurse',
+  category: 'Health',
+  location: 'Manhattan',
+  agency: 'DOHMH',
+  salary_min: '50000',
+  salary_max: '90000',
+  sort: 'salary_desc',
+  source: 'nyc,nys',
+};
+
+const CRITERIA_KEYS = Object.keys(DEFAULT_CRITERIA) as (keyof SearchCriteria)[];
+
+describe('initialPagedState', () => {
+  it('starts on the first page', () => {
+    expect(initialPagedState(DEFAULT_CRITERIA)).toEqual({
+      criteria: DEFAULT_CRITERIA,
+      page: FIRST_PAGE,
+    });
+    expect(FIRST_PAGE).toBe(1);
+  });
+
+  it('holds on to the criteria object it was given', () => {
+    const c = criteria({ q: 'nurse' });
+    expect(initialPagedState(c).criteria).toBe(c);
+  });
+
+  it('works for any criteria shape, not just SearchCriteria', () => {
+    expect(initialPagedState({ status: '', sort: 'updated_desc' })).toEqual({
+      criteria: { status: '', sort: 'updated_desc' },
+      page: 1,
+    });
+  });
+});
+
+describe('withCriteria resets paging', () => {
+  it('goes back to page 1 no matter which page you were on', () => {
+    for (const page of [1, 2, 7, 250]) {
+      const state = { criteria: DEFAULT_CRITERIA, page };
+      expect(withCriteria(state, criteria({ q: 'nurse' })).page).toBe(FIRST_PAGE);
+    }
+  });
+
+  it('resets the page when ANY single criterion changes', () => {
+    // The invariant, stated exhaustively: no field may be exempt.
+    for (const key of CRITERIA_KEYS) {
+      const next = criteria({ [key]: CHANGED_VALUES[key] } as Partial<SearchCriteria>);
+      expect(next[key]).not.toBe(DEFAULT_CRITERIA[key]);
+      const result = withCriteria({ criteria: DEFAULT_CRITERIA, page: 5 }, next);
+      expect({ key, page: result.page }).toEqual({ key, page: FIRST_PAGE });
+      expect(result.criteria).toEqual(next);
+    }
+  });
+
+  it('resets even when the "new" criteria are identical (the helper is not a differ)', () => {
+    expect(withCriteria({ criteria: DEFAULT_CRITERIA, page: 4 }, DEFAULT_CRITERIA).page).toBe(1);
+  });
+
+  it('accepts an updater and applies it to the current criteria', () => {
+    const state = { criteria: criteria({ q: 'nurse', category: 'Health' }), page: 3 };
+    const result = withCriteria(state, (c) => ({ ...c, q: 'engineer' }));
+    expect(result.criteria.q).toBe('engineer');
+    expect(result.criteria.category).toBe('Health');
+    expect(result.page).toBe(FIRST_PAGE);
+  });
+
+  it('preserves criteria identity when the updater returns them unchanged', () => {
+    // JobSearch relies on this: its fetch effect is keyed on `criteria`, so an
+    // updater that changes nothing must not trigger a refetch.
+    const state = { criteria: DEFAULT_CRITERIA, page: 3 };
+    const result = withCriteria(state, (c) => c);
+    expect(result.criteria).toBe(DEFAULT_CRITERIA);
+    expect(result.page).toBe(FIRST_PAGE);
+  });
+
+  it('does not mutate the state it was handed', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 6 };
+    withCriteria(state, criteria({ q: 'nurse' }));
+    expect(state).toEqual({ criteria: DEFAULT_CRITERIA, page: 6 });
+  });
+});
+
+describe('patchCriteria resets paging', () => {
+  it('merges the patch and returns to page 1, for every criterion', () => {
+    for (const key of CRITERIA_KEYS) {
+      const state = { criteria: DEFAULT_CRITERIA, page: 9 };
+      const result = patchCriteria(state, { [key]: CHANGED_VALUES[key] });
+      expect({ key, page: result.page }).toEqual({ key, page: FIRST_PAGE });
+      expect(result.criteria[key]).toBe(CHANGED_VALUES[key]);
+    }
+  });
+
+  it('leaves the untouched keys alone', () => {
+    const result = patchCriteria({ criteria: DEFAULT_CRITERIA, page: 2 }, { q: 'nurse' });
+    expect(result.criteria).toEqual({ ...DEFAULT_CRITERIA, q: 'nurse' });
+  });
+
+  it('resets paging for the saved-jobs criteria shape', () => {
+    const state = { criteria: { status: '', sort: 'updated_desc' }, page: 4 };
+    expect(patchCriteria(state, { status: 'applied' })).toEqual({
+      criteria: { status: 'applied', sort: 'updated_desc' },
+      page: 1,
+    });
+    expect(patchCriteria(state, { sort: 'date_desc' }).page).toBe(1);
+  });
+
+  it('resets paging for the notes criteria shape', () => {
+    const state = { criteria: { type: '', priority: '' }, page: 3 };
+    expect(patchCriteria(state, { type: 'interview' }).page).toBe(1);
+    expect(patchCriteria(state, { priority: 'urgent' })).toEqual({
+      criteria: { type: '', priority: 'urgent' },
+      page: 1,
+    });
+  });
+
+  it('still resets when the patch is empty', () => {
+    expect(patchCriteria({ criteria: DEFAULT_CRITERIA, page: 5 }, {}).page).toBe(1);
+  });
+});
+
+describe('withPage', () => {
+  it('moves within the current criteria without touching them', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 1 };
+    const result = withPage(state, 3);
+    expect(result.page).toBe(3);
+    expect(result.criteria).toBe(DEFAULT_CRITERIA);
+  });
+
+  it('clamps below the first page instead of querying page 0 or negatives', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 3 };
+    expect(withPage(state, 0).page).toBe(FIRST_PAGE);
+    expect(withPage(state, -5).page).toBe(FIRST_PAGE);
+  });
+
+  it('truncates fractional pages', () => {
+    expect(withPage({ criteria: DEFAULT_CRITERIA, page: 1 }, 2.9).page).toBe(2);
+  });
+
+  it('falls back to the first page for non-finite input', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 3 };
+    expect(withPage(state, NaN).page).toBe(FIRST_PAGE);
+    expect(withPage(state, Infinity).page).toBe(FIRST_PAGE);
+  });
+});
+
+describe('nextPage / prevPage / resetPage', () => {
+  it('steps forward and back without changing the criteria', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 2 };
+    expect(nextPage(state)).toEqual({ criteria: DEFAULT_CRITERIA, page: 3 });
+    expect(prevPage(state)).toEqual({ criteria: DEFAULT_CRITERIA, page: 1 });
+    expect(nextPage(state).criteria).toBe(DEFAULT_CRITERIA);
+  });
+
+  it('will not step back past the first page', () => {
+    expect(prevPage({ criteria: DEFAULT_CRITERIA, page: 1 }).page).toBe(FIRST_PAGE);
+  });
+
+  it('resetPage returns to page 1 and keeps criteria identity', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 12 };
+    const result = resetPage(state);
+    expect(result.page).toBe(FIRST_PAGE);
+    expect(result.criteria).toBe(DEFAULT_CRITERIA);
+  });
+
+  it('paging then changing a criterion lands back on page 1', () => {
+    // The whole point: you cannot page deep and then filter into a dead page.
+    let state = initialPagedState(DEFAULT_CRITERIA);
+    state = nextPage(nextPage(nextPage(state)));
+    expect(state.page).toBe(4);
+    expect(patchCriteria(state, { category: 'Health' }).page).toBe(FIRST_PAGE);
+  });
+});
+
+describe('paging is a no-op when nothing moves', () => {
+  it('withPage returns the very same state object for an unchanged page', () => {
+    const state = { criteria: DEFAULT_CRITERIA, page: 3 };
+    expect(withPage(state, 3)).toBe(state);
+  });
+
+  it('resetPage on an already-first page is identity (no needless re-render)', () => {
+    const state = initialPagedState(DEFAULT_CRITERIA);
+    expect(resetPage(state)).toBe(state);
+  });
+
+  it('prevPage from the first page is identity', () => {
+    const state = initialPagedState(DEFAULT_CRITERIA);
+    expect(prevPage(state)).toBe(state);
+  });
+
+  it('but withCriteria always produces a new state, even from page 1', () => {
+    const state = initialPagedState(DEFAULT_CRITERIA);
+    expect(withCriteria(state, criteria({ q: 'nurse' }))).not.toBe(state);
   });
 });

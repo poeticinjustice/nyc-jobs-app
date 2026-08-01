@@ -19,6 +19,13 @@ import api from '@/lib/api';
 import { useAuth } from '@/auth/AuthContext';
 import { formatSalary, formatDate, stripHtml } from '@/lib/format';
 import BackButton from '@/components/BackButton';
+import {
+  APPLICATION_STATUS_VALUES,
+  DOC_LABEL_MAX,
+  DOC_LINK_MAX,
+  NOTE_CONTENT_MAX,
+  NOTE_TITLE_MAX,
+} from 'nyc-jobs-shared/constants';
 
 type StatusHistoryEntry = { status: string; changedAt: string };
 type DocLink = { label: string; url: string };
@@ -74,7 +81,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   rejected: { bg: '#FEE2E2', text: '#991B1B' },
 };
 
-const STATUSES = ['interested', 'applied', 'interviewing', 'offered', 'rejected'];
+// Values (and their order) come from the shared package, which also backs the
+// Mongoose enum and the server-side validators.
+const STATUSES = APPLICATION_STATUS_VALUES;
 
 export default function JobDetailScreen() {
   const { id, source } = useLocalSearchParams<{ id: string; source?: string }>();
@@ -220,8 +229,8 @@ export default function JobDetailScreen() {
       return;
     }
     const newLinks = [...(job.documentLinks || []), { label: docLabel.trim(), url: docUrl.trim() }];
-    if (newLinks.length > 5) {
-      Alert.alert('Limit Reached', 'Maximum 5 document links allowed.');
+    if (newLinks.length > DOC_LINK_MAX) {
+      Alert.alert('Limit Reached', `Maximum ${DOC_LINK_MAX} document links allowed.`);
       return;
     }
     try {
@@ -506,14 +515,14 @@ export default function JobDetailScreen() {
                 </TouchableOpacity>
               </View>
             ))}
-            {(job.documentLinks || []).length < 5 && (
+            {(job.documentLinks || []).length < DOC_LINK_MAX && (
               <View style={styles.docForm}>
                 <TextInput
                   style={styles.docInput}
                   placeholder="Label (e.g. Resume)"
                   value={docLabel}
                   onChangeText={setDocLabel}
-                  maxLength={100}
+                  maxLength={DOC_LABEL_MAX}
                 />
                 <TextInput
                   style={styles.docInput}
@@ -653,7 +662,7 @@ export default function JobDetailScreen() {
               placeholder="Note title"
               value={noteTitle}
               onChangeText={setNoteTitle}
-              maxLength={200}
+              maxLength={NOTE_TITLE_MAX}
             />
             <TextInput
               style={[styles.noteInput, styles.noteTextArea]}
@@ -661,7 +670,7 @@ export default function JobDetailScreen() {
               value={noteContent}
               onChangeText={setNoteContent}
               multiline
-              maxLength={5000}
+              maxLength={NOTE_CONTENT_MAX}
               textAlignVertical="top"
             />
           </ScrollView>

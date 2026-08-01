@@ -1,5 +1,60 @@
 import { SOURCE_VALUES, getSourceLabel } from './sources';
 
+// ---------------------------------------------------------------------------
+// Paged criteria state
+//
+// Every paged list screen (job search, saved jobs, notes) holds "what am I
+// querying" alongside "which page am I on", and every one of them has to reset
+// to page 1 whenever the query changes — page 4 of the old filters is
+// meaningless under the new ones, and the server may not even have 4 pages.
+// That invariant used to be an inlined `setCriteria(next); setPage(1)` in each
+// screen; it lives here so it is stated once and can be tested.
+// ---------------------------------------------------------------------------
+
+export const FIRST_PAGE = 1;
+
+export type PagedState<C> = { criteria: C; page: number };
+
+export const initialPagedState = <C>(criteria: C): PagedState<C> => ({
+  criteria,
+  page: FIRST_PAGE,
+});
+
+// Replace the criteria (or map the current ones) and restart paging.
+// The criteria object's identity is preserved when the updater returns it
+// unchanged, so effects keyed on `criteria` don't re-fire needlessly.
+export const withCriteria = <C>(
+  state: PagedState<C>,
+  next: C | ((current: C) => C)
+): PagedState<C> => ({
+  criteria: typeof next === 'function' ? (next as (current: C) => C)(state.criteria) : next,
+  page: FIRST_PAGE,
+});
+
+// Change some criteria keys and restart paging.
+export const patchCriteria = <C extends object>(
+  state: PagedState<C>,
+  patch: Partial<C>
+): PagedState<C> => withCriteria(state, (current) => ({ ...current, ...patch }));
+
+// Move within the current criteria. Pages are 1-based; anything lower (or a
+// non-finite value) clamps to the first page rather than querying page 0.
+// Returns the same state object when the page doesn't actually change, so
+// `setState(resetPage)` on an already-first page is a no-op re-render-wise.
+export const withPage = <C>(state: PagedState<C>, page: number): PagedState<C> => {
+  const next = Number.isFinite(page) ? Math.max(FIRST_PAGE, Math.trunc(page)) : FIRST_PAGE;
+  return next === state.page ? state : { criteria: state.criteria, page: next };
+};
+
+export const nextPage = <C>(state: PagedState<C>): PagedState<C> =>
+  withPage(state, state.page + 1);
+
+export const prevPage = <C>(state: PagedState<C>): PagedState<C> =>
+  withPage(state, state.page - 1);
+
+// Back to page 1 without touching the criteria (pull-to-refresh, refocus).
+export const resetPage = <C>(state: PagedState<C>): PagedState<C> => withPage(state, FIRST_PAGE);
+
 // The full set of job-search criteria the server accepts on
 // GET /api/jobs/search. Mirrors the web client's `localSearchParams`.
 export type SearchCriteria = {
