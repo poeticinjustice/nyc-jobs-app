@@ -2,7 +2,7 @@
  * Port Authority of NY/NJ Jobs (Jobvite)
  */
 
-const { axios, cheerio, Job, geocodeLocationBase, parseSalaryRange } = require('./utils');
+const { axios, cheerio, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const PA_LISTING_URL = 'https://jobs.jobvite.com/panynj/jobs';
 const PA_DETAIL_BASE = 'https://jobs.jobvite.com/panynj/job';
@@ -62,17 +62,14 @@ const refreshPortAuthorityJobs = async (timestamp) => {
 
   console.log(`[refresh] Scraped ${allJobs.length} Port Authority job details`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  const ops = allJobs.map((raw) => {
+  const jobs = allJobs.map((raw) => {
     const ld = raw.jsonLd || {};
     const loc = ld.jobLocation?.[0]?.address || {};
 
     // Parse salary from description HTML
     const { from: salaryFrom, to: salaryTo } = parseSalaryRange(ld.description || '');
 
-    const job = {
+    return {
       jobId: raw.id,
       businessTitle: ld.title || null,
       agency: 'Port Authority of NY & NJ',
@@ -84,31 +81,12 @@ const refreshPortAuthorityJobs = async (timestamp) => {
       salaryRangeTo: salaryTo,
       salaryFrequency: salaryFrom ? 'Annual' : null,
       fullTimePartTimeIndicator: ld.employmentType || null,
-      postDate: ld.datePosted || null,
+      postDate: safeDate(ld.datePosted),
       externalUrl: `${PA_DETAIL_BASE}/${raw.id}`,
-    };
-
-    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'pa');
-    return {
-      updateOne: {
-        filter: { jobId: job.jobId, source: 'pa' },
-        update: {
-          $set: { ...job, source: 'pa', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-          $setOnInsert: { savedBy: [] },
-        },
-        upsert: true,
-      },
     };
   });
 
-  if (ops.length > 0) {
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted = result.upsertedCount;
-    totalModified = result.modifiedCount;
-  }
-
-  console.log(`[refresh] Port Authority: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'pa', timestamp, 'Port Authority');
 };
 
 module.exports = refreshPortAuthorityJobs;

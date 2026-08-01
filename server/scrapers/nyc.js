@@ -2,7 +2,7 @@
  * NYC Jobs scraper — fetches from NYC Open Data API.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, batchUpsert } = require('./utils');
 const {
   cleanJobFields,
   deduplicateJobs,
@@ -63,39 +63,8 @@ const refreshNycJobs = async (timestamp) => {
   const deduplicated = deduplicateJobs(allRaw);
   const jobs = deduplicated.map(cleanJobFields);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  // Bulk upsert in batches
-  for (let i = 0; i < jobs.length; i += UPSERT_BATCH) {
-    const slice = jobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const transformed = transformNycJob(raw, { clean: false }); // already cleaned
-      const coords = geocodeLocationBase(transformed.workLocation, transformed.workLocation1, 'nyc');
-      return {
-        updateOne: {
-          filter: { jobId: transformed.jobId, source: 'nyc' },
-          update: {
-            $set: {
-              ...transformed,
-              source: 'nyc',
-              coordinates: coords || { lat: null, lng: null },
-              lastRefreshedAt: timestamp,
-            },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] NYC: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  // Already cleaned above — transformNycJob must not clean a second time.
+  return batchUpsert(jobs.map((raw) => transformNycJob(raw, { clean: false })), 'nyc', timestamp, 'NYC');
 };
 
 module.exports = refreshNycJobs;

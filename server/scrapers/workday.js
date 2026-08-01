@@ -2,7 +2,7 @@
  * Workday platform scraper — shared by Met Museum, NYP, New School, etc.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange, omitUndefined, safeDate } = require('./utils');
+const { axios, Job, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const WORKDAY_PAGE_SIZE = 20;
 const WORKDAY_DETAIL_CONCURRENCY = 5;
@@ -98,62 +98,39 @@ const refreshWorkdayJobs = async (timestamp, config) => {
     }
   }
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    const reqId = workdayReqId(raw);
+    const detail = detailMap.get(reqId);
+    const existing = existingById.get(reqId);
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const reqId = workdayReqId(raw);
-      const detail = detailMap.get(reqId);
-      const existing = existingById.get(reqId);
+    // Parse salary from detail description
+    const desc = detail?.description || existing?.jobDescription || null;
+    const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc || '');
 
-      // Parse salary from detail description
-      const desc = detail?.description || existing?.jobDescription || null;
-      const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc || '');
+    // Detail-derived fields: undefined = keep the stored value for cached
+    // jobs whose detail page wasn't refetched this run (batchUpsert strips them).
+    const cached = !detail && existing;
+    const absoluteDate = raw.postedOn && !raw.postedOn.startsWith('Posted') ? safeDate(raw.postedOn) : null;
 
-      // Detail-derived fields: undefined = keep the stored value for cached
-      // jobs whose detail page wasn't refetched this run (omitUndefined strips them).
-      const cached = !detail && existing;
-      const absoluteDate = raw.postedOn && !raw.postedOn.startsWith('Posted') ? safeDate(raw.postedOn) : null;
+    return {
+      jobId: reqId,
+      businessTitle: raw.title || null,
+      agency,
+      workLocation: raw.locationsText || 'New York',
+      workLocation1: raw.locationsText || null,
+      jobDescription: desc,
+      jobCategory: null,
+      salaryRangeFrom: salaryFrom,
+      salaryRangeTo: salaryTo,
+      salaryFrequency: salaryFrequency,
+      fullTimePartTimeIndicator: cached ? undefined : (detail?.timeType || null),
+      postDate: absoluteDate || (cached ? undefined : safeDate(detail?.startDate)),
+      postUntil: cached ? undefined : safeDate(detail?.endDate),
+      externalUrl: raw.externalPath ? `${publicBaseUrl}${raw.externalPath}` : null,
+    };
+  });
 
-      const job = {
-        jobId: reqId,
-        businessTitle: raw.title || null,
-        agency,
-        workLocation: raw.locationsText || 'New York',
-        workLocation1: raw.locationsText || null,
-        jobDescription: desc,
-        jobCategory: null,
-        salaryRangeFrom: salaryFrom,
-        salaryRangeTo: salaryTo,
-        salaryFrequency: salaryFrequency,
-        fullTimePartTimeIndicator: cached ? undefined : (detail?.timeType || null),
-        postDate: absoluteDate || (cached ? undefined : safeDate(detail?.startDate)),
-        postUntil: cached ? undefined : safeDate(detail?.endDate),
-        externalUrl: raw.externalPath ? `${publicBaseUrl}${raw.externalPath}` : null,
-      };
-
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, source);
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source },
-          update: {
-            $set: omitUndefined({ ...job, source, coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp }),
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] ${name}: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, source, timestamp, name);
 };
 
 module.exports = refreshWorkdayJobs;

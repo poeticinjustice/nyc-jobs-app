@@ -6,7 +6,7 @@
  * careers sit behind a PeopleSoft login wall and are not scrapable.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange, omitUndefined, safeDate } = require('./utils');
+const { axios, Job, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const NYCHHC_API_BASE = 'https://providercareers.nychealthandhospitals.org/api/job';
 const NYCHHC_PAGE_SIZE = 50;
@@ -81,64 +81,40 @@ const refreshNychhcJobs = async (timestamp) => {
     }
   }
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    const hasDetail = Boolean(raw._detail);
+    const detail = raw._detail || {};
+    const existing = existingById.get(jobIdOf(raw));
+    const salary = parseSalaryRange(detail.totalCompensation);
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const hasDetail = Boolean(raw._detail);
-      const detail = raw._detail || {};
-      const existing = existingById.get(jobIdOf(raw));
-      const salary = parseSalaryRange(detail.totalCompensation);
+    // Detail-derived fields: undefined = keep stored values for cached jobs
+    // (batchUpsert strips them from $set).
+    const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
 
-      // Detail-derived fields: undefined = keep stored values for cached jobs
-      // (omitUndefined strips them from $set).
-      const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
+    return {
+      jobId: jobIdOf(raw),
+      businessTitle: raw.title || detail.title || null,
+      agency: raw.dataSource === 'PAGNY' ? 'NYC H+H / PAGNY' : 'NYC Health + Hospitals',
+      workLocation: raw.facilityName || detail.facilityName || null,
+      workLocation1: raw.boroughName || detail.boroughName || null,
+      divisionWorkUnit: raw.departmentName || detail.departmentName || null,
+      jobDescription: keep(detail.description),
+      minimumQualRequirements: keep(detail.qualifications),
+      jobCategory: raw.jobCategoryName || detail.jobCategoryName || null,
+      salaryRangeFrom: keep(detail.minSalary || salary.from),
+      salaryRangeTo: keep(detail.maxSalary || salary.to),
+      salaryFrequency: keep((detail.minSalary || salary.from) ? 'Annual' : null),
+      fullTimePartTimeIndicator: raw.jobTypeName || detail.jobTypeName || null,
+      postDate: safeDate(raw.modifiedDate),
+      externalUrl: hasDetail || !existing
+        ? (detail.jobApplyUrl || `https://providercareers.nychealthandhospitals.org/search/${raw.id}`)
+        : undefined,
+      _lat: raw.latitude ? parseFloat(raw.latitude) : null,
+      _lng: raw.longitude ? parseFloat(raw.longitude) : null,
+    };
+  });
 
-      const job = {
-        jobId: jobIdOf(raw),
-        businessTitle: raw.title || detail.title || null,
-        agency: raw.dataSource === 'PAGNY' ? 'NYC H+H / PAGNY' : 'NYC Health + Hospitals',
-        workLocation: raw.facilityName || detail.facilityName || null,
-        workLocation1: raw.boroughName || detail.boroughName || null,
-        divisionWorkUnit: raw.departmentName || detail.departmentName || null,
-        jobDescription: keep(detail.description),
-        minimumQualRequirements: keep(detail.qualifications),
-        jobCategory: raw.jobCategoryName || detail.jobCategoryName || null,
-        salaryRangeFrom: keep(detail.minSalary || salary.from),
-        salaryRangeTo: keep(detail.maxSalary || salary.to),
-        salaryFrequency: keep((detail.minSalary || salary.from) ? 'Annual' : null),
-        fullTimePartTimeIndicator: raw.jobTypeName || detail.jobTypeName || null,
-        postDate: safeDate(raw.modifiedDate),
-        externalUrl: hasDetail || !existing
-          ? (detail.jobApplyUrl || `https://providercareers.nychealthandhospitals.org/search/${raw.id}`)
-          : undefined,
-      };
-
-      const lat = raw.latitude ? parseFloat(raw.latitude) : null;
-      const lng = raw.longitude ? parseFloat(raw.longitude) : null;
-      const coords = (lat && lng) ? { lat, lng } : geocodeLocationBase(job.workLocation, job.workLocation1, 'nychhc');
-
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'nychhc' },
-          update: {
-            $set: omitUndefined({ ...job, source: 'nychhc', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp }),
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] NYC H+H: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'nychhc', timestamp, 'NYC H+H');
 };
 
 module.exports = refreshNychhcJobs;

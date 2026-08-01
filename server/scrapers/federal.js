@@ -2,7 +2,7 @@
  * Federal Jobs scraper — fetches from USAJobs API.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, batchUpsert } = require('./utils');
 const { transformUsaJob } = require('../helpers/jobHelpers');
 const { getUsaHeaders } = require('../helpers/usaJobsApi');
 
@@ -67,37 +67,7 @@ const refreshFederalJobs = async (timestamp) => {
 
   console.log(`[refresh] Fetched ${allJobs.length} federal jobs`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((job) => {
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'federal');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'federal' },
-          update: {
-            $set: {
-              ...job,
-              source: 'federal',
-              coordinates: coords || { lat: null, lng: null },
-              lastRefreshedAt: timestamp,
-            },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] Federal: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(allJobs, 'federal', timestamp, 'Federal');
 };
 
 module.exports = refreshFederalJobs;

@@ -2,7 +2,7 @@
  * Amtrak (SuccessFactors HTML scraping)
  */
 
-const { axios, cheerio, Job, geocodeLocationBase, parseSalaryRange, omitUndefined } = require('./utils');
+const { axios, cheerio, Job, geocodeLocationBase, parseSalaryRange, batchUpsert } = require('./utils');
 
 const AMTRAK_SEARCH_URL = 'https://careers.amtrak.com/search/';
 const AMTRAK_DETAIL_CONCURRENCY = 5;
@@ -142,24 +142,23 @@ const refreshAmtrakJobs = async (timestamp) => {
     }
   }
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
   const existingById = new Map(existingJobs.map((j) => [j.jobId, j]));
-  const ops = uniqueJobs.map((raw) => {
+  const jobs = uniqueJobs.map((raw) => {
     const hasDetail = detailMap.has(raw.jobId);
     const detail = detailMap.get(raw.jobId) || {};
     const existing = existingById.get(raw.jobId);
 
     // Detail-derived fields: undefined = keep stored values for cached jobs
-    // whose detail page wasn't refetched this run (omitUndefined strips them).
+    // whose detail page wasn't refetched this run (batchUpsert strips them).
     const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
 
-    const job = {
+    const workLocation = hasDetail || !existing ? (detail.location || raw.location || 'New York') : undefined;
+
+    return {
       jobId: raw.jobId,
       businessTitle: raw.title,
       agency: 'Amtrak',
-      workLocation: hasDetail || !existing ? (detail.location || raw.location || 'New York') : undefined,
+      workLocation,
       workLocation1: null,
       jobDescription: detail.description || existing?.jobDescription || undefined,
       minimumQualRequirements: keep(detail.qualifications),
@@ -171,31 +170,15 @@ const refreshAmtrakJobs = async (timestamp) => {
       fullTimePartTimeIndicator: keep(detail.workType),
       postDate: null,
       externalUrl: raw.href ? `https://careers.amtrak.com${raw.href}` : null,
-    };
-
-    const coords = job.workLocation !== undefined
-      ? geocodeLocationBase(job.workLocation, job.workLocation1, 'amtrak')
-      : undefined;
-    return {
-      updateOne: {
-        filter: { jobId: job.jobId, source: 'amtrak' },
-        update: {
-          $set: omitUndefined({ ...job, source: 'amtrak', coordinates: coords === undefined ? undefined : (coords || { lat: null, lng: null }), lastRefreshedAt: timestamp }),
-          $setOnInsert: { savedBy: [] },
-        },
-        upsert: true,
-      },
+      // No location this run means nothing to geocode from — undefined leaves
+      // the stored coordinates alone rather than overwriting them with nulls.
+      _coords: workLocation === undefined
+        ? undefined
+        : geocodeLocationBase(workLocation, null, 'amtrak') || { lat: null, lng: null },
     };
   });
 
-  if (ops.length > 0) {
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted = result.upsertedCount;
-    totalModified = result.modifiedCount;
-  }
-
-  console.log(`[refresh] Amtrak: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'amtrak', timestamp, 'Amtrak');
 };
 
 module.exports = refreshAmtrakJobs;

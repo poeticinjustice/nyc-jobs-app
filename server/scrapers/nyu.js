@@ -1,4 +1,4 @@
-const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange, safeDate } = require('./utils');
+const { axios, cheerio, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 // ---------------------------------------------------------------------------
 // NYU Jobs (iCIMS)
@@ -115,52 +115,29 @@ const refreshNyuJobs = async (timestamp) => {
 
   console.log(`[refresh] Scraped ${allJobs.length} NYU job details`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    const ld = raw.jsonLd || {};
+    const loc = ld.jobLocation?.[0]?.address || {};
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const ld = raw.jsonLd || {};
-      const loc = ld.jobLocation?.[0]?.address || {};
+    return {
+      jobId: raw.id,
+      businessTitle: ld.title || raw.title,
+      agency: 'New York University',
+      workLocation: loc.addressLocality || null,
+      workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
+      jobDescription: ld.description || null,
+      jobCategory: ld.occupationalCategory || null,
+      salaryRangeFrom: raw.salaryFrom,
+      salaryRangeTo: raw.salaryTo,
+      salaryFrequency: raw.salaryFrom ? (raw.salaryFrequency || 'Annual') : null,
+      fullTimePartTimeIndicator: ld.employmentType || null,
+      postDate: safeDate(ld.datePosted),
+      postUntil: safeDate(ld.validThrough),
+      externalUrl: ld.url || `${NYU_DETAIL_URL}/${raw.id}/job`,
+    };
+  });
 
-      const job = {
-        jobId: raw.id,
-        businessTitle: ld.title || raw.title,
-        agency: 'New York University',
-        workLocation: loc.addressLocality || null,
-        workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
-        jobDescription: ld.description || null,
-        jobCategory: ld.occupationalCategory || null,
-        salaryRangeFrom: raw.salaryFrom,
-        salaryRangeTo: raw.salaryTo,
-        salaryFrequency: raw.salaryFrom ? (raw.salaryFrequency || 'Annual') : null,
-        fullTimePartTimeIndicator: ld.employmentType || null,
-        postDate: safeDate(ld.datePosted),
-        postUntil: safeDate(ld.validThrough),
-        externalUrl: ld.url || `${NYU_DETAIL_URL}/${raw.id}/job`,
-      };
-
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyu');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'nyu' },
-          update: {
-            $set: { ...job, source: 'nyu', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] NYU: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'nyu', timestamp, 'NYU');
 };
 
 module.exports = refreshNyuJobs;

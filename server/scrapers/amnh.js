@@ -2,9 +2,10 @@
  * AMNH scraper — American Museum of Natural History (PeopleAdmin Atom feed).
  */
 
-const { axios, cheerio, Job, parseSalaryRange } = require('./utils');
+const { axios, cheerio, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const AMNH_FEED_URL = 'https://careers.amnh.org/postings/all_jobs.atom';
+const AMNH_COORDS = { lat: 40.7813, lng: -73.9740 }; // Central Park West at 79th Street
 
 const refreshAmnhJobs = async (timestamp) => {
   console.log('[refresh] Fetching AMNH jobs...');
@@ -41,10 +42,7 @@ const refreshAmnhJobs = async (timestamp) => {
   console.log(`[refresh] Found ${entries.length} AMNH jobs in feed`);
   if (entries.length === 0) return { upserted: 0, modified: 0 };
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  const ops = entries.map((raw) => {
+  const jobs = entries.map((raw) => {
     // Parse salary from content HTML text — AMNH embeds salary as e.g. "$90,000/annual - $100,000/annual"
     const contentText = cheerio.load(raw.contentHtml).text();
     const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(contentText);
@@ -61,7 +59,7 @@ const refreshAmnhJobs = async (timestamp) => {
       }
     }
 
-    const job = {
+    return {
       jobId: raw.postingId,
       businessTitle: raw.title,
       agency: 'American Museum of Natural History',
@@ -74,31 +72,13 @@ const refreshAmnhJobs = async (timestamp) => {
       salaryRangeTo: finalSalaryTo,
       salaryFrequency: finalSalaryFrequency,
       fullTimePartTimeIndicator: null,
-      postDate: raw.postDate ? new Date(raw.postDate) : null,
+      postDate: safeDate(raw.postDate),
       externalUrl: raw.url,
-    };
-
-    const coords = { lat: 40.7813, lng: -73.9740 }; // AMNH location
-    return {
-      updateOne: {
-        filter: { jobId: job.jobId, source: 'amnh' },
-        update: {
-          $set: { ...job, source: 'amnh', coordinates: coords, lastRefreshedAt: timestamp },
-          $setOnInsert: { savedBy: [] },
-        },
-        upsert: true,
-      },
+      _coords: AMNH_COORDS,
     };
   });
 
-  if (ops.length > 0) {
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted = result.upsertedCount;
-    totalModified = result.modifiedCount;
-  }
-
-  console.log(`[refresh] AMNH: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'amnh', timestamp, 'AMNH');
 };
 
 module.exports = refreshAmnhJobs;

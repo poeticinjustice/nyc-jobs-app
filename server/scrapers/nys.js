@@ -2,7 +2,7 @@
  * NYS Jobs scraper — scrapes StateJobsNY vacancy table and detail pages.
  */
 
-const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, cheerio, batchUpsert } = require('./utils');
 const { transformNysJob } = require('../helpers/jobHelpers');
 
 const NYS_TABLE_URL = 'https://statejobs.ny.gov/public/vacancytable.cfm';
@@ -91,38 +91,7 @@ const refreshNysJobs = async (timestamp) => {
   });
   console.log(`[refresh] NYS metro area jobs: ${metroJobs.length}/${allJobs.length}`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
-    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const job = transformNysJob(raw);
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nys');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'nys' },
-          update: {
-            $set: {
-              ...job,
-              source: 'nys',
-              coordinates: coords || { lat: null, lng: null },
-              lastRefreshedAt: timestamp,
-            },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] NYS: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(metroJobs.map(transformNysJob), 'nys', timestamp, 'NYS');
 };
 
 module.exports = refreshNysJobs;

@@ -41,35 +41,75 @@ const safeDate = (value) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-// Shared upsert helper — builds bulkWrite ops for a batch of jobs
+/**
+ * Resolve the coordinates for one job document.
+ *
+ * Precedence:
+ *  1. `_coords` — an explicit value from the scraper. May be `undefined`, which
+ *     means "leave whatever is stored"; omitUndefined then drops the field.
+ *  2. `_lat`/`_lng` — coordinates the feed itself supplied.
+ *  3. Geocoding from the work location.
+ *
+ * A scraper that leaves `workLocation` undefined for cached jobs must pass
+ * `_coords: undefined` too — otherwise geocoding an undefined location writes a
+ * null coordinate over a good stored one.
+ */
+const resolveCoords = (job, source) => {
+  if (Object.prototype.hasOwnProperty.call(job, '_coords')) return job._coords;
+  if (job._lat && job._lng) return { lat: job._lat, lng: job._lng };
+  return geocodeLocationBase(job.workLocation, job.workLocation1, source) || { lat: null, lng: null };
+};
+
+/**
+ * Build the bulkWrite ops for a batch of jobs. Every scraper goes through here,
+ * so the upsert shape — filter, omitUndefined, savedBy seeding — is defined once.
+ *
+ * Fields prefixed with `_` are directives to this helper, not document fields:
+ *   _coords        explicit coordinates (see resolveCoords)
+ *   _lat / _lng    coordinates from the feed
+ *   _setOnInsert   extra $setOnInsert fields, e.g. { postDate: timestamp } for a
+ *                  source that publishes no posted date
+ */
 const buildUpsertOps = (jobs, source, timestamp) =>
   jobs.map((job) => {
-    const coords = (job._lat && job._lng)
-      ? { lat: job._lat, lng: job._lng }
-      : geocodeLocationBase(job.workLocation, job.workLocation1, source);
-    const { _lat, _lng, ...jobData } = job;
+    const coords = resolveCoords(job, source);
+    const { _lat, _lng, _coords, _setOnInsert, ...jobData } = job;
     return {
       updateOne: {
         filter: { jobId: jobData.jobId, source },
         update: {
-          $set: { ...jobData, source, coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-          $setOnInsert: { savedBy: [] },
+          $set: omitUndefined({ ...jobData, source, coordinates: coords, lastRefreshedAt: timestamp }),
+          $setOnInsert: { savedBy: [], ..._setOnInsert },
         },
         upsert: true,
       },
     };
   });
 
-// Shared batch upsert — runs bulkWrite in batches
-const batchUpsert = async (jobs, source, timestamp) => {
+/**
+ * Upsert a source's jobs in batches and report what changed.
+ *
+ * Jobs without a jobId are dropped: the upsert filter would be
+ * `{ jobId: undefined, source }`, which MongoDB reads as "jobId is null or
+ * missing" and would let one malformed feed entry overwrite an unrelated doc.
+ */
+const batchUpsert = async (jobs, source, timestamp, label = source) => {
+  const usable = jobs.filter((j) => j.jobId !== undefined && j.jobId !== null && j.jobId !== '');
+  const skipped = jobs.length - usable.length;
+  if (skipped > 0) {
+    console.warn(`[refresh] ${label}: skipped ${skipped} job(s) with no id`);
+  }
+
   let totalUpserted = 0;
   let totalModified = 0;
-  for (let i = 0; i < jobs.length; i += UPSERT_BATCH) {
-    const ops = buildUpsertOps(jobs.slice(i, i + UPSERT_BATCH), source, timestamp);
+  for (let i = 0; i < usable.length; i += UPSERT_BATCH) {
+    const ops = buildUpsertOps(usable.slice(i, i + UPSERT_BATCH), source, timestamp);
     const result = await Job.bulkWrite(ops, { ordered: false });
     totalUpserted += result.upsertedCount;
     totalModified += result.modifiedCount;
   }
+
+  console.log(`[refresh] ${label}: ${totalUpserted} inserted, ${totalModified} updated`);
   return { upserted: totalUpserted, modified: totalModified };
 };
 

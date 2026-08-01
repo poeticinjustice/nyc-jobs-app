@@ -2,9 +2,10 @@
  * Guggenheim Museum scraper — The Applicant Manager platform.
  */
 
-const { axios, cheerio, Job, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, cheerio, parseSalaryRange, batchUpsert } = require('./utils');
 
 const GUGGENHEIM_LISTING_URL = 'https://theapplicantmanager.com/careers?co=ny';
+const GUGGENHEIM_COORDS = { lat: 40.7830, lng: -73.9590 }; // 1071 Fifth Avenue
 const GUGGENHEIM_CONCURRENCY = 3;
 const GUGGENHEIM_DETAIL_DELAY = 300;
 
@@ -91,49 +92,25 @@ const refreshGuggenheimJobs = async (timestamp) => {
 
   console.log(`[refresh] Scraped ${allJobs.length} Guggenheim job details`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => ({
+    jobId: raw.posCode,
+    businessTitle: raw.title || null,
+    agency: 'Solomon R. Guggenheim Museum',
+    workLocation: raw.location || 'New York',
+    workLocation1: raw.location || null,
+    jobDescription: raw.description || null,
+    jobCategory: null,
+    salaryRangeFrom: raw.salaryFrom,
+    salaryRangeTo: raw.salaryTo,
+    salaryFrequency: raw.salaryFrequency,
+    fullTimePartTimeIndicator: raw.employmentType || null,
+    externalUrl: `https://theapplicantmanager.com/jobs?pos=${raw.posCode}`,
+    _coords: GUGGENHEIM_COORDS,
+    // The listing exposes no posted date — stamp first-seen so date sorting works.
+    _setOnInsert: { postDate: timestamp },
+  }));
 
-  const coords = { lat: 40.7830, lng: -73.9590 }; // Guggenheim Museum
-
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const job = {
-        jobId: raw.posCode,
-        businessTitle: raw.title || null,
-        agency: 'Solomon R. Guggenheim Museum',
-        workLocation: raw.location || 'New York',
-        workLocation1: raw.location || null,
-        jobDescription: raw.description || null,
-        jobCategory: null,
-        salaryRangeFrom: raw.salaryFrom,
-        salaryRangeTo: raw.salaryTo,
-        salaryFrequency: raw.salaryFrequency,
-        fullTimePartTimeIndicator: raw.employmentType || null,
-        externalUrl: `https://theapplicantmanager.com/jobs?pos=${raw.posCode}`,
-      };
-
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'guggenheim' },
-          update: {
-            $set: { ...job, source: 'guggenheim', coordinates: coords, lastRefreshedAt: timestamp },
-            // The listing exposes no posted date — stamp first-seen so date sorting works.
-            $setOnInsert: { savedBy: [], postDate: timestamp },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] Guggenheim: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'guggenheim', timestamp, 'Guggenheim');
 };
 
 module.exports = refreshGuggenheimJobs;
