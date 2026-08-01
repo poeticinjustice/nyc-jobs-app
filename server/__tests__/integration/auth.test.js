@@ -111,7 +111,7 @@ describe('POST /api/auth/login', () => {
     expect(res.body.message).toBe('Invalid credentials');
   });
 
-  it('returns 401 for deactivated account', async () => {
+  it('returns a generic 401 for a deactivated account (no account-existence leak)', async () => {
     const deactivatedEmail = `deactivated-${Date.now()}@example.com`;
     await createTestUser({ email: deactivatedEmail, password: 'password123', isActive: false });
 
@@ -120,7 +120,9 @@ describe('POST /api/auth/login', () => {
       .send({ email: deactivatedEmail, password: 'password123' });
 
     expect(res.status).toBe(401);
-    expect(res.body.message).toBe('Account is deactivated');
+    // Must be indistinguishable from a wrong password, or the response
+    // confirms the address is registered
+    expect(res.body.message).toBe('Invalid credentials');
   });
 
   it('returns 400 for invalid email format', async () => {

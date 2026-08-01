@@ -226,9 +226,8 @@ npm start
 
 ### Health
 
-- `GET /api/health` - Basic server health check
-- `GET /api/jobs/health` - Health check with job count in database
-- `GET /api/rate-limit-status` - Current rate-limit configuration
+- `GET /api/health` - Liveness check; touches no dependencies, so it stays up even if the database is unreachable
+- `GET /api/jobs/health` - Readiness check; reports the job count in the database
 
 ### Authentication (`/api/auth`)
 

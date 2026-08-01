@@ -89,20 +89,11 @@ app.use('/api/notes', noteRoutes);
 app.use('/api/searches', searchRoutes);
 app.use('/api/users', userRoutes);
 
-// Health check endpoint
+// Liveness: is the process up? Deliberately touches no dependencies, so an
+// uptime monitor can distinguish "server down" from "database unavailable".
+// The readiness counterpart is GET /api/jobs/health, which reports DB state.
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'NYC Jobs API is running' });
-});
-
-// Rate limit status endpoint
-app.get('/api/rate-limit-status', (req, res) => {
-  const rateLimitInfo = {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || (process.env.NODE_ENV === 'development' ? 1000 : 500),
-    environment: process.env.NODE_ENV || 'development',
-    message: 'Check RateLimit-* headers in API responses for current usage',
-  };
-  res.json(rateLimitInfo);
 });
 
 // Serve static files and catchall only when not testing

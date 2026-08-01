@@ -95,9 +95,12 @@ router.post(
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      // Check if account is active
+      // Deactivated accounts get the same generic failure as a wrong password.
+      // Saying "deactivated" here confirms the address is registered, which is
+      // the one enumeration leak on this route that can be closed without
+      // moving to a verification-email signup flow.
       if (!user.isActive) {
-        return res.status(401).json({ message: 'Account is deactivated' });
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       // Verify password
