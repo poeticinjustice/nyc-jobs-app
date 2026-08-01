@@ -8,10 +8,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # Vite requires Node 18+; pin it so a Render default can't fail the build.
-      # Keep in sync with .node-version and the CI matrix.
-      - key: NODE_VERSION
-        value: 22.11.0
+      # Node version is pinned in .node-version, which Render reads and which
+      # nvm/fnm also pick up locally. Deliberately not set as NODE_VERSION here:
+      # that env var overrides the file, so having both means bumping
+      # .node-version would silently not change the deploy.
       - key: MONGODB_URI
         sync: false
       - key: JWT_SECRET
