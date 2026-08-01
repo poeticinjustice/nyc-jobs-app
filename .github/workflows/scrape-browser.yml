@@ -29,13 +29,13 @@ jobs:
         run: npm ci
 
       - name: Install Puppeteer with stealth plugin
-        run: npm install puppeteer@latest puppeteer-extra puppeteer-extra-plugin-stealth
+        run: npm install puppeteer@^25.4.0 puppeteer-extra@^3.3.6 puppeteer-extra-plugin-stealth@^2.11.2
 
       - name: Run browser scraper
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          SOURCES: ${{ github.event.inputs.sources }}
         run: |
-          SOURCES="${{ github.event.inputs.sources }}"
           if [ -n "$SOURCES" ]; then
             # Convert comma-separated to space-separated args
             node server/scripts/scrapeWithBrowser.js $(echo "$SOURCES" | tr ',' ' ')

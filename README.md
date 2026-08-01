@@ -1,8 +1,8 @@
 # NYC Jobs - MERN Stack Application
 
-**Created by Ramzi using Cursor, largely to test its AI capabilities**
+**Created by Ramzi using AI coding tools, largely to test their capabilities**
 
-A comprehensive job search and management application for NYC government job postings, built with the MERN stack (MongoDB, Express.js, React, Node.js) and Redux Toolkit. This application provides fast, efficient search through NYC government job postings with advanced filtering, user authentication, job management, and comprehensive note-taking capabilities.
+A job search and application-tracking app that aggregates postings from **25 NYC-area employers and job boards** into a single searchable database, built with the MERN stack (MongoDB, Express.js, React, Node.js) and Redux Toolkit. It provides fast search with advanced filtering, an interactive map, user authentication, saved-job application tracking, saved searches, a personal dashboard, and job-linked notes.
 
 ## 🚀 Quick Start
 
@@ -21,87 +21,131 @@ npm run dev
 
 Visit [http://localhost:3000](http://localhost:3000) to see the application!
 
+## 📊 Job Sources
+
+Jobs are aggregated from 25 sources (see `shared/constants/index.js` → `JOB_SOURCES`):
+
+| Category | Sources |
+| --- | --- |
+| Government | NYC Open Data (city), NY State, USAJobs (federal), Port Authority, United Nations |
+| Transit | MTA, Amtrak |
+| Higher Ed | CUNY, NYU, Columbia, Fordham, The New School |
+| Healthcare | Mount Sinai, NY-Presbyterian, Northwell, NYU Langone, Memorial Sloan Kettering, Montefiore, NYC Health + Hospitals |
+| Culture & Non-Profit | AMNH, Met Museum, Frick Collection, Guggenheim, NYPL, Idealist (non-profit) |
+
+**How data is refreshed:**
+
+- A cron job in `server/index.js` (`node-cron`, every 6 hours: `0 0,6,12,18 * * *`) runs `server/scripts/refreshJobs.js`, which executes 24 API/HTML scrapers from `server/scrapers/` in parallel batches, upserts jobs, and cleans up stale postings (with safety thresholds so an API outage never purges a source).
+- **MTA** is scraped daily by a browser-based GitHub Action (`.github/workflows/scrape-browser.yml`) running `server/scripts/scrapeWithBrowser.js` with Puppeteer + stealth plugin, because the MTA careers site requires JS rendering and blocks plain HTTP clients.
+- On startup, if the database is empty, an initial seed is triggered automatically. You can also run a refresh manually with `npm run refresh-jobs`.
+
 ## ✨ Key Features
 
-### 🔍 Advanced Job Search & Management
+### 🔍 Job Search & Management
 
-- **Complete NYC Jobs Dataset** - Search through 6,000+ NYC government job postings
-- **Smart Search with Caching** - Intelligent caching system for optimal performance
-- **Advanced Filtering** - Filter by category, location, salary range, and keywords
+- **25 Aggregated Sources** - Search city, state, federal, transit, higher-ed, healthcare, and cultural-institution jobs in one place
+- **Advanced Filtering** - Filter by source (including multi-source selection), category, agency, location, salary range, and keywords
 - **Multiple Sort Options** - Sort by date (newest/oldest), title (A-Z/Z-A), salary (highest/lowest)
 - **Results Per Page** - Choose between 20, 50, or 100 results per page
-- **Pagination** - Navigate through large result sets with URL state persistence
-- **Real-time Bookmarking** - Save and unsave jobs with immediate visual feedback
-- **Bookmark Status in Search** - See which jobs are already bookmarked in search results
-- **Mobile-Optimized Search** - Responsive search interface that works on all devices
+- **Pagination with URL State** - Search parameters and page state persist in the URL
+- **Interactive Map** - Browse geocoded jobs on a Mapbox map with source/keyword/salary filters
+- **Saved Searches** - Save filter combinations and re-run them later
+- **Bookmarking & Application Tracking** - Save jobs and track application status (interested, applied, interviewing, offered, rejected) with status history, application/interview/follow-up dates, and document links
+- **CSV Export** - Export saved jobs and notes as CSV
 
-### 📝 Comprehensive Notes System
+### 📝 Notes System
 
-- **Job-Linked Notes** - Create notes directly linked to specific job postings
-- **Automatic Job Association** - Notes automatically fetch and save job data from NYC API
-- **Note Categories** - Organize notes by type (general, interview, application, followup, research)
-- **Priority Levels** - Set priority (low, medium, high, urgent) for better organization
-- **Rich Text Support** - Support for formatted text with automatic paragraph breaks
-- **Pagination** - Navigate through large note collections efficiently
-- **Advanced Filtering** - Filter notes by category, priority, and date
-- **Real-time Updates** - Immediate synchronization between notes and job data
+- **Job-Linked Notes** - Create notes tied to specific job postings
+- **Note Categories** - general, interview, application, followup, research
+- **Priority Levels** - low, medium, high, urgent
+- **Filtering & Pagination** - Filter notes by type and priority, navigate large collections
+- **Note Stats & Export** - Aggregate statistics and CSV export
+
+### 📈 Personal Dashboard
+
+- **Application Pipeline** - Saved jobs grouped by application status
+- **Recent Activity** - Recently saved jobs and notes, saved-search count
 
 ### 👤 User Authentication & Management
 
 - **JWT-based Authentication** - Secure token-based user sessions
-- **Role-based Access Control** - User, Admin, and Moderator roles
-- **Profile Management** - Update personal information and preferences
-- **Password Security** - Secure password change with bcrypt hashing
-- **Session Management** - Persistent login across browser sessions
-
-### 🎨 Modern, Responsive UI/UX
-
-- **Tailwind CSS Design** - Clean, modern interface with utility-first styling
-- **Mobile-First Approach** - Optimized for all screen sizes and devices
-- **Intuitive Navigation** - Clear, accessible navigation with breadcrumbs
-- **Loading States** - Smooth loading indicators and skeleton screens
-- **Error Handling** - Graceful error messages with recovery options
-- **Toast Notifications** - Real-time feedback for user actions
-- **Accessibility** - Keyboard navigation and screen reader support
+- **Role-based Access Control** - `user`, `admin`, and `moderator` roles (see `shared/constants`)
+- **Profile Management** - Update personal information
+- **Password Security** - bcrypt hashing, secure password change
 
 ### 🔧 Administrative Features
 
-- **User Management Dashboard** - Comprehensive user administration tools
-- **System Analytics** - View user statistics and system performance
-- **Role Management** - Manage user roles and permissions
-- **Database Monitoring** - Track system health and performance
+- **User Management** - List, update, deactivate, and reactivate users; user statistics
+- **Jobs Admin View** - Browse all jobs with save counts
+- **Notes Admin View** - Browse notes across all users
 
 ## 🛠️ Tech Stack
 
 ### Backend
 
-- **Node.js** - Runtime environment
-- **Express.js** - Web framework with optimized routing and middleware
-- **MongoDB Atlas** - Cloud database with automatic scaling
-- **Mongoose** - ODM with advanced indexing and population
-- **JWT** - Secure authentication tokens
-- **bcryptjs** - Password hashing and verification
-- **express-validator** - Comprehensive input validation
-- **helmet** - Security headers and protection
+- **Node.js** (>= 18) + **Express.js**
+- **MongoDB** with **Mongoose** ODM
+- **node-cron** - Scheduled job refresh every 6 hours
+- **cheerio** + **axios** - HTML/API scrapers for the job sources
+- **JWT** (`jsonwebtoken`) + **bcryptjs** - Authentication
+- **express-validator** - Input validation
+- **helmet** - Security headers (CSP configured for Mapbox GL)
 - **cors** - Cross-origin resource sharing
-- **axios** - HTTP client with timeout protection and retry logic
-- **express-rate-limit** - Rate limiting for API protection
+- **express-rate-limit** - General, auth-specific, and map-specific rate limiting
 
 ### Frontend
 
-- **React 18** - Modern UI library with hooks and concurrent features
-- **Redux Toolkit** - Efficient state management with async thunks
-- **React Router v6** - Client-side routing with protected routes
-- **Tailwind CSS** - Utility-first CSS framework
-- **React Hook Form** - Performant form handling with validation
-- **React Hot Toast** - Beautiful toast notifications
-- **React Icons** - Comprehensive icon library (Heroicons)
-- **Axios** - Promise-based HTTP client with interceptors
+- **React 18** with **Redux Toolkit** and **React Router v6**
+- **Tailwind CSS** (with typography plugin)
+- **Mapbox GL JS** + **react-map-gl** - Job map
+- **React Hot Toast** - Notifications
+- **React Icons** - Icon library
+- **DOMPurify** - Safe rendering of job descriptions
+- **Axios** - HTTP client with auth interceptors
+
+### Shared & Mobile
+
+- **`shared/`** - `nyc-jobs-shared` package (constants, format/text/validation utils) used by both server and client
+- **`apps/mobile`** - Expo (React Native) mobile app consuming the same API
+
+## 📁 Monorepo Layout
+
+```
+NYCJobs/
+├── server/                   # Express API
+│   ├── index.js              # Entry point: env validation, Mongo connect, 6-hour refresh cron
+│   ├── app.js                # Express app: helmet, rate limits, CORS, route mounts
+│   ├── models/               # User, Job, Note, SavedSearch
+│   ├── routes/               # auth, jobs, notes, searches, dashboard, users
+│   ├── middleware/           # JWT auth, role checks, ObjectId validation
+│   ├── scrapers/             # One module per job source (24 API/HTML scrapers)
+│   ├── helpers/              # jobHelpers, geocoding, usaJobsApi
+│   ├── scripts/              # refreshJobs.js (cron), scrapeWithBrowser.js (GitHub Action)
+│   └── __tests__/            # Jest unit + integration tests
+├── client/                   # React web app (Create React App)
+│   └── src/
+│       ├── components/       # Auth, Layout, Notes, UI
+│       ├── pages/            # Home, JobSearch, JobDetails, JobMap, SavedJobs,
+│       │                     # Notes, Profile, Admin, Sources, Login, Register
+│       ├── store/            # Redux Toolkit slices
+│       └── utils/            # api (axios interceptor), formatting helpers
+├── shared/                   # nyc-jobs-shared package (npm-linked via file:../shared)
+│   ├── constants/            # JOB_SOURCES, statuses, roles, validation limits
+│   └── utils/                # formatUtils, textUtils, validation
+├── apps/
+│   └── mobile/               # Expo (React Native) app
+├── .github/workflows/        # ci.yml, scrape-browser.yml
+├── jest.config.js            # Server test config
+├── render.yaml               # Render deployment configuration
+└── package.json
+```
+
+The `shared/` package is consumed by the client via an npm file link (`"nyc-jobs-shared": "file:../shared"` in `client/package.json`) and by the server via relative requires.
 
 ## 📋 Prerequisites
 
-- **Node.js** (v16 or higher)
-- **npm** or **yarn**
+- **Node.js** (v18 or higher, per `engines` in `package.json`)
+- **npm**
 - **MongoDB Atlas** account (recommended) or local MongoDB
 - **Git** for version control
 
@@ -125,26 +169,7 @@ Create a `.env` file in the root directory:
 cp .env.example .env
 ```
 
-Update the `.env` file with your configuration:
-
-```env
-# MongoDB Connection (Replace with your MongoDB Atlas URI)
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority
-
-# JWT Secret (Generate a strong secret for production)
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-
-# Server Configuration
-PORT=8000
-NODE_ENV=development
-
-# NYC Jobs API
-NYC_JOBS_API_URL=https://data.cityofnewyork.us/resource/kpav-sd4t.json
-
-# Rate Limiting
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
-```
+Required variables (the server exits if these are missing): `MONGODB_URI`, `JWT_SECRET`, `NYC_JOBS_API_URL`. Optional: `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `USAJOBS_BASE_URL` (federal jobs are skipped without them), `CORS_ORIGIN`, `PORT`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS`. See `.env.example` for details.
 
 ### 3. Start the Application
 
@@ -184,7 +209,13 @@ npm start
 
 ## 🔌 API Endpoints
 
-### Authentication
+### Health
+
+- `GET /api/health` - Basic server health check
+- `GET /api/jobs/health` - Health check with job count in database
+- `GET /api/rate-limit-status` - Current rate-limit configuration
+
+### Authentication (`/api/auth`)
 
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - User login
@@ -192,160 +223,134 @@ npm start
 - `PUT /api/auth/profile` - Update user profile
 - `PUT /api/auth/password` - Change password
 
-### Jobs
+### Jobs (`/api/jobs`)
 
-- `GET /api/jobs/search` - Advanced job search with filtering, pagination, sorting, and smart caching
-- `GET /api/jobs/:id` - Get detailed job information
+- `GET /api/jobs/search` - Search with filtering (`q`, `category`, `location`, `agency`, `salary_min`, `salary_max`, `source` — single or comma-separated multi-source), pagination (`page`, `limit`), and sorting (`sort`)
+- `GET /api/jobs/map` - GeoJSON FeatureCollection of geocoded jobs (filters: `source`, `keyword`, `salary_min`, `salary_max`)
+- `GET /api/jobs/categories` - All job categories (10-minute in-memory cache)
+- `GET /api/jobs/agencies` - All agencies (10-minute in-memory cache)
+- `GET /api/jobs/saved` - Get user's saved jobs with pagination
+- `GET /api/jobs/saved/export` - Export saved jobs as CSV
+- `GET /api/jobs/admin` - List all jobs with save counts (admin only)
+- `GET /api/jobs/:id?source=<source>` - Job details; `source` query selects the source namespace (defaults to `nyc`)
 - `POST /api/jobs/:id/save` - Save job to user's bookmarks
 - `DELETE /api/jobs/:id/save` - Remove job from saved list
-- `GET /api/jobs/saved` - Get user's saved jobs with pagination
-- `GET /api/jobs/categories` - Get all available job categories
-- `GET /api/jobs/health` - API health check and cache status
-- `GET /api/jobs/nyc-api-health` - NYC Jobs API health check
+- `PUT /api/jobs/:id/status` - Set application status (interested, applied, interviewing, offered, rejected)
+- `PUT /api/jobs/:id/tracking` - Update tracking data (application/interview/follow-up dates, document links, status history)
 
-### Notes
+### Notes (`/api/notes`)
 
-- `POST /api/notes` - Create note for a job (auto-fetches job data if needed)
+- `POST /api/notes` - Create note for a job
 - `GET /api/notes` - Get user's notes with pagination and filtering
-- `GET /api/notes/:id` - Get specific note by ID
+- `GET /api/notes/stats` - Note statistics
+- `GET /api/notes/export` - Export notes as CSV
+- `GET /api/notes/job/:jobId` - All notes for a specific job
+- `GET /api/notes/admin` - List notes across all users (admin only)
+- `GET /api/notes/:id` - Get note by ID
 - `PUT /api/notes/:id` - Update note
 - `DELETE /api/notes/:id` - Delete note
-- `GET /api/notes/job/:jobId` - Get all notes for a specific job
-- `GET /api/notes/stats` - Get note statistics
 
-### Users (Admin)
+### Saved Searches (`/api/searches`)
+
+- `GET /api/searches` - Get user's saved searches
+- `POST /api/searches` - Save a search
+- `DELETE /api/searches/:id` - Delete a saved search
+
+### Dashboard (`/api/dashboard`)
+
+- `GET /api/dashboard` - Personalized dashboard: saved jobs by application status, recent saved jobs and notes, totals
+
+### Users (`/api/users`)
 
 - `GET /api/users` - Get all users (admin only)
-- `GET /api/users/:id` - Get user by ID (admin only)
-- `PUT /api/users/:id` - Update user (admin only)
-- `DELETE /api/users/:id` - Delete user (admin only)
-- `GET /api/users/stats` - Get user statistics (admin only)
+- `GET /api/users/stats` - User statistics (admin only)
+- `GET /api/users/:id` - Get user by ID (admin or self)
+- `PUT /api/users/:id` - Update user (admin or self)
+- `DELETE /api/users/:id` - Deactivate user (admin only)
+- `POST /api/users/:id/reactivate` - Reactivate user (admin only)
 
-## 📁 Project Structure
+## 🧪 Testing
 
+Server tests use **Jest** + **supertest** with **mongodb-memory-server** (no real database needed):
+
+```bash
+npm run test:server            # Run all 249 server tests
+npm run test:server:watch      # Watch mode
+npm run test:server:coverage   # With coverage
+npm run test:auth              # Single suite (also: test:jobs, test:notes,
+                               # test:searches, test:dashboard, test:middleware, test:helpers)
 ```
-NYCJobs/
-├── server/
-│   ├── index.js              # Server entry point with rate limiting and health checks
-│   ├── models/               # Database models
-│   │   ├── User.js          # User authentication and management
-│   │   ├── Job.js           # Job data and bookmark tracking
-│   │   └── Note.js          # Notes with job associations
-│   ├── routes/               # API routes
-│   │   ├── auth.js          # Authentication endpoints
-│   │   ├── jobs.js          # Job search, details, and bookmarking
-│   │   ├── notes.js         # Notes CRUD operations
-│   │   └── users.js         # User management (admin)
-│   └── middleware/           # Custom middleware
-│       └── auth.js          # JWT authentication middleware
-├── client/
-│   ├── src/
-│   │   ├── components/       # React components
-│   │   │   ├── Auth/        # Login/Register forms
-│   │   │   ├── Layout/      # Navigation and layout
-│   │   │   ├── Notes/       # Note creation and editing
-│   │   │   └── UI/          # Reusable UI components
-│   │   ├── pages/           # Page components
-│   │   │   ├── JobSearch.js # Advanced job search with filters
-│   │   │   ├── JobDetails.js # Detailed job view
-│   │   │   ├── Notes.js     # Notes management
-│   │   │   ├── SavedJobs.js # Bookmarked jobs
-│   │   │   └── Admin.js     # Admin dashboard
-│   │   ├── store/           # Redux store
-│   │   │   └── slices/      # Redux slices for state management
-│   │   ├── utils/           # Utility functions
-│   │   │   └── textUtils.js # Text formatting and HTML rendering
-│   │   └── App.js           # Main application component
-│   ├── package.json
-│   └── tailwind.config.js
-├── package.json
-├── render.yaml               # Render deployment configuration
-└── README.md
-```
+
+Tests live in `server/__tests__/` (unit tests for helpers, middleware, and scraper transforms; integration tests for auth, jobs, notes, searches, dashboard, and users routes).
+
+## 🤖 CI / GitHub Actions
+
+- **`.github/workflows/ci.yml`** - On push/PR to `main`: installs dependencies, runs the server test suite, and builds the client on Node 20.x and 22.x.
+- **`.github/workflows/scrape-browser.yml`** - Daily (6 AM UTC) browser-based scrape of sources that block plain HTTP clients (currently MTA), using Puppeteer with the stealth plugin. Supports manual dispatch with a comma-separated source list. Requires a `MONGODB_URI` repository secret.
+
+## 🗺️ Map Page
+
+The `/map` page (`client/src/pages/JobMap.js`) renders geocoded jobs as an interactive Mapbox map:
+
+- Requires `REACT_APP_MAPBOX_TOKEN` in the environment at client build time (free token at [account.mapbox.com](https://account.mapbox.com/access-tokens/))
+- Data comes from `GET /api/jobs/map`, which returns a GeoJSON FeatureCollection of jobs with coordinates (geocoded at scrape time via `server/helpers/geocoding.js`)
+- The map endpoint has its own rate limit and a monthly request cap to stay within Mapbox free-tier limits
+- Helmet's Content Security Policy is configured to allow Mapbox scripts, tiles, and telemetry
 
 ## 🗄️ Database Schema
 
 ### User Model
 
-- Email, password, first name, last name
-- Role (user, admin, moderator)
-- Active status, last login timestamp
-- Saved jobs references
+- Email, password (bcrypt-hashed), first name, last name
+- Role (`user`, `admin`, `moderator`), active status, last login timestamp
 
 ### Job Model
 
-- NYC API job data (job_id, title, description, salary, etc.)
-- Saved by users tracking
-- View count and analytics
-- Search indexing for performance
+- Normalized job data from all sources (`jobId`, `businessTitle`, `agency`, `description`, salary range, location, coordinates, etc.)
+- `source` field identifying which of the 25 sources it came from
+- `savedBy` entries per user with application status, status history, tracking dates, and document links
+- `lastRefreshedAt` timestamp used for stale-job cleanup
+- Text and field indexes for search
 
 ### Note Model
 
-- User and job references with automatic population
-- Title, content, type, priority, tags
-- Privacy settings and visibility
-- Timestamps for creation and updates
+- User and job references
+- Title, content, type (general/interview/application/followup/research), priority (low/medium/high/urgent), tags
+
+### SavedSearch Model
+
+- User reference, search name, and stored filter parameters
 
 ## ⚡ Performance & Security Features
 
-### Performance Optimizations
+### Performance
 
-- **Smart Caching** - Intelligent caching system for NYC API responses
-- **API Optimization** - Leverages NYC API's native search capabilities
-- **Batch Processing** - Efficient handling of large datasets
-- **Timeout Protection** - 30-second timeouts prevent hanging requests
-- **Pagination** - Efficient handling of large result sets
-- **URL State Persistence** - Search parameters and pagination state in URL
-- **Debounced Search** - Optimized search input handling
+- **Database-backed search** - Jobs are scraped into MongoDB on a schedule, so searches never hit external APIs
+- **Batched scraping** - Refresh runs scrapers in parallel batches of 5 with per-source failure isolation
+- **Stale-job cleanup with safety thresholds** - A source is only purged when its scraper returned a meaningful number of jobs
+- **TTL caching** - 10-minute in-memory cache for category/agency lookups
+- **Pagination and URL state persistence** - Efficient handling of large result sets
 
-### Security Features
+### Security
 
-- **JWT Authentication** - Secure token-based authentication
-- **Password Hashing** - bcrypt with salt rounds
-- **Input Validation** - Comprehensive validation with express-validator
-- **Rate Limiting** - API protection against abuse
-- **CORS Configuration** - Secure cross-origin requests
-- **Helmet Headers** - Security headers and protection
-- **Role-based Access** - User, Admin, and Moderator roles
-- **Trust Proxy** - Secure proxy configuration for production
-
-## 🎯 Key Application Features
-
-### Job Search Experience
-
-- **Instant Search** - Real-time search results with smart caching
-- **Advanced Filters** - Category, location, salary range, and keyword filtering
-- **Multiple Sort Options** - Date, title, and salary sorting
-- **Results Per Page** - Choose between 20, 50, or 100 results
-- **Pagination** - Navigate through results with URL state persistence
-- **Bookmark Integration** - See saved status and manage bookmarks directly from search
-
-### Notes Management
-
-- **Job-Linked Notes** - Create notes directly linked to specific jobs
-- **Automatic Job Fetching** - Notes automatically retrieve job data from NYC API
-- **Rich Organization** - Categorize by type, priority, and tags
-- **Advanced Filtering** - Filter notes by multiple criteria
-- **Pagination** - Handle large note collections efficiently
-
-### User Experience
-
-- **Mobile-First Design** - Optimized for all device sizes
-- **Real-time Feedback** - Immediate response to user actions
-- **Intuitive Navigation** - Clear, accessible interface
-- **Loading States** - Smooth transitions and feedback
-- **Error Handling** - Graceful error recovery
+- **JWT Authentication** with bcrypt password hashing
+- **Input Validation** - express-validator on all write and search endpoints
+- **Rate Limiting** - Global limiter, stricter limiter on auth routes, and dedicated map-endpoint limits
+- **CORS Configuration** - `CORS_ORIGIN` allowlist in production, localhost in development
+- **Helmet Headers** - CSP tuned for Mapbox GL
+- **Role-based Access** - Admin-only routes enforced via `requireRole` middleware
+- **Trust Proxy** - Secure proxy configuration for production (Render)
 
 ## 🚀 Deployment
 
 ### Render Deployment
 
-The application includes a `render.yaml` file for easy deployment on Render:
+The application includes a `render.yaml` file for deployment on Render:
 
 1. Connect your GitHub repository to Render
 2. Render will automatically detect the configuration
 3. Set environment variables in the Render dashboard
-4. Deploy with one click
+4. Deploy
 
 ### Environment Variables for Production
 
@@ -354,21 +359,17 @@ MONGODB_URI=your_production_mongodb_uri
 JWT_SECRET=your_production_jwt_secret
 NODE_ENV=production
 NYC_JOBS_API_URL=https://data.cityofnewyork.us/resource/kpav-sd4t.json
+USAJOBS_API_KEY=your_usajobs_key        # optional — federal jobs
+USAJOBS_EMAIL=your_email                # optional — federal jobs
+USAJOBS_BASE_URL=https://data.usajobs.gov/api/Search
+CORS_ORIGIN=                            # comma-separated origins for cross-origin clients (e.g. mobile)
 ```
 
-### Docker Deployment
+The MTA browser scraper runs in GitHub Actions (not on Render) and needs the `MONGODB_URI` secret configured in the repository settings.
 
-```bash
-# Build image
-docker build -t nyc-jobs-app .
+## 📊 Data Sources
 
-# Run container
-docker run -p 8000:8000 -e MONGODB_URI=your_uri nyc-jobs-app
-```
-
-## 📊 Data Source
-
-This application integrates with the [NYC Jobs API](https://data.cityofnewyork.us/resource/kpav-sd4t.json) to provide access to current NYC government job postings. The application implements intelligent caching and rate limiting to respect API constraints while providing optimal performance.
+Job data comes from the [NYC Jobs dataset on NYC Open Data](https://data.cityofnewyork.us/resource/kpav-sd4t.json), the [USAJobs API](https://developer.usajobs.gov/), and public careers pages of the state, transit, higher-ed, healthcare, and cultural institutions listed above. Scrapers respect each source with scheduled (not per-request) fetching, timeouts, and failure isolation.
 
 ## 📝 License
 
