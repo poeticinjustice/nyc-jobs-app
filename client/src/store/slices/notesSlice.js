@@ -76,7 +76,6 @@ const initialState = {
   error: null,
   createLoading: false,
   updateLoading: false,
-  deleteLoading: false,
 };
 
 const notesSlice = createSlice({
@@ -159,11 +158,9 @@ const notesSlice = createSlice({
 
       // Delete Note
       .addCase(deleteNote.pending, (state) => {
-        state.deleteLoading = true;
         state.error = null;
       })
       .addCase(deleteNote.fulfilled, (state, action) => {
-        state.deleteLoading = false;
         const { noteId } = action.payload;
         state.notes = state.notes.filter((note) => note._id !== noteId);
         if (state.pagination.total > 0) {
@@ -175,7 +172,6 @@ const notesSlice = createSlice({
         state.error = null;
       })
       .addCase(deleteNote.rejected, (state, action) => {
-        state.deleteLoading = false;
         state.error = action.payload;
       })
 

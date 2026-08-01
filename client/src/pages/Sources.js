@@ -1,52 +1,60 @@
 import React from 'react';
 import { HiExternalLink } from 'react-icons/hi';
+import { JOB_SOURCES, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
-const SOURCE_GROUPS = [
+// Hand-authored grouping, career-page URL, and blurb for each source — none of
+// which lives in shared. `name` is an optional full title for this page: the
+// shared labels are sized for filter chips ("AMNH", "City"), which reads badly
+// as a heading in a directory whose job is to explain what each source is.
+// Where `name` is omitted the shared label is used, so a new source still
+// renders sensibly. Sources.test.js asserts every JOB_SOURCES value appears
+// here exactly once, which is what actually prevents drift.
+export const SOURCE_GROUPS = [
   {
     name: 'Government',
     sources: [
-      { label: 'NYC City Jobs', url: 'https://cityjobs.nyc.gov/', description: 'City of New York agencies' },
-      { label: 'New York State', url: 'https://statejobs.ny.gov/public/vacancytable.cfm', description: 'State agencies in NYC metro' },
-      { label: 'Federal (USAJobs)', url: 'https://www.usajobs.gov/', description: 'Federal government positions' },
+      { key: 'nyc', name: 'NYC City Jobs', url: 'https://cityjobs.nyc.gov/', description: 'City of New York agencies' },
+      { key: 'nys', name: 'New York State', url: 'https://statejobs.ny.gov/public/vacancytable.cfm', description: 'State agencies in NYC metro' },
+      { key: 'federal', name: 'Federal (USAJobs)', url: 'https://www.usajobs.gov/', description: 'Federal government positions' },
     ],
   },
   {
     name: 'Transit',
     sources: [
-      { label: 'Port Authority NY/NJ', url: 'https://jobs.jobvite.com/panynj/jobs', description: 'Airports, bridges, tunnels, PATH' },
-      { label: 'MTA', url: 'https://careers.mta.org/us/en/search-results', description: 'Subways, buses, LIRR, Metro-North' },
-      { label: 'Amtrak', url: 'https://careers.amtrak.com/search/?q=&optionsFacetsDD_state=New+York', description: 'Amtrak — New York positions' },
+      { key: 'pa', url: 'https://jobs.jobvite.com/panynj/jobs', description: 'Airports, bridges, tunnels, PATH' },
+      { key: 'mta', url: 'https://careers.mta.org/us/en/search-results', description: 'Subways, buses, LIRR, Metro-North' },
+      { key: 'amtrak', url: 'https://careers.amtrak.com/search/?q=&optionsFacetsDD_state=New+York', description: 'Amtrak — New York positions' },
     ],
   },
   {
     name: 'Universities',
     sources: [
-      { label: 'CUNY', url: 'https://cuny.jobs/', description: 'City University of New York system' },
-      { label: 'NYU', url: 'https://uscareers-nyu.icims.com/jobs/search', description: 'New York University' },
-      { label: 'Columbia University', url: 'https://opportunities.columbia.edu/', description: 'Columbia University' },
-      { label: 'Fordham University', url: 'https://careers.fordham.edu/postings/search', description: 'Fordham University campuses' },
-      { label: 'The New School', url: 'https://newschool.wd1.myworkdayjobs.com/External', description: 'The New School, Parsons' },
+      { key: 'cuny', url: 'https://cuny.jobs/', description: 'City University of New York system' },
+      { key: 'nyu', url: 'https://uscareers-nyu.icims.com/jobs/search', description: 'New York University' },
+      { key: 'columbia', url: 'https://opportunities.columbia.edu/', description: 'Columbia University' },
+      { key: 'fordham', url: 'https://careers.fordham.edu/postings/search', description: 'Fordham University campuses' },
+      { key: 'newschool', url: 'https://newschool.wd1.myworkdayjobs.com/External', description: 'The New School, Parsons' },
     ],
   },
   {
     name: 'Healthcare',
     sources: [
-      { label: 'Mount Sinai', url: 'https://careers.mountsinai.org/', description: 'Mount Sinai Health System' },
-      { label: 'NewYork-Presbyterian', url: 'https://nyp.wd1.myworkdayjobs.com/nypcareers', description: 'NYP hospital network' },
-      { label: 'Northwell Health', url: 'https://eppr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2', description: 'Northwell Health system' },
-      { label: 'NYU Langone Health', url: 'https://jobs.silkroad.com/NYULangone/NYULHCareers', description: 'NYU Langone hospitals and facilities' },
-      { label: 'Memorial Sloan Kettering', url: 'https://msk.wd108.myworkdayjobs.com/MSKCC_Careers_Primary', description: 'MSK Cancer Center' },
-      { label: 'Montefiore Health System', url: 'https://montefiore.wd12.myworkdayjobs.com/MMC', description: 'Montefiore medical campuses' },
-      { label: 'NYC Health + Hospitals', url: 'https://providercareers.nychealthandhospitals.org/search', description: 'Public hospital system — provider/clinical roles' },
+      { key: 'mountsinai', url: 'https://careers.mountsinai.org/', description: 'Mount Sinai Health System' },
+      { key: 'nyp', name: 'NewYork-Presbyterian', url: 'https://nyp.wd1.myworkdayjobs.com/nypcareers', description: 'NewYork-Presbyterian hospital network' },
+      { key: 'northwell', url: 'https://eppr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2', description: 'Northwell Health system' },
+      { key: 'nyulangone', url: 'https://jobs.silkroad.com/NYULangone/NYULHCareers', description: 'NYU Langone hospitals and facilities' },
+      { key: 'msk', name: 'Memorial Sloan Kettering', url: 'https://msk.wd108.myworkdayjobs.com/MSKCC_Careers_Primary', description: 'Memorial Sloan Kettering Cancer Center' },
+      { key: 'montefiore', url: 'https://montefiore.wd12.myworkdayjobs.com/MMC', description: 'Montefiore medical campuses' },
+      { key: 'nychhc', name: 'NYC Health + Hospitals', url: 'https://providercareers.nychealthandhospitals.org/search', description: 'Public hospital system — provider/clinical roles' },
     ],
   },
   {
     name: 'Museums',
     sources: [
-      { label: 'American Museum of Natural History', url: 'https://careers.amnh.org/postings/search', description: 'AMNH — Central Park West' },
-      { label: 'The Metropolitan Museum of Art', url: 'https://metmuseum.wd5.myworkdayjobs.com/metmuseumcareers', description: 'The Met Fifth Avenue and Cloisters' },
-      { label: 'The Frick Collection', url: 'https://recruiting.paylocity.com/recruiting/jobs/All/aba29db6-33d4-433d-b062-02c67cda2776/The-Frick-Collection', description: 'The Frick Collection — Upper East Side' },
-      { label: 'Solomon R. Guggenheim Museum', url: 'https://theapplicantmanager.com/careers?co=ny', description: 'Guggenheim — Fifth Avenue' },
+      { key: 'amnh', name: 'American Museum of Natural History', url: 'https://careers.amnh.org/postings/search', description: 'American Museum of Natural History — Central Park West' },
+      { key: 'metmuseum', url: 'https://metmuseum.wd5.myworkdayjobs.com/metmuseumcareers', description: 'The Met Fifth Avenue and Cloisters' },
+      { key: 'frick', url: 'https://recruiting.paylocity.com/recruiting/jobs/All/aba29db6-33d4-433d-b062-02c67cda2776/The-Frick-Collection', description: 'The Frick Collection — Upper East Side' },
+      { key: 'guggenheim', url: 'https://theapplicantmanager.com/careers?co=ny', description: 'Solomon R. Guggenheim Museum — Fifth Avenue' },
     ],
     comingSoon: [
       { label: 'MoMA', url: 'https://www.moma.org/about/careers' },
@@ -57,12 +65,24 @@ const SOURCE_GROUPS = [
   {
     name: 'Non-Profit & Other',
     sources: [
-      { label: 'New York Public Library', url: 'https://nypl.pinpointhq.com/', description: 'NYPL branches across NYC' },
-      { label: 'Idealist', url: 'https://www.idealist.org/en/jobs?q=&areasOfFocus=&locationName=New+York&locationType=AREA', description: 'Non-profit jobs in NYC area' },
-      { label: 'United Nations', url: 'https://careers.un.org/', description: 'UN headquarters — New York' },
+      { key: 'nypl', name: 'New York Public Library', url: 'https://nypl.pinpointhq.com/', description: 'New York Public Library branches across NYC' },
+      { key: 'idealist', name: 'Idealist (Non-Profit)', url: 'https://www.idealist.org/en/jobs?q=&areasOfFocus=&locationName=New+York&locationType=AREA', description: 'Non-profit jobs in NYC area' },
+      { key: 'un', url: 'https://careers.un.org/', description: 'United Nations headquarters — New York' },
     ],
   },
 ];
+
+export const sourceLabel = (source) =>
+  source.name || SOURCE_OPTIONS.find((o) => o.value === source.key)?.label || source.key;
+
+// Safety net: a source added to shared but not grouped above still shows up,
+// so it is obvious it needs a real group, URL, and description.
+const groupedKeys = SOURCE_GROUPS.flatMap((group) => group.sources.map((s) => s.key));
+const ungroupedKeys = JOB_SOURCES.filter((key) => !groupedKeys.includes(key));
+
+const RENDERED_GROUPS = ungroupedKeys.length
+  ? [...SOURCE_GROUPS, { name: 'Other', sources: ungroupedKeys.map((key) => ({ key })) }]
+  : SOURCE_GROUPS;
 
 const Sources = () => (
   <div className='max-w-4xl mx-auto px-4 py-8'>
@@ -73,23 +93,18 @@ const Sources = () => (
       This site does not include every job from every employer — check their pages for the most complete listings.
     </p>
 
-    {SOURCE_GROUPS.map((group) => (
+    {RENDERED_GROUPS.map((group) => (
       <div key={group.name} className='mb-8'>
         <h2 className='text-lg font-semibold text-gray-800 mb-3 border-b border-gray-200 pb-2'>
           {group.name}
         </h2>
         <div className='grid gap-3'>
-          {group.sources.map((source) => (
-            <a
-              key={source.label}
-              href={source.url}
-              target='_blank'
-              rel='noopener noreferrer'
-              className='flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors group'
-            >
+          {group.sources.map((source) => {
+            const label = sourceLabel(source);
+            const body = (
               <div>
                 <span className='font-medium text-gray-900 group-hover:text-primary-700'>
-                  {source.label}
+                  {label}
                 </span>
                 {source.description && (
                   <span className='text-sm text-gray-500 ml-2'>
@@ -97,9 +112,31 @@ const Sources = () => (
                   </span>
                 )}
               </div>
-              <HiExternalLink className='h-4 w-4 text-gray-400 group-hover:text-primary-600 shrink-0 ml-2' />
-            </a>
-          ))}
+            );
+            // Ungrouped sources have no career-page URL yet — list them plainly
+            if (!source.url) {
+              return (
+                <div
+                  key={source.key}
+                  className='flex items-center justify-between p-3 rounded-lg border border-gray-200'
+                >
+                  {body}
+                </div>
+              );
+            }
+            return (
+              <a
+                key={source.key}
+                href={source.url}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors group'
+              >
+                {body}
+                <HiExternalLink className='h-4 w-4 text-gray-400 group-hover:text-primary-600 shrink-0 ml-2' />
+              </a>
+            );
+          })}
           {group.comingSoon && (
             <div className='mt-2'>
               <p className='text-xs text-gray-400 mb-1'>Not yet included — visit directly:</p>

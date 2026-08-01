@@ -1,31 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HiMenu, HiUser, HiLogout, HiCog, HiBookmark } from 'react-icons/hi';
+import useClickOutside from '../../hooks/useClickOutside';
 
 const Header = ({ onMenuToggle, onLogout, user, isAuthenticated }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const menuRef = useRef(null);
 
   // Close user menu when clicking outside or pressing Escape
-  useEffect(() => {
-    if (!userMenuOpen) return;
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setUserMenuOpen(false);
-      }
-    };
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        setUserMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [userMenuOpen]);
+  const menuRef = useClickOutside(
+    userMenuOpen,
+    () => setUserMenuOpen(false),
+    { closeOnEscape: true }
+  );
 
   const toggleUserMenu = () => {
     setUserMenuOpen((prev) => !prev);

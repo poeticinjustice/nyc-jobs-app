@@ -15,6 +15,7 @@ import { formatDate } from '../utils/formatUtils';
 import Pagination from '../components/UI/Pagination';
 import SourceBadge from '../components/UI/SourceBadge';
 import { SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
+import { getNoteTypeColor, getNotePriorityColor } from '../utils/noteConstants';
 import api from '../utils/api';
 
 // --- Reusable sub-components ---
@@ -408,27 +409,6 @@ const NotesManagement = () => {
     setActionLoading(null);
   };
 
-  const priorityColor = (p) => {
-    const map = {
-      urgent: 'bg-red-100 text-red-800',
-      high: 'bg-orange-100 text-orange-800',
-      medium: 'bg-yellow-100 text-yellow-800',
-      low: 'bg-green-100 text-green-800',
-    };
-    return map[p] || map.medium;
-  };
-
-  const typeColor = (t) => {
-    const map = {
-      general: 'bg-gray-100 text-gray-700',
-      interview: 'bg-blue-100 text-blue-800',
-      application: 'bg-green-100 text-green-800',
-      followup: 'bg-purple-100 text-purple-800',
-      research: 'bg-indigo-100 text-indigo-800',
-    };
-    return map[t] || map.general;
-  };
-
   return (
     <div className='space-y-4'>
       <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-6'>
@@ -500,12 +480,12 @@ const NotesManagement = () => {
                       )}
                     </td>
                     <td className='px-4 py-3'>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${typeColor(note.type)}`}>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getNoteTypeColor(note.type)}`}>
                         {note.type}
                       </span>
                     </td>
                     <td className='px-4 py-3'>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${priorityColor(note.priority)}`}>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getNotePriorityColor(note.priority)}`}>
                         {note.priority}
                       </span>
                     </td>

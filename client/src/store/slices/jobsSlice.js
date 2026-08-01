@@ -180,9 +180,6 @@ const initialState = {
   searchLoading: false,
   detailsLoading: false,
   savedJobsLoading: false,
-  saveLoading: false,
-  statusLoading: false,
-  trackingLoading: false,
   searchError: null,
   detailsError: null,
   savedJobsError: null,
@@ -244,11 +241,9 @@ const jobsSlice = createSlice({
 
       // Save Job
       .addCase(saveJob.pending, (state) => {
-        state.saveLoading = true;
         state.saveError = null;
       })
       .addCase(saveJob.fulfilled, (state, action) => {
-        state.saveLoading = false;
         const { jobId, source, applicationStatus, statusHistory } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
@@ -264,17 +259,14 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(saveJob.rejected, (state, action) => {
-        state.saveLoading = false;
         state.saveError = action.payload;
       })
 
       // Unsave Job
       .addCase(unsaveJob.pending, (state) => {
-        state.saveLoading = true;
         state.saveError = null;
       })
       .addCase(unsaveJob.fulfilled, (state, action) => {
-        state.saveLoading = false;
         const { jobId, source } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
@@ -299,17 +291,14 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(unsaveJob.rejected, (state, action) => {
-        state.saveLoading = false;
         state.saveError = action.payload;
       })
 
       // Update Job Status
       .addCase(updateJobStatus.pending, (state) => {
-        state.statusLoading = true;
         state.saveError = null;
       })
       .addCase(updateJobStatus.fulfilled, (state, action) => {
-        state.statusLoading = false;
         const { jobId, source, applicationStatus, statusHistory } = action.payload;
         const savedJob = state.savedJobs.find(
           (job) => job.jobId === jobId && (!source || job.source === source)
@@ -329,17 +318,14 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(updateJobStatus.rejected, (state, action) => {
-        state.statusLoading = false;
         state.saveError = action.payload;
       })
 
       // Update Job Tracking
       .addCase(updateJobTracking.pending, (state) => {
-        state.trackingLoading = true;
         state.saveError = null;
       })
       .addCase(updateJobTracking.fulfilled, (state, action) => {
-        state.trackingLoading = false;
         const { jobId, source, applicationDate, interviewDate, followUpDate, documentLinks } = action.payload;
 
         const savedJob = state.savedJobs.find(
@@ -361,7 +347,6 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(updateJobTracking.rejected, (state, action) => {
-        state.trackingLoading = false;
         state.saveError = action.payload;
       })
 

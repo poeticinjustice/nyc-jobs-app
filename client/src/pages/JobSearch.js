@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
@@ -29,9 +29,11 @@ import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
 import NewBadge from '../components/UI/NewBadge';
+import DeadlineBadge from '../components/UI/DeadlineBadge';
 import Pagination from '../components/UI/Pagination';
+import useClickOutside from '../hooks/useClickOutside';
 import { Link, useSearchParams } from 'react-router-dom';
-import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
+import { formatSalary, formatDate } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
 import { downloadFile } from '../utils/downloadFile';
 import { SEARCH_NAME_MAX, SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
@@ -88,7 +90,8 @@ const JobSearch = () => {
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [activeSavedSearch, setActiveSavedSearch] = useState(null);
-  const sourceDropdownRef = useRef(null);
+  const sortDropdownRef = useClickOutside(showSortDropdown, () => setShowSortDropdown(false));
+  const sourceDropdownRef = useClickOutside(showSourceDropdown, () => setShowSourceDropdown(false));
 
   // Local form state for inputs before submitting
   const [localSearchParams, setLocalSearchParams] = useState({
@@ -190,30 +193,6 @@ const JobSearch = () => {
       cancelled = true;
     };
   }, [searchParams, setSearchParams, dispatch, applySavedSearchCriteria]);
-
-  // Handle clicking outside sort dropdown to close it
-  useEffect(() => {
-    if (!showSortDropdown) return;
-    const handleClickOutside = (event) => {
-      if (!event.target.closest('.sort-dropdown-container')) {
-        setShowSortDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showSortDropdown]);
-
-  // Handle clicking outside source dropdown to close it
-  useEffect(() => {
-    if (!showSourceDropdown) return;
-    const handleClickOutside = (event) => {
-      if (sourceDropdownRef.current && !sourceDropdownRef.current.contains(event.target)) {
-        setShowSourceDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showSourceDropdown]);
 
   const handleSearch = (page = 1) => {
     setSearchParams(buildUrlParams(localSearchParams, page, resultsPerPage));
@@ -532,7 +511,7 @@ const JobSearch = () => {
                 />
               </div>
 
-              <div className='relative sort-dropdown-container'>
+              <div className='relative' ref={sortDropdownRef}>
               <button
                 type='button'
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
@@ -908,20 +887,7 @@ const JobSearch = () => {
                         </h3>
                         <SourceBadge source={job.source} />
                         {showNewJobs && job.isNew && <NewBadge />}
-                        {(() => {
-                          const deadline = getDeadlineInfo(job.postUntil);
-                          if (!deadline) return null;
-                          const colors = deadline.urgency === 'closed'
-                            ? 'bg-gray-100 text-gray-700'
-                            : deadline.urgency === 'urgent'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-yellow-100 text-yellow-700';
-                          return (
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors}`}>
-                              {deadline.label}
-                            </span>
-                          );
-                        })()}
+                        <DeadlineBadge postUntil={job.postUntil} />
                       </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>

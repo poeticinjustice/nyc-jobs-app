@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { HiX, HiExternalLink } from 'react-icons/hi';
 import SourceBadge from '../UI/SourceBadge';
-import { formatSalary, formatDate, getDeadlineInfo } from '../../utils/formatUtils';
+import DeadlineBadge from '../UI/DeadlineBadge';
+import { formatSalary, formatDate } from '../../utils/formatUtils';
 import { getStatusColor } from '../../utils/statusConstants';
 
 // Rough annualization so salaries quoted at different frequencies can be
@@ -126,27 +127,12 @@ const JobComparison = ({ isOpen, onClose, jobs = [] }) => {
       },
       {
         label: 'Closes',
-        render: (job) => {
-          const deadline = getDeadlineInfo(job.postUntil);
-          return (
-            <span>
-              {job.postUntil ? formatDate(job.postUntil) : 'No deadline listed'}
-              {deadline && (
-                <span
-                  className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
-                    deadline.urgency === 'closed'
-                      ? 'bg-gray-100 text-gray-700'
-                      : deadline.urgency === 'urgent'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-yellow-100 text-yellow-700'
-                  }`}
-                >
-                  {deadline.label}
-                </span>
-              )}
-            </span>
-          );
-        },
+        render: (job) => (
+          <span>
+            {job.postUntil ? formatDate(job.postUntil) : 'No deadline listed'}
+            <DeadlineBadge postUntil={job.postUntil} className='ml-2' />
+          </span>
+        ),
       },
       {
         label: 'Status',

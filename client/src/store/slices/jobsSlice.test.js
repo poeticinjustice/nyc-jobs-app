@@ -290,7 +290,6 @@ describe('jobsSlice — unsaveJob', () => {
     expect(next.savedJobs).toEqual([{ jobId: '2', source: 'nyc' }]);
     expect(next.savedPagination.total).toBe(1);
     expect(next.savedPagination.pages).toBe(1);
-    expect(next.saveLoading).toBe(false);
   });
 
   it('does not remove a same-id job from a different source', () => {

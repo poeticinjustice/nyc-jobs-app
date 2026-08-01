@@ -17,6 +17,7 @@ import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatDate } from '../utils/formatUtils';
 import { downloadFile } from '../utils/downloadFile';
+import { getNoteTypeColor, getNotePriorityColor } from '../utils/noteConstants';
 
 const Notes = () => {
   const dispatch = useDispatch();
@@ -123,36 +124,6 @@ const Notes = () => {
       await downloadFile('/api/notes/export', 'notes.csv');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to export CSV');
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800';
-      case 'high':
-        return 'bg-orange-100 text-orange-800';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'low':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getTypeColor = (type) => {
-    switch (type) {
-      case 'interview':
-        return 'bg-blue-100 text-blue-800';
-      case 'application':
-        return 'bg-purple-100 text-purple-800';
-      case 'followup':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'research':
-        return 'bg-teal-100 text-teal-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -291,14 +262,14 @@ const Notes = () => {
                       {note.title}
                     </h3>
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getNoteTypeColor(
                         note.type
                       )}`}
                     >
                       {note.type}
                     </span>
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getNotePriorityColor(
                         note.priority
                       )}`}
                     >

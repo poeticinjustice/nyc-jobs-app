@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
+import DeadlineBadge, { getDeadlineTone } from '../components/UI/DeadlineBadge';
 import NoteModal from '../components/Notes/NoteModal';
 import { renderHtmlContent } from '../utils/textUtils';
 import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
@@ -41,6 +42,7 @@ const JobDetails = () => {
   const navigate = useNavigate();
 
   const deadlineInfo = currentJob ? getDeadlineInfo(currentJob.postUntil) : null;
+  const deadlineTone = deadlineInfo ? getDeadlineTone(deadlineInfo.urgency) : null;
 
   const handleCopyLink = async () => {
     const url = window.location.href;
@@ -280,35 +282,15 @@ const JobDetails = () => {
 
       {/* Deadline Banner */}
       {deadlineInfo && (
-        <div className={`rounded-lg border p-4 flex items-center ${
-          deadlineInfo.urgency === 'closed'
-            ? 'bg-gray-50 border-gray-200'
-            : deadlineInfo.urgency === 'urgent'
-              ? 'bg-red-50 border-red-200'
-              : 'bg-yellow-50 border-yellow-200'
-        }`}>
-          <HiCalendar className={`h-5 w-5 mr-3 flex-shrink-0 ${
-            deadlineInfo.urgency === 'closed'
-              ? 'text-gray-500'
-              : deadlineInfo.urgency === 'urgent'
-                ? 'text-red-500'
-                : 'text-yellow-500'
-          }`} />
+        <div className={`rounded-lg border p-4 flex items-center ${deadlineTone.banner}`}>
+          <HiCalendar className={`h-5 w-5 mr-3 flex-shrink-0 ${deadlineTone.bannerAccent}`} />
           <div>
-            <p className={`font-medium ${
-              deadlineInfo.urgency === 'closed'
-                ? 'text-gray-700'
-                : deadlineInfo.urgency === 'urgent'
-                  ? 'text-red-700'
-                  : 'text-yellow-700'
-            }`}>
+            <p className={`font-medium ${deadlineTone.bannerText}`}>
               {deadlineInfo.isClosed
                 ? 'This posting has closed.'
                 : `Application deadline approaching: ${deadlineInfo.label.toLowerCase()}`}
             </p>
-            <p className={`text-sm ${
-              deadlineInfo.urgency === 'closed' ? 'text-gray-500' : deadlineInfo.urgency === 'urgent' ? 'text-red-500' : 'text-yellow-500'
-            }`}>
+            <p className={`text-sm ${deadlineTone.bannerAccent}`}>
               Deadline: {formatDate(currentJob.postUntil)}
             </p>
           </div>
@@ -479,17 +461,11 @@ const JobDetails = () => {
                 </span>
                 <p className='text-gray-900'>
                   {formatDate(currentJob.postUntil)}
-                  {deadlineInfo && (
-                    <span className={`ml-2 text-sm font-medium ${
-                      deadlineInfo.urgency === 'closed'
-                        ? 'text-gray-500'
-                        : deadlineInfo.urgency === 'urgent'
-                          ? 'text-red-600'
-                          : 'text-yellow-600'
-                    }`}>
-                      ({deadlineInfo.label})
-                    </span>
-                  )}
+                  <DeadlineBadge
+                    postUntil={currentJob.postUntil}
+                    variant='text'
+                    className='ml-2'
+                  />
                 </p>
               </div>
               <div>
