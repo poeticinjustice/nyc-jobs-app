@@ -95,9 +95,11 @@ describe('buildUpsertOps — coordinate precedence', () => {
     expect(update.$set.coordinates).toEqual({ lat: 40.75, lng: -73.99 });
   });
 
-  it('falls back to geocoding, and to a null pair when that fails', () => {
+  it('falls back to geocoding, which defaults unknown locations to NYC center', () => {
     const { update } = opFor({ jobId: 'J1', workLocation: 'Nowhere At All', workLocation1: null });
-    expect(update.$set.coordinates).toEqual(expect.objectContaining({ lat: expect.anything() }));
+    // geocodeLocationBase never returns null for a known source — unknown
+    // locations get the NYC default rather than dropping off the map.
+    expect(update.$set.coordinates).toEqual({ lat: 40.7128, lng: -74.006 });
   });
 
   it('omits coordinates entirely when _coords is explicitly undefined', () => {

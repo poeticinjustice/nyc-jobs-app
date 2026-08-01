@@ -168,7 +168,11 @@ const refreshAmtrakJobs = async (timestamp) => {
       salaryRangeTo: keep(detail.salaryTo),
       salaryFrequency: keep(detail.salaryFrequency),
       fullTimePartTimeIndicator: keep(detail.workType),
-      postDate: null,
+      // The site exposes no posted date — stamp first-seen on insert so date
+      // sorting works, same as NYPL and Guggenheim. (Not in $set: it would
+      // conflict with $setOnInsert on the same path.)
+      postDate: undefined,
+      _setOnInsert: { postDate: timestamp },
       externalUrl: raw.href ? `https://careers.amtrak.com${raw.href}` : null,
       // No location this run means nothing to geocode from — undefined leaves
       // the stored coordinates alone rather than overwriting them with nulls.
