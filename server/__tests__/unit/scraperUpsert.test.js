@@ -30,6 +30,14 @@ describe('buildUpsertOps — document shape', () => {
     expect(update.$setOnInsert).toEqual({ savedBy: [] });
   });
 
+  it('rejects a misspelt directive instead of storing it as a field', () => {
+    // Without this the typo lands in $set, does nothing, and the scraper still
+    // looks correct — the coordinates or first-seen stamp just never apply.
+    expect(() =>
+      buildUpsertOps([{ jobId: 'J1', workLocation: 'Manhattan', _setoninsert: { postDate: TS } }], 'nyc', TS)
+    ).toThrow(/unknown upsert directive.*_setoninsert/i);
+  });
+
   it('never writes the underscore-prefixed directives as document fields', () => {
     const { update } = opFor({
       jobId: 'J1',

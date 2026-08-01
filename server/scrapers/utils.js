@@ -70,10 +70,23 @@ const resolveCoords = (job, source) => {
  *   _setOnInsert   extra $setOnInsert fields, e.g. { postDate: timestamp } for a
  *                  source that publishes no posted date
  */
+const DIRECTIVES = new Set(['_lat', '_lng', '_coords', '_setOnInsert']);
+
 const buildUpsertOps = (jobs, source, timestamp) =>
   jobs.map((job) => {
     const coords = resolveCoords(job, source);
     const { _lat, _lng, _coords, _setOnInsert, ...jobData } = job;
+
+    // A misspelt directive would otherwise fall through to jobData and be
+    // stored as a document field — silently doing nothing while the scraper
+    // looks correct. Fail loudly at build time instead.
+    const unknown = Object.keys(jobData).filter((k) => k.startsWith('_'));
+    if (unknown.length > 0) {
+      throw new Error(
+        `${source}: unknown upsert directive(s) ${unknown.join(', ')} — expected one of ${[...DIRECTIVES].join(', ')}`
+      );
+    }
+
     return {
       updateOne: {
         filter: { jobId: jobData.jobId, source },
