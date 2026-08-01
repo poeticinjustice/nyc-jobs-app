@@ -1,9 +1,18 @@
-export const formatSalary = (from?: number, to?: number, freq?: string): string | null => {
-  const hasFrom = from != null && from > 0;
-  const hasTo = to != null && to > 0;
-  if (hasFrom && hasTo) return `$${from.toLocaleString()} - $${to.toLocaleString()}${freq ? ` ${freq}` : ''}`;
-  if (hasFrom) return `$${from.toLocaleString()}${freq ? ` ${freq}` : ''}`;
-  if (hasTo) return `Up to $${to.toLocaleString()}${freq ? ` ${freq}` : ''}`;
+export const formatSalary = (
+  from?: number | string,
+  to?: number | string,
+  freq?: string
+): string | null => {
+  // The API stores salaries as numbers, but some scrapers have historically
+  // written strings — coerce so "50000" still formats as $50,000.
+  const numFrom = Number(from);
+  const numTo = Number(to);
+  const hasFrom = from != null && from !== '' && !isNaN(numFrom) && numFrom > 0;
+  const hasTo = to != null && to !== '' && !isNaN(numTo) && numTo > 0;
+  const suffix = freq ? ` ${freq}` : '';
+  if (hasFrom && hasTo) return `$${numFrom.toLocaleString()} - $${numTo.toLocaleString()}${suffix}`;
+  if (hasFrom) return `$${numFrom.toLocaleString()}${suffix}`;
+  if (hasTo) return `Up to $${numTo.toLocaleString()}${suffix}`;
   return null;
 };
 
@@ -14,6 +23,8 @@ export const formatDate = (d?: string): string | null => {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+// Keep in sync with decodeEntities in shared/utils/textUtils.js — a name
+// missing here renders literally (e.g. "a&mdash;b") in job descriptions.
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
   lt: '<',
@@ -21,6 +32,9 @@ const NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
   apos: "'",
   nbsp: ' ',
+  mdash: '\u2014',
+  ndash: '\u2013',
+  hellip: '\u2026',
 };
 
 const codePointToChar = (codePoint: number): string => {
