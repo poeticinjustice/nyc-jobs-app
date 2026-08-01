@@ -2,7 +2,7 @@
  * Amtrak (SuccessFactors HTML scraping)
  */
 
-const { axios, cheerio, Job, geocodeLocationBase, parseSalaryRange } = require('./utils');
+const { axios, cheerio, Job, geocodeLocationBase, parseSalaryRange, omitUndefined } = require('./utils');
 
 const AMTRAK_SEARCH_URL = 'https://careers.amtrak.com/search/';
 const AMTRAK_DETAIL_CONCURRENCY = 5;
@@ -17,27 +17,14 @@ const scrapeAmtrakDetail = async (url) => {
   const fields = {};
   const bodyText = $('body').text();
 
-  // Extract section content by h2 heading text (SuccessFactors pattern)
-  const extractSection = (headingTexts) => {
-    for (const text of headingTexts) {
-      const heading = $('h2').filter((_, el) => $(el).text().trim().toLowerCase().includes(text.toLowerCase()));
-      if (heading.length) {
-        const parts = [];
-        let next = heading.first().next();
-        while (next.length && !next.is('h1, h2')) {
-          const html = next.html();
-          if (html) parts.push(html);
-          next = next.next();
-        }
-        if (parts.length) return parts.join('\n');
-      }
-    }
-    return null;
-  };
-
-  fields.description = extractSection(['Job Summary', 'Essential Functions', 'Description', 'Responsibilities']);
-  fields.qualifications = extractSection(['Minimum Qualifications', 'Required Qualifications', 'Qualifications']);
-  fields.preferredSkills = extractSection(['Preferred Qualifications', 'Preferred']);
+  // SuccessFactors detail pages have no content <h2>s (the only h2s are footer
+  // nav) — the entire posting lives in a .jobdescription container with
+  // <strong> labels. Store its HTML as the description.
+  const descContainer = $('.jobdescription').first().length
+    ? $('.jobdescription').first()
+    : $('.jobDisplay').first();
+  const descHtml = descContainer.length ? (descContainer.html() || '').trim() : null;
+  fields.description = descHtml && descHtml.length > 50 ? descHtml : null;
 
   // Salary
   const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(bodyText);
@@ -65,8 +52,10 @@ const refreshAmtrakJobs = async (timestamp) => {
 
   try {
     while (hasMore) {
-      const params = { q: '', optionsFacetsDD_state: 'New York' };
-      if (page > 1) params.startrow = (page - 1) * 25;
+      // No state facet param: the site ignores it AND its presence breaks
+      // startrow pagination (verified live) — every "page" repeats page 1.
+      // Fetch the national list paginated and filter to NY by URL slug below.
+      const params = { q: '', startrow: (page - 1) * 25 };
 
       const { data } = await axios.get(AMTRAK_SEARCH_URL, {
         params,
@@ -107,9 +96,18 @@ const refreshAmtrakJobs = async (timestamp) => {
     console.warn('[refresh] Amtrak fetch error (partial data may be used):', err.message);
   }
 
+  // The site ignores the state facet param and returns the national list
+  // (verified live: Chicago/New Orleans/DC results for a New York query), so
+  // filter by the state token in the URL slug: /job/City-Title-Id-City-ST-Zip/id/
+  const nyJobs = allJobs.filter((j) => {
+    const stateMatch = j.href.match(/-([A-Z]{2})-\d{5}(?:-\d{4})?\/\d+\/?$/) || j.href.match(/-([A-Z]{2})-\d{5}/);
+    return stateMatch ? stateMatch[1] === 'NY' : false;
+  });
+  console.log(`[refresh] Amtrak: ${nyJobs.length} NY jobs of ${allJobs.length} listed`);
+
   // Deduplicate
   const seen = new Set();
-  const uniqueJobs = allJobs.filter((j) => {
+  const uniqueJobs = nyJobs.filter((j) => {
     if (seen.has(j.jobId)) return false;
     seen.add(j.jobId);
     return true;
@@ -147,34 +145,42 @@ const refreshAmtrakJobs = async (timestamp) => {
   let totalUpserted = 0;
   let totalModified = 0;
 
+  const existingById = new Map(existingJobs.map((j) => [j.jobId, j]));
   const ops = uniqueJobs.map((raw) => {
+    const hasDetail = detailMap.has(raw.jobId);
     const detail = detailMap.get(raw.jobId) || {};
-    const existing = existingJobs.find((j) => j.jobId === raw.jobId);
+    const existing = existingById.get(raw.jobId);
+
+    // Detail-derived fields: undefined = keep stored values for cached jobs
+    // whose detail page wasn't refetched this run (omitUndefined strips them).
+    const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
 
     const job = {
       jobId: raw.jobId,
       businessTitle: raw.title,
       agency: 'Amtrak',
-      workLocation: detail.location || raw.location || 'New York',
+      workLocation: hasDetail || !existing ? (detail.location || raw.location || 'New York') : undefined,
       workLocation1: null,
-      jobDescription: detail.description || existing?.jobDescription || null,
-      minimumQualRequirements: detail.qualifications || null,
-      preferredSkills: detail.preferredSkills || null,
+      jobDescription: detail.description || existing?.jobDescription || undefined,
+      minimumQualRequirements: keep(detail.qualifications),
+      preferredSkills: keep(detail.preferredSkills),
       jobCategory: null,
-      salaryRangeFrom: detail.salaryFrom || null,
-      salaryRangeTo: detail.salaryTo || null,
-      salaryFrequency: detail.salaryFrequency || null,
-      fullTimePartTimeIndicator: detail.workType || null,
+      salaryRangeFrom: keep(detail.salaryFrom),
+      salaryRangeTo: keep(detail.salaryTo),
+      salaryFrequency: keep(detail.salaryFrequency),
+      fullTimePartTimeIndicator: keep(detail.workType),
       postDate: null,
       externalUrl: raw.href ? `https://careers.amtrak.com${raw.href}` : null,
     };
 
-    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'amtrak');
+    const coords = job.workLocation !== undefined
+      ? geocodeLocationBase(job.workLocation, job.workLocation1, 'amtrak')
+      : undefined;
     return {
       updateOne: {
         filter: { jobId: job.jobId, source: 'amtrak' },
         update: {
-          $set: { ...job, source: 'amtrak', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+          $set: omitUndefined({ ...job, source: 'amtrak', coordinates: coords === undefined ? undefined : (coords || { lat: null, lng: null }), lastRefreshedAt: timestamp }),
           $setOnInsert: { savedBy: [] },
         },
         upsert: true,

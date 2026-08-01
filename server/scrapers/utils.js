@@ -22,6 +22,25 @@ const parseSalaryRange = (text) => {
   return { from, to, frequency };
 };
 
+// Strip undefined values from a $set object. Scrapers set a field to undefined to
+// mean "leave whatever the DB already has" (e.g. detail-page fields for jobs whose
+// detail wasn't refetched this run) — without this, cached refreshes null them out.
+const omitUndefined = (obj) => {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+};
+
+// Parse a date-ish value; returns a valid Date or null. Prevents Invalid Date
+// objects from aborting whole bulkWrite batches at Mongoose cast time.
+const safeDate = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 // Shared upsert helper — builds bulkWrite ops for a batch of jobs
 const buildUpsertOps = (jobs, source, timestamp) =>
   jobs.map((job) => {
@@ -61,6 +80,8 @@ module.exports = {
   geocodeLocationBase,
   UPSERT_BATCH,
   parseSalaryRange,
+  omitUndefined,
+  safeDate,
   buildUpsertOps,
   batchUpsert,
 };

@@ -2,7 +2,7 @@
  * Idealist.org Non-Profit Jobs (Algolia API)
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, Job, geocodeLocationBase, UPSERT_BATCH, safeDate } = require('./utils');
 
 const IDEALIST_ALGOLIA_URL = 'https://NSV3AUESS7-dsn.algolia.net/1/indexes/idealist7-production/query';
 const IDEALIST_API_KEY = 'c2730ea10ab82787f2f3cc961e8c1e06';
@@ -68,8 +68,8 @@ const refreshIdealistJobs = async (timestamp) => {
         salaryRangeFrom: salaryFrom,
         salaryRangeTo: salaryTo,
         salaryFrequency: salaryFrom ? period : null,
-        fullTimePartTimeIndicator: raw.isFullTime ? 'Full-Time' : 'Part-Time',
-        postDate: raw.published ? new Date(raw.published * 1000) : null,
+        fullTimePartTimeIndicator: raw.isFullTime === true ? 'Full-Time' : raw.isFullTime === false ? 'Part-Time' : null,
+        postDate: typeof raw.published === 'number' ? safeDate(raw.published * 1000) : safeDate(raw.published),
         externalUrl: raw.url?.en ? `https://www.idealist.org${raw.url.en}` : null,
       };
 

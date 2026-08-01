@@ -57,6 +57,7 @@ const refreshNysJobs = async (timestamp) => {
 
   // Fetch detail pages in parallel batches
   const allJobs = [];
+  let failedDetails = 0;
   for (let i = 0; i < vacancyIds.length; i += NYS_CONCURRENCY) {
     const batch = vacancyIds.slice(i, i + NYS_CONCURRENCY);
     const results = await Promise.allSettled(
@@ -65,6 +66,8 @@ const refreshNysJobs = async (timestamp) => {
     for (const result of results) {
       if (result.status === 'fulfilled' && result.value['Vacancy ID']) {
         allJobs.push(result.value);
+      } else {
+        failedDetails++;
       }
     }
     if (i + NYS_CONCURRENCY < vacancyIds.length) {
@@ -76,6 +79,9 @@ const refreshNysJobs = async (timestamp) => {
     }
   }
 
+  if (failedDetails > 0) {
+    console.warn(`[refresh] NYS: ${failedDetails}/${vacancyIds.length} detail pages failed or were empty`);
+  }
   console.log(`[refresh] Scraped ${allJobs.length} NYS job details`);
 
   // Filter to NYC metro area only

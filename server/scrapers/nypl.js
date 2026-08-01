@@ -2,7 +2,7 @@
  * New York Public Library Jobs (Pinpoint ATS — public JSON endpoint)
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange, safeDate } = require('./utils');
 
 const NYPL_POSTINGS_URL = 'https://nypl.pinpointhq.com/postings.json';
 
@@ -41,7 +41,10 @@ const refreshNyplJobs = async (timestamp) => {
         salaryRangeTo: raw.compensation_maximum || salary.to,
         salaryFrequency: (raw.compensation_minimum || salary.from) ? (raw.compensation_frequency === 'yearly' ? 'Annual' : raw.compensation_frequency === 'hourly' ? 'Hourly' : salary.frequency || 'Annual') : null,
         fullTimePartTimeIndicator: raw.employment_type_text || null,
-        postDate: raw.published_at || null,
+        preferredSkills: raw.skills_knowledge_expertise || null,
+        // Pinpoint's postings.json exposes no published date (verified live) —
+        // stamp first-seen on insert so date sorting works for this source.
+        postUntil: safeDate(raw.deadline_at),
         externalUrl: raw.url || `https://nypl.pinpointhq.com/en/postings/${raw.id}`,
       };
 
@@ -52,7 +55,7 @@ const refreshNyplJobs = async (timestamp) => {
           filter: { jobId: job.jobId, source: 'nypl' },
           update: {
             $set: { ...job, source: 'nypl', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
+            $setOnInsert: { savedBy: [], postDate: timestamp },
           },
           upsert: true,
         },

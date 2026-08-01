@@ -109,7 +109,6 @@ const refreshGuggenheimJobs = async (timestamp) => {
         salaryRangeTo: raw.salaryTo,
         salaryFrequency: raw.salaryFrequency,
         fullTimePartTimeIndicator: raw.employmentType || null,
-        postDate: null,
         externalUrl: `https://theapplicantmanager.com/jobs?pos=${raw.posCode}`,
       };
 
@@ -118,7 +117,8 @@ const refreshGuggenheimJobs = async (timestamp) => {
           filter: { jobId: job.jobId, source: 'guggenheim' },
           update: {
             $set: { ...job, source: 'guggenheim', coordinates: coords, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
+            // The listing exposes no posted date — stamp first-seen so date sorting works.
+            $setOnInsert: { savedBy: [], postDate: timestamp },
           },
           upsert: true,
         },

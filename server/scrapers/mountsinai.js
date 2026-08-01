@@ -2,7 +2,7 @@
  * Mount Sinai Health System (Jibe JSON API)
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, Job, geocodeLocationBase, UPSERT_BATCH, safeDate } = require('./utils');
 
 const MOUNTSINAI_API_URL = 'https://careers.mountsinai.org/api/jobs';
 const MOUNTSINAI_PAGE_SIZE = 100;
@@ -67,9 +67,9 @@ const refreshMountSinaiJobs = async (timestamp) => {
         jobCategory: d.categories?.[0]?.name || null,
         salaryRangeFrom: d.salary_min_value || null,
         salaryRangeTo: d.salary_max_value || null,
-        salaryFrequency: d.salary_min_value ? 'Hourly' : null,
+        salaryFrequency: d.salary_min_value ? (d.salary_min_value >= 1000 ? 'Annual' : 'Hourly') : null,
         fullTimePartTimeIndicator: d.employment_type === 'FULL_TIME' ? 'Full-Time' : d.employment_type === 'PART_TIME' ? 'Part-Time' : d.employment_type || null,
-        postDate: d.posted_date || null,
+        postDate: safeDate(d.posted_date),
         externalUrl: d.apply_url || d.meta_data?.canonical_url || null,
       };
 

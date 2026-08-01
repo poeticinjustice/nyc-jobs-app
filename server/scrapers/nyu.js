@@ -1,4 +1,4 @@
-const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange, safeDate } = require('./utils');
 
 // ---------------------------------------------------------------------------
 // NYU Jobs (iCIMS)
@@ -48,9 +48,9 @@ const scrapeNyuDetail = async (jobId) => {
   });
 
   // Parse salary from page text
-  const { from: salaryFrom, to: salaryTo } = parseSalaryRange($.text());
+  const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange($.text());
 
-  return { jsonLd, salaryFrom, salaryTo };
+  return { jsonLd, salaryFrom, salaryTo, salaryFrequency };
 };
 
 const refreshNyuJobs = async (timestamp) => {
@@ -72,6 +72,22 @@ const refreshNyuJobs = async (timestamp) => {
   } catch (err) {
     console.warn('[refresh] NYU listing fetch failed:', err.message);
     return { upserted: 0, modified: 0 };
+  }
+
+  // Dedupe across pages — the same job can appear on multiple listing pages,
+  // and duplicate upsert ops in one bulkWrite can throw E11000 on the unique index.
+  {
+    const seenIds = new Set();
+    const deduped = allJobIds.filter((j) => {
+      if (seenIds.has(j.id)) return false;
+      seenIds.add(j.id);
+      return true;
+    });
+    if (deduped.length < allJobIds.length) {
+      console.log(`[refresh] NYU: removed ${allJobIds.length - deduped.length} duplicate listings across pages`);
+    }
+    allJobIds.length = 0;
+    allJobIds.push(...deduped);
   }
 
   console.log(`[refresh] Found ${allJobIds.length} NYU job IDs`);
@@ -118,10 +134,10 @@ const refreshNyuJobs = async (timestamp) => {
         jobCategory: ld.occupationalCategory || null,
         salaryRangeFrom: raw.salaryFrom,
         salaryRangeTo: raw.salaryTo,
-        salaryFrequency: raw.salaryFrom ? 'Annual' : null,
+        salaryFrequency: raw.salaryFrom ? (raw.salaryFrequency || 'Annual') : null,
         fullTimePartTimeIndicator: ld.employmentType || null,
-        postDate: ld.datePosted || null,
-        postUntil: ld.validThrough || null,
+        postDate: safeDate(ld.datePosted),
+        postUntil: safeDate(ld.validThrough),
         externalUrl: ld.url || `${NYU_DETAIL_URL}/${raw.id}/job`,
       };
 

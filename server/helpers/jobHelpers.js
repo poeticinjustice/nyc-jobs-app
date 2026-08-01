@@ -26,8 +26,11 @@ const decodeHtmlEntities = (text) => {
   });
 };
 
-// Clean and decode text, fixing double-encoded UTF-8 from NYC API
-const cleanText = (text) => {
+// Clean and decode text, fixing double-encoded UTF-8 from NYC API.
+// addBreaks: convert multi-space runs to <br><br> paragraph markers — only
+// wanted for long-form fields; scalar fields (titles, agency, locations) must
+// stay plain text.
+const cleanText = (text, addBreaks = true) => {
   if (!text) return text;
 
   let cleaned = decodeHtmlEntities(text);
@@ -53,10 +56,15 @@ const cleanText = (text) => {
     .replace(/\u00c2\u00b3/g, '\u00b3')
     .replace(/\u00c2\u00bc/g, '\u00bc')
     .replace(/\u00c2\u00bd/g, '\u00bd')
-    .replace(/\u00c2\u00be/g, '\u00be')
+    .replace(/\u00c2\u00be/g, '\u00be');
 
+  if (addBreaks) {
     // Convert 2+ consecutive spaces to paragraph breaks, but preserve list formatting
-    .replace(/(?<!^|\n|\r|\t|\s*[•\-*+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
+    cleaned = cleaned.replace(/(?<!^|\n|\r|\t|\s*[•\-*+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
+  } else {
+    // Scalar fields: collapse space runs instead (newlines untouched)
+    cleaned = cleaned.replace(/[^\S\n]{2,}/g, ' ');
+  }
 
   return cleaned;
 };
@@ -80,19 +88,30 @@ const formatJobDescription = (text) => {
   return formatted;
 };
 
-// Clean all text fields on a raw NYC API job object (snake_case)
-const TEXT_FIELDS = [
-  'business_title', 'civil_service_title', 'job_category', 'work_location',
-  'work_location_1', 'division_work_unit', 'agency', 'job_description',
-  'minimum_qual_requirements', 'preferred_skills', 'additional_information',
-  'to_apply', 'hours_shift', 'residency_requirement',
+// Clean all text fields on a raw NYC API job object (snake_case).
+// Long-form fields get <br><br> paragraph markers; scalar fields must not —
+// a double space inside a title/agency/location would otherwise render as
+// literal "<br><br>" in plain-text contexts.
+const LONG_TEXT_FIELDS = [
+  'job_description', 'minimum_qual_requirements', 'preferred_skills',
+  'additional_information', 'to_apply', 'residency_requirement',
 ];
+const SCALAR_TEXT_FIELDS = [
+  'business_title', 'civil_service_title', 'job_category', 'work_location',
+  'work_location_1', 'division_work_unit', 'agency', 'hours_shift',
+];
+const TEXT_FIELDS = [...LONG_TEXT_FIELDS, ...SCALAR_TEXT_FIELDS];
 
 const cleanJobFields = (job) => {
   const cleaned = { ...job };
-  for (const field of TEXT_FIELDS) {
+  for (const field of LONG_TEXT_FIELDS) {
     if (cleaned[field]) {
       cleaned[field] = cleanText(cleaned[field]);
+    }
+  }
+  for (const field of SCALAR_TEXT_FIELDS) {
+    if (cleaned[field]) {
+      cleaned[field] = cleanText(cleaned[field], false);
     }
   }
   return cleaned;
@@ -202,15 +221,21 @@ const transformNysJob = (nys) => {
   const salaryStr = nys['Salary Range'] || '';
   const rangeMatch = salaryStr.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(?:to|-)\s*\$\s*([\d,]+(?:\.\d+)?)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
   const singleMatch = !rangeMatch && salaryStr.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
+  // Normalize NYS's adverb forms to the app-wide values ('Annually' -> 'Annual')
+  const normalizeFrequency = (freq) => {
+    if (!freq) return 'Annual';
+    const map = { annually: 'Annual', hourly: 'Hourly', daily: 'Daily', monthly: 'Monthly', 'bi-weekly': 'Bi-Weekly' };
+    return map[freq.toLowerCase()] || freq;
+  };
   if (rangeMatch) {
     salaryRangeFrom = parseFloat(rangeMatch[1].replace(/,/g, ''));
     salaryRangeTo = parseFloat(rangeMatch[2].replace(/,/g, ''));
     // If from === to, it's a single rate (e.g., "$22.59 to $22.59 Hourly")
     if (salaryRangeFrom === salaryRangeTo) salaryRangeTo = null;
-    salaryFrequency = rangeMatch[3] || 'Annual';
+    salaryFrequency = normalizeFrequency(rangeMatch[3]);
   } else if (singleMatch) {
     salaryRangeFrom = parseFloat(singleMatch[1].replace(/,/g, ''));
-    salaryFrequency = singleMatch[2] || 'Annual';
+    salaryFrequency = normalizeFrequency(singleMatch[2]);
   }
 
   // Parse dates from MM/DD/YY format

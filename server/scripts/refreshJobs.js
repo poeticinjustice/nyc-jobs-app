@@ -41,17 +41,39 @@ const refreshNychhcJobs = require('../scrapers/nychhc');
 const cleanupStaleJobs = async (timestamp, counts) => {
   // Safety: only clean up a source if we actually fetched a meaningful number of jobs.
   // If an API returned 0 (e.g. outage), don't purge that source's jobs.
+  // Small sources (museums etc.) get a threshold of 1 — their normal inventory
+  // can be at or below a larger threshold, which would mean filled positions
+  // are never purged and stay listed forever.
   const thresholds = {
     nyc: 100, federal: 10, nys: 50, cuny: 10, nyu: 10, fordham: 5, pa: 3,
-    mountsinai: 50, idealist: 50, columbia: 20, nyp: 20, northwell: 50,
-    nyulangone: 50, newschool: 5, amtrak: 3, un: 10, amnh: 5, metmuseum: 3,
-    frick: 3, guggenheim: 3, msk: 10, montefiore: 20, nypl: 3, nychhc: 10,
+    mountsinai: 50, idealist: 50, columbia: 20, nyp: 20, northwell: 20,
+    nyulangone: 50, newschool: 5, amtrak: 1, un: 10, amnh: 2, metmuseum: 1,
+    frick: 1, guggenheim: 1, msk: 10, montefiore: 20, nypl: 1, nychhc: 10,
   };
 
-  const sourceFilter = Object.entries(thresholds)
-    .filter(([src, min]) => (counts[src] || 0) > min)
-    .map(([src]) => src);
+  // Current stored count per source, to detect partial fetches: a scraper that
+  // errors mid-pagination reports its partial list as success, and without this
+  // guard everything beyond the failure point would be purged as stale.
+  const storedCounts = {};
+  const grouped = await Job.aggregate([{ $group: { _id: '$source', n: { $sum: 1 } } }]);
+  for (const g of grouped) storedCounts[g._id] = g.n;
 
+  const sourceFilter = [];
+  const partialSkipped = [];
+  for (const [src, min] of Object.entries(thresholds)) {
+    const fetched = counts[src] || 0;
+    if (fetched < min) continue; // not enough evidence the source responded
+    const stored = storedCounts[src] || 0;
+    if (stored >= 10 && fetched < stored * 0.5) {
+      partialSkipped.push(`${src} (${fetched}/${stored})`);
+      continue;
+    }
+    sourceFilter.push(src);
+  }
+
+  if (partialSkipped.length > 0) {
+    console.warn(`[refresh] Cleanup skipped for possibly-partial fetches: ${partialSkipped.join(', ')}`);
+  }
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
     return 0;
@@ -172,4 +194,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { refreshAllJobs };
+module.exports = { refreshAllJobs, cleanupStaleJobs };

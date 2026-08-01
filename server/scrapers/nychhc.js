@@ -6,7 +6,7 @@
  * careers sit behind a PeopleSoft login wall and are not scrapable.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange, omitUndefined, safeDate } = require('./utils');
 
 const NYCHHC_API_BASE = 'https://providercareers.nychealthandhospitals.org/api/job';
 const NYCHHC_PAGE_SIZE = 50;
@@ -55,16 +55,28 @@ const refreshNychhcJobs = async (timestamp) => {
 
   console.log(`[refresh] Fetched ${allJobs.length} NYC H+H provider jobs`);
 
-  // Fetch details in batches for full descriptions
+  // Only fetch details for jobs we don't already have a description for —
+  // previously every job's detail endpoint was hit on every 6-hour run.
+  const jobIdOf = (raw) => raw.jobId?.toString() || raw.id;
+  const existingJobs = await Job.find(
+    { source: 'nychhc', jobId: { $in: allJobs.map(jobIdOf) } },
+    { jobId: 1, jobDescription: 1 }
+  ).lean();
+  const existingById = new Map(existingJobs.map((j) => [j.jobId, j]));
+  const hasDesc = new Set(existingJobs.filter((j) => j.jobDescription).map((j) => j.jobId));
+
+  const needsDetail = allJobs.filter((raw) => !hasDesc.has(jobIdOf(raw)));
+  console.log(`[refresh] NYC H+H: fetching ${needsDetail.length} detail pages (${allJobs.length - needsDetail.length} cached)`);
+
   const DETAIL_CONCURRENCY = 5;
   const DETAIL_DELAY = 200;
-  for (let i = 0; i < allJobs.length; i += DETAIL_CONCURRENCY) {
-    const batch = allJobs.slice(i, i + DETAIL_CONCURRENCY);
+  for (let i = 0; i < needsDetail.length; i += DETAIL_CONCURRENCY) {
+    const batch = needsDetail.slice(i, i + DETAIL_CONCURRENCY);
     const details = await Promise.all(batch.map((j) => fetchJobDetail(j.id)));
     details.forEach((detail, idx) => {
-      if (detail) allJobs[i + idx]._detail = detail;
+      if (detail) batch[idx]._detail = detail;
     });
-    if (i + DETAIL_CONCURRENCY < allJobs.length) {
+    if (i + DETAIL_CONCURRENCY < needsDetail.length) {
       await new Promise((r) => setTimeout(r, DETAIL_DELAY));
     }
   }
@@ -75,25 +87,33 @@ const refreshNychhcJobs = async (timestamp) => {
   for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
     const slice = allJobs.slice(i, i + UPSERT_BATCH);
     const ops = slice.map((raw) => {
+      const hasDetail = Boolean(raw._detail);
       const detail = raw._detail || {};
+      const existing = existingById.get(jobIdOf(raw));
       const salary = parseSalaryRange(detail.totalCompensation);
 
+      // Detail-derived fields: undefined = keep stored values for cached jobs
+      // (omitUndefined strips them from $set).
+      const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
+
       const job = {
-        jobId: raw.jobId?.toString() || raw.id,
+        jobId: jobIdOf(raw),
         businessTitle: raw.title || detail.title || null,
         agency: raw.dataSource === 'PAGNY' ? 'NYC H+H / PAGNY' : 'NYC Health + Hospitals',
         workLocation: raw.facilityName || detail.facilityName || null,
         workLocation1: raw.boroughName || detail.boroughName || null,
         divisionWorkUnit: raw.departmentName || detail.departmentName || null,
-        jobDescription: detail.description || null,
-        minimumQualRequirements: detail.qualifications || null,
+        jobDescription: keep(detail.description),
+        minimumQualRequirements: keep(detail.qualifications),
         jobCategory: raw.jobCategoryName || detail.jobCategoryName || null,
-        salaryRangeFrom: detail.minSalary || salary.from,
-        salaryRangeTo: detail.maxSalary || salary.to,
-        salaryFrequency: (detail.minSalary || salary.from) ? 'Annual' : null,
+        salaryRangeFrom: keep(detail.minSalary || salary.from),
+        salaryRangeTo: keep(detail.maxSalary || salary.to),
+        salaryFrequency: keep((detail.minSalary || salary.from) ? 'Annual' : null),
         fullTimePartTimeIndicator: raw.jobTypeName || detail.jobTypeName || null,
-        postDate: raw.modifiedDate || null,
-        externalUrl: detail.jobApplyUrl || `https://providercareers.nychealthandhospitals.org/search/${raw.id}`,
+        postDate: safeDate(raw.modifiedDate),
+        externalUrl: hasDetail || !existing
+          ? (detail.jobApplyUrl || `https://providercareers.nychealthandhospitals.org/search/${raw.id}`)
+          : undefined,
       };
 
       const lat = raw.latitude ? parseFloat(raw.latitude) : null;
@@ -104,7 +124,7 @@ const refreshNychhcJobs = async (timestamp) => {
         updateOne: {
           filter: { jobId: job.jobId, source: 'nychhc' },
           update: {
-            $set: { ...job, source: 'nychhc', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
+            $set: omitUndefined({ ...job, source: 'nychhc', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp }),
             $setOnInsert: { savedBy: [] },
           },
           upsert: true,
