@@ -717,7 +717,7 @@ const JobSearch = () => {
             <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
               <div className='bg-white/60 rounded-lg p-4'>
                 <div className='text-blue-600 font-medium mb-1'>
-                  24 Sources
+                  {SOURCE_OPTIONS.length - 1} Sources
                 </div>
                 <div className='text-blue-700'>
                   City, state, federal, universities, hospitals, museums, and more

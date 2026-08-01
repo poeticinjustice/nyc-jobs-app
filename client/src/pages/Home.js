@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { getDashboard } from '../store/slices/dashboardSlice';
+import { SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 import {
   HiSearch,
   HiBookmark,
@@ -394,7 +395,7 @@ const Home = () => {
             Browse Jobs
           </h3>
           <p className='text-sm text-gray-600'>
-            Search across 24 NYC-area employers
+            Search across {SOURCE_OPTIONS.length - 1} NYC-area employers
           </p>
         </button>
 
