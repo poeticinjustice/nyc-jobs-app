@@ -149,7 +149,10 @@ router.put(
     body('lastName').optional().trim().isLength({ min: 1, max: NAME_MAX }),
     body('email').optional().isEmail().normalizeEmail(),
     body('role').optional().isIn(USER_ROLE_VALUES),
-    body('isActive').optional().isBoolean(),
+    // toBoolean matters: without it a JSON string "false" passes isBoolean but
+    // slips through the strict `isActive === false` self-guard below, and
+    // Mongoose would still cast it and deactivate the account.
+    body('isActive').optional().isBoolean().toBoolean(),
   ],
   async (req, res) => {
     try {
@@ -180,28 +183,16 @@ router.put(
       // An admin can reach these fields for their own account, so without a
       // guard two clicks in the admin UI can strip your own access with no way
       // back — there is no CLI to restore it. DELETE /:id already refuses
-      // self-deactivation; do the same here.
+      // self-deactivation; do the same here. This is also what keeps the app
+      // from losing its last admin: every requester is an active user (the
+      // auth middleware rejects deactivated accounts), so any change to
+      // *another* admin always leaves at least the requester in place.
       if (isSelf) {
         if (role !== undefined && role !== user.role) {
           return res.status(400).json({ message: 'Cannot change your own role' });
         }
         if (isActive === false) {
           return res.status(400).json({ message: 'Cannot deactivate your own account' });
-        }
-      }
-
-      // …and the same applies to the last admin standing, self or not.
-      const losingAdmin =
-        user.role === 'admin' && user.isActive &&
-        ((role !== undefined && role !== 'admin') || isActive === false);
-      if (losingAdmin) {
-        const otherAdmins = await User.countDocuments({
-          _id: { $ne: user._id },
-          role: 'admin',
-          isActive: true,
-        });
-        if (otherAdmins === 0) {
-          return res.status(400).json({ message: 'Cannot remove the last active admin' });
         }
       }
 

@@ -183,6 +183,20 @@ describe('PUT /api/users/:id', () => {
     expect((await User.findById(admin._id)).isActive).toBe(true);
   });
 
+  it('a string "false" cannot slip past the self-deactivation guard', async () => {
+    // isBoolean() accepts the string form; without toBoolean() it would dodge
+    // the strict `isActive === false` check and Mongoose would still cast it.
+    const { user: admin, token } = await createAdminUser();
+
+    const res = await request(app)
+      .put(`/api/users/${admin._id}`)
+      .set('Authorization', authHeader(token))
+      .send({ isActive: 'false' });
+
+    expect(res.status).toBe(400);
+    expect((await User.findById(admin._id)).isActive).toBe(true);
+  });
+
   it('re-sending an admin their own unchanged role is not treated as a demotion', async () => {
     const { user: admin, token } = await createAdminUser();
 
@@ -195,24 +209,20 @@ describe('PUT /api/users/:id', () => {
     expect(res.body.user.firstName).toBe('Ada');
   });
 
-  it('refuses to demote the last active admin', async () => {
-    const { token: firstToken } = await createAdminUser();
-    const { user: second } = await createAdminUser();
+  it('an admin can still demote another admin', async () => {
+    // The self-guards must not block legitimate cross-admin changes. Since
+    // every requester is an active user, demoting someone else always leaves
+    // the requester — the app cannot reach zero admins through this route.
+    const { token } = await createAdminUser();
+    const { user: other } = await createAdminUser();
 
-    // Two admins: demoting one is fine.
-    const ok = await request(app)
-      .put(`/api/users/${second._id}`)
-      .set('Authorization', authHeader(firstToken))
+    const res = await request(app)
+      .put(`/api/users/${other._id}`)
+      .set('Authorization', authHeader(token))
       .send({ role: 'user' });
-    expect(ok.status).toBe(200);
 
-    // Now only one admin is left, and a second admin cannot remove them.
-    const { user: third, token: thirdToken } = await createAdminUser();
-    const blocked = await request(app)
-      .put(`/api/users/${third._id}`)
-      .set('Authorization', authHeader(thirdToken))
-      .send({ isActive: false });
-    expect(blocked.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe('user');
   });
 });
 
