@@ -15,7 +15,7 @@ const scraperRunSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: [...JOB_SOURCES, 'mta'],
+      enum: JOB_SOURCES,
       required: true,
     },
     startedAt: {

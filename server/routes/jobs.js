@@ -747,7 +747,7 @@ router.get(
 
       // Sources that have never reported a run at all
       const seen = new Set(sources.map((s) => s.source));
-      const missing = [...JOB_SOURCES, 'mta'].filter((s) => !seen.has(s));
+      const missing = JOB_SOURCES.filter((s) => !seen.has(s));
 
       const history = await ScraperRun.find({})
         .select('runId source status upserted modified storedAfter durationMs startedAt')
