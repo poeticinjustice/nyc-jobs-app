@@ -707,14 +707,23 @@ router.get(
   [authenticateToken, requireRole(['admin'])],
   async (req, res) => {
     try {
+      // The baseline must come from runs that actually fetched something.
+      // Failed and empty runs store upserted/modified as 0 (schema defaults),
+      // so averaging over all of them drags the baseline toward zero — after a
+      // stretch of failures it falls under the `avgFetched > 10` gate and the
+      // drop check silently stops firing, exactly when a source limps back
+      // degraded. $$REMOVE omits the value so $avg skips it entirely.
+      const PRODUCTIVE = { $in: ['$status', ['ok', 'partial']] };
       const latest = await ScraperRun.aggregate([
         { $sort: { startedAt: -1 } },
         {
           $group: {
             _id: '$source',
             latest: { $first: '$$ROOT' },
-            avgFetched: { $avg: { $add: ['$upserted', '$modified'] } },
-            runs: { $sum: 1 },
+            avgFetched: {
+              $avg: { $cond: [PRODUCTIVE, { $add: ['$upserted', '$modified'] }, '$$REMOVE'] },
+            },
+            runs: { $sum: { $cond: [PRODUCTIVE, 1, 0] } },
           },
         },
         { $sort: { _id: 1 } },

@@ -139,7 +139,10 @@ router.get(
 // @access  Private
 router.patch(
   '/:id/alerts',
-  [authenticateToken, validateObjectId, body('enabled').isBoolean()],
+  // toBoolean covers every form isBoolean accepts (true/"true"/1/"1" and the
+  // false equivalents). Comparing by hand missed the numeric ones, so
+  // { enabled: 1 } turned alerts *off*.
+  [authenticateToken, validateObjectId, body('enabled').isBoolean().toBoolean()],
   async (req, res) => {
     try {
       const errors = validationResult(req);
@@ -147,7 +150,7 @@ router.patch(
         return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
       }
 
-      const enabled = req.body.enabled === true || req.body.enabled === 'true';
+      const enabled = req.body.enabled;
       const update = { alertsEnabled: enabled };
       // Enabling starts the clock now, so the existing backlog isn't emailed
       if (enabled) update.lastNotifiedAt = new Date();

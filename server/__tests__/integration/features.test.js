@@ -240,6 +240,48 @@ describe('Scraper health', () => {
     const nypl = res.body.sources.find((s) => s.source === 'nypl');
     expect(nypl.flatlined).toBe(true);
   });
+
+  it('still flags a collapse after an outage, rather than resetting the baseline', async () => {
+    // Failed and empty runs store 0/0, so averaging over them drags the
+    // baseline under the `avgFetched > 10` gate and the drop check stops
+    // firing — precisely when a source comes back degraded.
+    const { token } = await createAdminUser();
+    let t = 0;
+    const at = () => new Date(Date.now() + (t++ * 1000));
+
+    for (let i = 0; i < 4; i++) {
+      await seedRun({ source: 'nys', startedAt: at(), upserted: 40, modified: 0 });
+    }
+    for (let i = 0; i < 12; i++) {
+      await seedRun({ source: 'nys', startedAt: at(), status: 'failed', error: 'outage', upserted: 0, modified: 0 });
+    }
+    // Back up, but returning a trickle against a real baseline of 40.
+    await seedRun({ source: 'nys', startedAt: at(), upserted: 2, modified: 0 });
+
+    const res = await request(app)
+      .get('/api/jobs/admin/scraper-health')
+      .set('Authorization', authHeader(token));
+
+    const nys = res.body.sources.find((s) => s.source === 'nys');
+    expect(nys.status).toBe('ok');
+    expect(nys.fetched).toBe(2);
+    // The 12 failures are excluded; the 5 productive runs average (4x40 + 2)/5.
+    expect(nys.avgFetched).toBe(32);
+    expect(nys.flatlined).toBe(true);
+  });
+
+  it('does not divide by zero when every run for a source failed', async () => {
+    const { token } = await createAdminUser();
+    await seedRun({ source: 'msk', status: 'failed', error: 'boom', upserted: 0, modified: 0 });
+
+    const res = await request(app)
+      .get('/api/jobs/admin/scraper-health')
+      .set('Authorization', authHeader(token));
+
+    const msk = res.body.sources.find((s) => s.source === 'msk');
+    expect(msk.avgFetched).toBe(0);
+    expect(msk.flatlined).toBe(true);
+  });
 });
 
 describe('Saved-search alerts', () => {
@@ -315,6 +357,28 @@ describe('Saved-search alerts', () => {
       .set('Authorization', authHeader(token))
       .send({ enabled: false });
     expect(off.body.search.alertsEnabled).toBe(false);
+  });
+
+  it.each([
+    [1, true],
+    ['1', true],
+    ['true', true],
+    [0, false],
+    ['0', false],
+    ['false', false],
+  ])('accepts %p as %p', async (input, expected) => {
+    // isBoolean() lets all of these through, so the handler has to agree with
+    // it — comparing against true/'true' by hand read 1 and '1' as "off".
+    const { user, token } = await createTestUser();
+    const search = await makeSearch(user._id, { alertsEnabled: !expected });
+
+    const res = await request(app)
+      .patch(`/api/searches/${search._id}/alerts`)
+      .set('Authorization', authHeader(token))
+      .send({ enabled: input });
+
+    expect(res.status).toBe(200);
+    expect(res.body.search.alertsEnabled).toBe(expected);
   });
 
   it("does not expose or mutate another user's saved search", async () => {
