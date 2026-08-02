@@ -83,7 +83,7 @@ router.get('/export', authenticateToken, async (req, res) => {
 router.get('/job/:jobId', authenticateToken, async (req, res) => {
   try {
     const { jobId } = req.params;
-    const pageNum = parseInt(req.query.page) || 1;
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
     const limitNum = Math.min(parseInt(req.query.limit) || 20, 100);
 
     const queryFilter = {
@@ -189,7 +189,7 @@ router.get(
       }
 
       const { jobId, type, priority } = req.query;
-      const pageNum = parseInt(req.query.page) || 1;
+      const pageNum = Math.max(1, parseInt(req.query.page) || 1);
       const limitNum = Math.min(parseInt(req.query.limit) || 20, 100);
 
       const queryFilter = { user: req.user._id, status: 'active' };

@@ -205,6 +205,99 @@ describe('Pagination and identifier edges', () => {
     expect([200, 404]).toContain(res.status);
     if (res.status === 200) expect(res.body.source).toBe('nyc');
   });
+
+  // A repeated param and a bracketed param both arrive as arrays. Untyped,
+  // they reach escapeRegex() and $text and throw — so a crawler following
+  // "?q=a&q=b", or a double-submitted form, got a 500 rather than a 400.
+  describe('array-valued query params answer 400, never 500', () => {
+    const cases = [
+      ['/api/jobs/search?q=a&q=b', 'repeated q'],
+      ['/api/jobs/search?category[]=a', 'bracketed category'],
+      ['/api/jobs/search?location[]=a', 'bracketed location'],
+      ['/api/jobs/search?agency[]=a', 'bracketed agency'],
+      ['/api/jobs/search/export?q=a&q=b', 'repeated q on export'],
+      ['/api/jobs/map?keyword[]=a', 'bracketed keyword on map'],
+    ];
+
+    it.each(cases)('%s (%s)', async (url) => {
+      const res = await request(app).get(url);
+      expect(res.status).toBe(400);
+    });
+
+    it('still accepts the ordinary single-valued form', async () => {
+      expect((await request(app).get('/api/jobs/search?q=engineer')).status).toBe(200);
+    });
+  });
+
+  it('clamps a negative page on routes that do not validate it', async () => {
+    // parseInt('-5') is truthy, so `|| 1` never fired and skip went negative,
+    // which Mongo rejects outright.
+    const { token } = await createTestUser();
+    const res = await request(app)
+      .get('/api/notes/job/some-job-id?page=-5')
+      .set('Authorization', authHeader(token));
+    expect(res.status).toBe(200);
+    expect(res.body.pagination.page).toBe(1);
+  });
+});
+
+describe('Salary filtering across pay periods', () => {
+  // The raw salary columns hold whatever unit the source advertised, so
+  // comparing them directly put a $95/hour posting (~$198k a year) below a
+  // $60,000/year one. Filtering and sorting now use the annual equivalents.
+  beforeEach(async () => {
+    await createTestJob({
+      jobId: 'HOURLY-HIGH',
+      businessTitle: 'Consulting Engineer',
+      salaryRangeFrom: 95,
+      salaryRangeTo: 120,
+      salaryFrequency: 'Hourly',
+    });
+    await createTestJob({
+      jobId: 'ANNUAL-MID',
+      businessTitle: 'Staff Engineer',
+      salaryRangeFrom: 90000,
+      salaryRangeTo: 110000,
+      salaryFrequency: 'Annual',
+    });
+    await createTestJob({
+      jobId: 'HOURLY-LOW',
+      businessTitle: 'Assistant Engineer',
+      salaryRangeFrom: 16,
+      salaryRangeTo: 18,
+      salaryFrequency: 'Hourly',
+    });
+  });
+
+  const idsFrom = (res) => res.body.jobs.map((j) => j.jobId);
+
+  it('includes a high hourly rate in a six-figure minimum filter', async () => {
+    const res = await request(app).get('/api/jobs/search?salary_min=100000');
+    expect(res.status).toBe(200);
+    expect(idsFrom(res)).toContain('HOURLY-HIGH');
+    expect(idsFrom(res)).not.toContain('HOURLY-LOW');
+  });
+
+  it('excludes a high hourly rate from a low maximum filter', async () => {
+    const res = await request(app).get('/api/jobs/search?salary_max=60000');
+    expect(idsFrom(res)).not.toContain('HOURLY-HIGH');
+    expect(idsFrom(res)).toContain('HOURLY-LOW');
+  });
+
+  it('orders hourly and annual postings on one scale', async () => {
+    const asc = await request(app).get('/api/jobs/search?sort=salary_asc');
+    expect(idsFrom(asc)).toEqual(['HOURLY-LOW', 'ANNUAL-MID', 'HOURLY-HIGH']);
+
+    const desc = await request(app).get('/api/jobs/search?sort=salary_desc');
+    expect(idsFrom(desc)).toEqual(['HOURLY-HIGH', 'ANNUAL-MID', 'HOURLY-LOW']);
+  });
+
+  it('still reports the advertised figures, not the annualised ones', async () => {
+    const res = await request(app).get('/api/jobs/search?salary_min=100000');
+    const job = res.body.jobs.find((j) => j.jobId === 'HOURLY-HIGH');
+    expect(job.salaryRangeFrom).toBe(95);
+    expect(job.salaryFrequency).toBe('Hourly');
+  });
 });
 
 describe('Search sort options', () => {

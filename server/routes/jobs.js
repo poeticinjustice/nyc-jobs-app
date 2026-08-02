@@ -26,6 +26,7 @@ const {
 const router = express.Router();
 
 const SEARCH_EXPORT_LIMIT = 5000;
+const MAP_FEATURE_LIMIT = 5000;
 const BULK_STATUS_MAX = 100;
 const SCRAPER_HISTORY_LIMIT = 200;
 
@@ -53,24 +54,28 @@ const mapRateLimit = rateLimit({
   legacyHeaders: false,
 });
 
-// Monthly request counter (resets on 1st of each month)
-let mapMonthlyCount = 0;
-let mapMonthlyReset = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime();
-const MAP_MONTHLY_LIMIT = 25000;
-
-const mapMonthlyLimit = (req, res, next) => {
-  const now = Date.now();
-  if (now >= mapMonthlyReset) {
-    mapMonthlyCount = 0;
-    const d = new Date();
-    mapMonthlyReset = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
-  }
-  if (mapMonthlyCount >= MAP_MONTHLY_LIMIT) {
-    return res.status(429).json({ message: 'Monthly map request limit reached. Please try again next month.' });
-  }
-  mapMonthlyCount++;
-  next();
-};
+/**
+ * Longer-window map limiter, per IP.
+ *
+ * This used to be a single process-global counter: the per-IP minute limiter
+ * allows 30 req/min = 43,200 a day, which is 1.7x what was a *global* monthly
+ * budget of 25,000. One client looping the endpoint could therefore 429 the map
+ * for every other user — web and mobile — for the rest of the calendar month,
+ * with no way to reset it short of a redeploy.
+ *
+ * It also guarded nothing it was described as guarding: this route reads
+ * pre-geocoded coordinates out of Mongo and never calls Mapbox. Mapbox tile
+ * billing is driven by the browser loading tiles, not by this endpoint. So the
+ * cap exists purely to stop one client hammering the database, which is a
+ * per-client concern — hence a per-IP window rather than a shared pool.
+ */
+const mapDailyLimit = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 100000 : 2000,
+  message: 'Daily map request limit reached. Please try again tomorrow.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // --- Simple TTL cache for categories/agencies ---
 const cache = {};
@@ -93,9 +98,9 @@ router.get(
   '/map',
   [
     mapRateLimit,
-    mapMonthlyLimit,
+    mapDailyLimit,
     query('source').optional().isIn(VALID_SOURCE_FILTERS),
-    query('keyword').optional().trim(),
+    query('keyword').optional().isString().trim(),
     query('salary_min').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_min must be a number'),
     query('salary_max').optional().custom((v) => v === '' || !isNaN(v)).withMessage('salary_max must be a number'),
   ],
@@ -126,7 +131,7 @@ router.get(
       const jobs = await Job.find(filter)
         .select('jobId businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency source postDate jobCategory coordinates')
         .sort({ postDate: -1 })
-        .limit(5000)
+        .limit(MAP_FEATURE_LIMIT)
         .lean();
 
       const features = jobs.map((job) => {
@@ -154,7 +159,12 @@ router.get(
       res.json({
         type: 'FeatureCollection',
         features,
-        metadata: { total: features.length, geocoded: features.length },
+        // The filter already requires coordinates, so every feature here is
+        // geocoded by construction — reporting both numbers implied a
+        // difference that cannot exist. `truncated` is the useful signal:
+        // the query caps at MAP_FEATURE_LIMIT, and the client had no way to
+        // know it was looking at a partial map.
+        metadata: { total: features.length, truncated: features.length === MAP_FEATURE_LIMIT },
       });
     } catch (error) {
       console.error('Map data error:', error);
@@ -200,10 +210,12 @@ router.get(
   '/search',
   [
     optionalAuth,
-    query('q').optional().trim(),
-    query('category').optional().trim(),
-    query('location').optional().trim(),
-    query('agency').optional().trim(),
+    // isString first: a repeated param (?q=a&q=b) or ?category[]=a arrives as
+    // an array, which reaches escapeRegex/$text and 500s. Reject it as a 400.
+    query('q').optional().isString().trim(),
+    query('category').optional().isString().trim(),
+    query('location').optional().isString().trim(),
+    query('agency').optional().isString().trim(),
     query('salary_min')
       .optional()
       .custom((value) => {
@@ -579,10 +591,12 @@ router.get(
   '/search/export',
   [
     optionalAuth,
-    query('q').optional().trim(),
-    query('category').optional().trim(),
-    query('location').optional().trim(),
-    query('agency').optional().trim(),
+    // isString first: a repeated param (?q=a&q=b) or ?category[]=a arrives as
+    // an array, which reaches escapeRegex/$text and 500s. Reject it as a 400.
+    query('q').optional().isString().trim(),
+    query('category').optional().isString().trim(),
+    query('location').optional().isString().trim(),
+    query('agency').optional().isString().trim(),
     query('salary_min').optional().custom((v) => v === '' || !isNaN(v)),
     query('salary_max').optional().custom((v) => v === '' || !isNaN(v)),
     query('sort').optional().isIn(SORT_VALUES),

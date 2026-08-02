@@ -83,7 +83,7 @@ router.get(
       }
 
       const { page = '1', limit = '20', role, isActive } = req.query;
-      const pageNum = parseInt(page) || 1;
+      const pageNum = Math.max(1, parseInt(page) || 1);
       const limitNum = Math.min(parseInt(limit) || 20, 100);
 
       const queryFilter = {};
