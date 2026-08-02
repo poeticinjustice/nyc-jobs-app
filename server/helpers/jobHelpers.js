@@ -327,8 +327,10 @@ const buildSort = (sort) => {
     case 'date_asc': return { postDate: 1 };
     case 'title_asc': return { businessTitle: 1 };
     case 'title_desc': return { businessTitle: -1 };
-    case 'salary_desc': return { salaryRangeFrom: -1 };
-    case 'salary_asc': return { salaryRangeFrom: 1 };
+    // Annual equivalents, not the raw figures: sorting on the raw column put
+    // a $16/hour role above a $60,000/year one.
+    case 'salary_desc': return { annualSalaryFrom: -1 };
+    case 'salary_asc': return { annualSalaryFrom: 1 };
     case 'date_desc':
     default: return { postDate: -1 };
   }
@@ -383,7 +385,10 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
     filter.agency = new RegExp(escapeRegex(agency), 'i');
   }
 
-  // Salary overlap: job range overlaps with [salary_min, salary_max]
+  // Salary overlap: job range overlaps with [salary_min, salary_max].
+  // Compared on the annual columns — the raw ones hold whatever unit the source
+  // advertised, so a $95/hour posting (~$198k a year) was excluded by
+  // salary_min=100000 and matched by salary_max=60000.
   if (salary_min || salary_max) {
     const salaryConditions = [];
     if (salary_min) {
@@ -392,8 +397,8 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
         // Job's upper bound >= min (or lower bound if no upper)
         salaryConditions.push({
           $or: [
-            { salaryRangeTo: { $gte: min } },
-            { salaryRangeTo: null, salaryRangeFrom: { $gte: min } },
+            { annualSalaryTo: { $gte: min } },
+            { annualSalaryTo: null, annualSalaryFrom: { $gte: min } },
           ],
         });
       }
@@ -404,8 +409,8 @@ const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_m
         // Job's lower bound <= max (or upper bound if no lower)
         salaryConditions.push({
           $or: [
-            { salaryRangeFrom: { $lte: max } },
-            { salaryRangeFrom: null, salaryRangeTo: { $lte: max } },
+            { annualSalaryFrom: { $lte: max } },
+            { annualSalaryFrom: null, annualSalaryTo: { $lte: max } },
           ],
         });
       }

@@ -3,6 +3,7 @@
  */
 
 const { axios, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
+const { normalizeSalaryFrequency } = require('../helpers/salary');
 
 const NYPL_POSTINGS_URL = 'https://nypl.pinpointhq.com/postings.json';
 
@@ -34,7 +35,12 @@ const refreshNyplJobs = async (timestamp) => {
       jobCategory: raw.job?.department?.name || null,
       salaryRangeFrom: raw.compensation_minimum || salary.from,
       salaryRangeTo: raw.compensation_maximum || salary.to,
-      salaryFrequency: (raw.compensation_minimum || salary.from) ? (raw.compensation_frequency === 'yearly' ? 'Annual' : raw.compensation_frequency === 'hourly' ? 'Hourly' : salary.frequency || 'Annual') : null,
+      // The feed emits bare "hour"/"year"; a check for "hourly"/"yearly" matched
+      // neither and fell through to Annual, so hourly postings rendered as
+      // "$17.00 Annual". normalizeSalaryFrequency knows both spellings.
+      salaryFrequency: (raw.compensation_minimum || salary.from)
+        ? (normalizeSalaryFrequency(raw.compensation_frequency) || salary.frequency || 'Annual')
+        : null,
       fullTimePartTimeIndicator: raw.employment_type_text || null,
       preferredSkills: raw.skills_knowledge_expertise || null,
       postUntil: safeDate(raw.deadline_at),

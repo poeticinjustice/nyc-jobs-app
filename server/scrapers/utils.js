@@ -6,6 +6,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const Job = require('../models/Job');
 const { geocodeLocationBase } = require('../helpers/geocoding');
+const { deriveAnnualSalary } = require('../helpers/salary');
 
 const UPSERT_BATCH = 500;
 
@@ -76,6 +77,15 @@ const buildUpsertOps = (jobs, source, timestamp) =>
   jobs.map((job) => {
     const coords = resolveCoords(job, source);
     const { _lat, _lng, _coords, _setOnInsert, ...jobData } = job;
+
+    // Every scraper routes through here, so annualising once covers all 25
+    // sources — filtering and sorting compare annual figures while the raw
+    // columns keep the unit the posting was advertised in. Only computed when
+    // the scraper is actually writing a salary this run: leaving them undefined
+    // lets omitUndefined preserve what is stored for a cached job.
+    if (jobData.salaryRangeFrom !== undefined || jobData.salaryRangeTo !== undefined) {
+      deriveAnnualSalary(jobData);
+    }
 
     // A misspelt directive would otherwise fall through to jobData and be
     // stored as a document field — silently doing nothing while the scraper
