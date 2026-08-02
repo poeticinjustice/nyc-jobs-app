@@ -13,7 +13,9 @@ const Job = require('../models/Job');
 const SavedSearch = require('../models/SavedSearch');
 const User = require('../models/User');
 const { buildSearchFilter, buildSort } = require('./jobHelpers');
-const { isEmailConfigured, sendMail } = require('./mailer');
+// Imported as a namespace, not destructured: the delivery boundary is the one
+// thing worth substituting in a test, and a destructured binding cannot be.
+const mailer = require('./mailer');
 
 const MATCH_PREVIEW_LIMIT = 5;
 const EMAIL_JOB_LIMIT = 10;
@@ -122,7 +124,7 @@ const runSavedSearchAlerts = async ({ appUrl = process.env.APP_URL || '' } = {})
   }
   if (searches.length === 0) return stats;
 
-  const emailOn = isEmailConfigured();
+  const emailOn = mailer.isEmailConfigured();
   const userIds = [...new Set(searches.map((s) => String(s.user)))];
   const users = await User.find({ _id: { $in: userIds }, isActive: true })
     .select('email firstName')
@@ -139,6 +141,10 @@ const runSavedSearchAlerts = async ({ appUrl = process.env.APP_URL || '' } = {})
     const since = search.lastNotifiedAt || search.lastSeenAt || search.createdAt;
 
     try {
+      // Take the watermark BEFORE querying. Stamping it afterwards would skip
+      // any job inserted while this search was being processed.
+      const checkedAt = new Date();
+
       const filter = buildNewMatchFilter(search.criteria || {}, since);
       const total = await Job.countDocuments(filter);
       if (total === 0) continue;
@@ -146,20 +152,34 @@ const runSavedSearchAlerts = async ({ appUrl = process.env.APP_URL || '' } = {})
       stats.notified++;
       stats.totalNewJobs += total;
 
-      if (emailOn) {
-        const jobs = await Job.find(filter)
-          .select('businessTitle agency salaryRangeFrom salaryRangeTo salaryFrequency')
-          .sort(buildSort(search.criteria?.sort))
-          .limit(EMAIL_JOB_LIMIT)
-          .lean();
-        const { subject, text, html } = buildAlertEmail(search, jobs, total, appUrl);
-        const sent = await sendMail({ to: user.email, subject, text, html });
-        if (sent) stats.emailsSent++;
+      // Email is not configured — leave lastNotifiedAt alone. Advancing it
+      // here would consume the backlog: over a fortnight of 6-hourly runs the
+      // cursor walks forward while nothing is delivered, so the day SMTP is
+      // finally configured every job accumulated in between is already behind
+      // the watermark and is never sent. Unconfigured SMTP is the documented
+      // default in render.yaml, so this is the normal path, not an edge case.
+      if (!emailOn) continue;
+
+      const jobs = await Job.find(filter)
+        .select('businessTitle agency salaryRangeFrom salaryRangeTo salaryFrequency')
+        .sort(buildSort(search.criteria?.sort))
+        .limit(EMAIL_JOB_LIMIT)
+        .lean();
+      const { subject, text, html } = buildAlertEmail(search, jobs, total, appUrl);
+      const sent = await mailer.sendMail({ to: user.email, subject, text, html });
+
+      // sendMail swallows transport errors and returns false, so a failed send
+      // is invisible. Only move the watermark once mail is actually away —
+      // otherwise that batch is excluded from every future window.
+      if (!sent) {
+        console.warn(`[alerts] Search "${search.name}": send failed, leaving watermark for retry`);
+        continue;
       }
+      stats.emailsSent++;
 
       await SavedSearch.updateOne(
         { _id: search._id },
-        { $set: { lastNotifiedAt: new Date() } }
+        { $set: { lastNotifiedAt: checkedAt } }
       );
     } catch (err) {
       console.error(`[alerts] Search "${search.name}" failed:`, err.message);

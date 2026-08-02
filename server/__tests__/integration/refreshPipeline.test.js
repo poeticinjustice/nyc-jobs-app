@@ -136,6 +136,10 @@ describe('refreshAllJobs pipeline', () => {
   });
 
   it('runs saved-search alerts as part of the cycle', async () => {
+    const mailer = require('../../helpers/mailer');
+    jest.spyOn(mailer, 'isEmailConfigured').mockReturnValue(true);
+    const send = jest.spyOn(mailer, 'sendMail').mockResolvedValue(true);
+
     const { user } = await createTestUser();
     const search = await SavedSearch.create({
       user: user._id,
@@ -145,10 +149,17 @@ describe('refreshAllJobs pipeline', () => {
       lastNotifiedAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
-    await refreshAllJobs({ scrapers: [{ source: 'nyc', fn: fakeScraper('nyc', 3) }] });
+    try {
+      await refreshAllJobs({ scrapers: [{ source: 'nyc', fn: fakeScraper('nyc', 3) }] });
 
-    // The alert pass ran and moved the notification marker forward
-    const after = await SavedSearch.findById(search._id).lean();
-    expect(after.lastNotifiedAt.getTime()).toBeGreaterThan(search.lastNotifiedAt.getTime());
+      // The alert pass ran, delivered, and then moved the marker forward. The
+      // marker only advances on a successful send — otherwise a failed batch
+      // would be excluded from every future window.
+      expect(send).toHaveBeenCalled();
+      const after = await SavedSearch.findById(search._id).lean();
+      expect(after.lastNotifiedAt.getTime()).toBeGreaterThan(search.lastNotifiedAt.getTime());
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 });

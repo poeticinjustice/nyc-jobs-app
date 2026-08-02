@@ -488,25 +488,79 @@ describe('runSavedSearchAlerts', () => {
     expect(stats.emailsSent).toBe(0);
   });
 
-  it('advances lastNotifiedAt so the same jobs are not reported twice', async () => {
-    const { user } = await createTestUser();
-    const search = await SavedSearch.create({
-      user: user._id,
-      name: 'Alerting',
-      criteria: { q: 'engineer', source: 'all' },
-      alertsEnabled: true,
-      lastNotifiedAt: new Date(Date.now() - 60 * 60 * 1000),
+  // The watermark is what stops a job being emailed twice — and, if it moves
+  // when nothing was sent, what stops it being emailed at all. Cover all three
+  // outcomes: delivered, send failed, and SMTP not configured.
+  describe('lastNotifiedAt watermark', () => {
+    const mailer = require('../../helpers/mailer');
+
+    const alertingSearch = async () => {
+      const { user } = await createTestUser();
+      const search = await SavedSearch.create({
+        user: user._id,
+        name: 'Alerting',
+        criteria: { q: 'engineer', source: 'all' },
+        alertsEnabled: true,
+        lastNotifiedAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+      await createTestJob({ businessTitle: 'Bridge Engineer' });
+      return search;
+    };
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('advances after a successful send so the same jobs are not sent twice', async () => {
+      jest.spyOn(mailer, 'isEmailConfigured').mockReturnValue(true);
+      jest.spyOn(mailer, 'sendMail').mockResolvedValue(true);
+      const search = await alertingSearch();
+
+      const first = await runSavedSearchAlerts();
+      expect(first.emailsSent).toBe(1);
+
+      const after = await SavedSearch.findById(search._id).lean();
+      expect(after.lastNotifiedAt.getTime()).toBeGreaterThan(search.lastNotifiedAt.getTime());
+
+      const second = await runSavedSearchAlerts();
+      expect(second.notified).toBe(0);
     });
-    await createTestJob({ businessTitle: 'Bridge Engineer' });
 
-    await runSavedSearchAlerts();
-    const afterFirst = await SavedSearch.findById(search._id).lean();
-    expect(afterFirst.lastNotifiedAt.getTime()).toBeGreaterThan(
-      search.lastNotifiedAt.getTime()
-    );
+    it('does NOT advance when the send fails, so the batch is retried', async () => {
+      // sendMail swallows transport errors and returns false, so a failure is
+      // invisible — moving the watermark would drop those jobs forever.
+      jest.spyOn(mailer, 'isEmailConfigured').mockReturnValue(true);
+      const send = jest.spyOn(mailer, 'sendMail').mockResolvedValue(false);
+      const search = await alertingSearch();
 
-    const second = await runSavedSearchAlerts();
-    expect(second.notified).toBe(0);
+      const first = await runSavedSearchAlerts();
+      expect(first.emailsSent).toBe(0);
+
+      const after = await SavedSearch.findById(search._id).lean();
+      expect(after.lastNotifiedAt.getTime()).toBe(search.lastNotifiedAt.getTime());
+
+      // Next cycle still sees the batch and tries again
+      send.mockResolvedValue(true);
+      const second = await runSavedSearchAlerts();
+      expect(second.notified).toBe(1);
+      expect(second.emailsSent).toBe(1);
+    });
+
+    it('does NOT advance when SMTP is unconfigured, preserving the backlog', async () => {
+      // The documented default in render.yaml. Advancing here walked the cursor
+      // forward over days of runs that delivered nothing, so the backlog was
+      // already behind the watermark by the time SMTP was switched on.
+      jest.spyOn(mailer, 'isEmailConfigured').mockReturnValue(false);
+      const search = await alertingSearch();
+
+      await runSavedSearchAlerts();
+      const after = await SavedSearch.findById(search._id).lean();
+      expect(after.lastNotifiedAt.getTime()).toBe(search.lastNotifiedAt.getTime());
+
+      // Operator configures SMTP — the waiting job is still delivered
+      jest.spyOn(mailer, 'isEmailConfigured').mockReturnValue(true);
+      jest.spyOn(mailer, 'sendMail').mockResolvedValue(true);
+      const afterConfig = await runSavedSearchAlerts();
+      expect(afterConfig.emailsSent).toBe(1);
+    });
   });
 
   it('skips searches whose owner has been deactivated', async () => {
