@@ -1,4 +1,5 @@
 const request = require('supertest');
+const mongoose = require('mongoose');
 const { setupDB } = require('../setup');
 const { createTestUser, createTestJob, createSavedJob, createTestNote, authHeader } = require('../helpers/testHelpers');
 const Job = require('../../models/Job');
@@ -219,6 +220,79 @@ describe('GET /api/jobs/agencies', () => {
     const agencies = res.body.agencies;
     const sorted = [...agencies].sort();
     expect(agencies).toEqual(sorted);
+  });
+});
+
+describe('GET /api/jobs/saved — cross-user isolation', () => {
+  // One job saved by two people. Everything private to the OTHER person must
+  // stay out of the response, on every sort path and in the CSV export.
+  const twoUserJob = async () => {
+    const { user: other } = await createTestUser();
+    const { user: me, token } = await createTestUser();
+    const job = await createTestJob({
+      jobId: 'SHARED-1',
+      source: 'nyc',
+      savedBy: [
+        {
+          user: other._id,
+          savedAt: new Date(),
+          applicationStatus: 'interviewing',
+          statusUpdatedAt: new Date(),
+          interviewDate: new Date('2026-09-01'),
+          applicationDate: new Date('2026-08-15'),
+          statusHistory: [{ status: 'interviewing', changedAt: new Date() }],
+          documentLinks: [{ label: 'Resume', url: 'https://drive.example/other-private-resume' }],
+        },
+        {
+          user: me._id,
+          savedAt: new Date(),
+          applicationStatus: 'interested',
+          statusUpdatedAt: new Date(),
+          statusHistory: [{ status: 'interested', changedAt: new Date() }],
+        },
+      ],
+    });
+    return { other, me, token, job };
+  };
+
+  it.each(['updated_desc', 'saved_desc'])(
+    "does not expose another user's tracking data (sort=%s)",
+    async (sort) => {
+      const { other, token } = await twoUserJob();
+
+      const res = await request(app)
+        .get(`/api/jobs/saved?sort=${sort}`)
+        .set('Authorization', authHeader(token));
+
+      expect(res.status).toBe(200);
+      const [job] = res.body.jobs;
+      expect(job.savedBy).toBeUndefined();
+
+      const body = JSON.stringify(res.body);
+      expect(body).not.toContain('other-private-resume');
+      expect(body).not.toContain(String(other._id));
+      expect(body).not.toContain('2026-09-01');
+
+      // The requester still gets their OWN entry
+      expect(job.isSaved).toBe(true);
+      expect(job.applicationStatus).toBe('interested');
+    }
+  );
+
+  it("does not leak another user's tracking data through the CSV export", async () => {
+    const { other, token } = await twoUserJob();
+
+    const res = await request(app)
+      .get('/api/jobs/saved/export')
+      .set('Authorization', authHeader(token));
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.text).not.toContain('other-private-resume');
+    expect(res.text).not.toContain(String(other._id));
+    // The requester's own row is present, with their own status
+    expect(res.text).toContain('SHARED-1');
+    expect(res.text).toContain('interested');
   });
 });
 
@@ -718,6 +792,46 @@ describe('GET /api/jobs/health', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
+    expect(res.body.database).toBe('connected');
     expect(typeof res.body.jobsInDatabase).toBe('number');
+  });
+
+  // readyState is a non-configurable prototype getter, so shadow it with an
+  // own property on the connection — deleting that restores the real getter.
+  const withDisconnectedDb = async (fn) => {
+    Object.defineProperty(mongoose.connection, 'readyState', {
+      value: 0,
+      configurable: true,
+    });
+    try {
+      return await fn();
+    } finally {
+      delete mongoose.connection.readyState;
+    }
+  };
+
+  it('reports 503 when the database is not connected', async () => {
+    // Render keeps an instance in rotation on any 2xx, so answering 200 during
+    // an outage hides it completely and suppresses the restart.
+    await withDisconnectedDb(async () => {
+      const res = await request(app).get('/api/jobs/health');
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe('unavailable');
+      expect(res.body.database).toBe('disconnected');
+    });
+
+    // and recovers once the connection is back
+    const after = await request(app).get('/api/jobs/health');
+    expect(after.status).toBe(200);
+  });
+
+  it('answers immediately rather than waiting out a query buffer timeout', async () => {
+    // The previous version blocked ~30s on a buffered query before answering,
+    // long enough to trip the platform health-check deadline on its own.
+    await withDisconnectedDb(async () => {
+      const started = Date.now();
+      await request(app).get('/api/jobs/health');
+      expect(Date.now() - started).toBeLessThan(1000);
+    });
   });
 });

@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const { body, query, validationResult } = require('express-validator');
 const Job = require('../models/Job');
@@ -162,16 +163,35 @@ router.get(
   }
 );
 
-// Health check
+/**
+ * Readiness check — render.yaml points healthCheckPath here, and it is the
+ * endpoint an uptime monitor should watch.
+ *
+ * It must FAIL when the database is unreachable. It previously answered
+ * 200 {status:'ok'} from the catch block, so a total Atlas outage looked
+ * healthy: Render kept the dead instance in rotation and never restarted it
+ * while every real route was returning 500.
+ *
+ * readyState is checked before touching the database on purpose. With the
+ * connection down, a query buffers until it times out (~30s observed), which
+ * is long enough to blow the health-check deadline and cause flapping.
+ * The liveness counterpart, which deliberately touches nothing, is /api/health.
+ */
 router.get('/health', async (req, res) => {
+  // 1 === connected; 0 disconnected, 2 connecting, 3 disconnecting
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      status: 'unavailable',
+      database: 'disconnected',
+    });
+  }
+
   try {
     const count = await Job.estimatedDocumentCount();
-    res.json({
-      status: 'ok',
-      jobsInDatabase: count,
-    });
+    res.json({ status: 'ok', database: 'connected', jobsInDatabase: count });
   } catch (error) {
-    res.json({ status: 'ok', jobsInDatabase: 'unknown' });
+    console.error('Health check query failed:', error.message);
+    res.status(503).json({ status: 'unavailable', database: 'error' });
   }
 });
 
@@ -393,9 +413,12 @@ router.get('/saved', [
     ]);
     const noteCountMap = Object.fromEntries(noteCounts.map((n) => [n._id, n.count]));
 
-    const jobsWithStatus = jobs.map((job) => ({
+    // savedBy holds EVERY user's private tracking data — statuses, interview
+    // dates, document links. Strip it and hand the requester only their own
+    // entry, the same way /search, /admin and /:id already do.
+    const jobsWithStatus = jobs.map(({ savedBy, __v, ...job }) => ({
       ...job,
-      ...getUserSaveEntry(job, req.user._id),
+      ...getUserSaveEntry({ savedBy }, req.user._id),
       noteCount: noteCountMap[job.jobId] || 0,
     }));
 
