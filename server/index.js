@@ -19,6 +19,7 @@ if (missingOptional.length > 0) {
 const app = require('./app');
 const Job = require('./models/Job');
 const { refreshAllJobs } = require('./scripts/refreshJobs');
+const { backfillAnnualSalary } = require('./scripts/backfillAnnualSalary');
 let refreshRunning = false;
 
 const PORT = process.env.PORT || 8000;
@@ -40,6 +41,16 @@ mongoose
         .finally(() => { refreshRunning = false; });
     } else {
       console.log(`Database has ~${count} jobs`);
+
+      // Salary filtering reads annualSalaryFrom/To, which jobs written before
+      // those columns existed do not have — and a document missing them matches
+      // no salary filter at all, so every salary-filtered search would come
+      // back empty. A refresh cycle rewrites them, but the cron only fires at
+      // 00/06/12/18 UTC and this process may be asleep then, so waiting on it
+      // is not a guarantee. Run the backfill once instead; it is idempotent and
+      // costs a single indexed count once there is nothing left to do.
+      backfillAnnualSalary()
+        .catch((err) => console.error('Annual-salary backfill failed:', err.message));
     }
 
     // Schedule refresh every 6 hours (with overlap protection)
