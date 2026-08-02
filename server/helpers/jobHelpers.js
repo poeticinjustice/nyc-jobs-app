@@ -101,8 +101,6 @@ const SCALAR_TEXT_FIELDS = [
   'business_title', 'civil_service_title', 'job_category', 'work_location',
   'work_location_1', 'division_work_unit', 'agency', 'hours_shift',
 ];
-const TEXT_FIELDS = [...LONG_TEXT_FIELDS, ...SCALAR_TEXT_FIELDS];
-
 const cleanJobFields = (job) => {
   const cleaned = { ...job };
   for (const field of LONG_TEXT_FIELDS) {

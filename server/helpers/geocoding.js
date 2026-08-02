@@ -213,8 +213,9 @@ const geocodeLocationBase = (workLocation, workLocation1, source) => {
     return { ...NYS_DEFAULT };
   }
 
-  // For any known source, default to NYC center rather than dropping them
-  if (source && source !== 'nys' && JOB_SOURCES.includes(source)) {
+  // For any known source, default to NYC center rather than dropping them.
+  // (No need to re-test for 'nys' — that branch above always returns.)
+  if (source && JOB_SOURCES.includes(source)) {
     return { ...NYC_DEFAULT };
   }
 
