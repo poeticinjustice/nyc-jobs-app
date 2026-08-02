@@ -16,11 +16,24 @@ export const formatSalary = (
   return null;
 };
 
+// A Date with no time-of-day is a calendar date, not a moment: Mongo stores
+// date-only values (interview dates, posting dates) as exactly midnight UTC.
+// Reading those with local getters shifts them a day back for every user west
+// of UTC — picking Sep 15 rendered "Sep 14". Keep in sync with isDateOnly in
+// shared/utils/formatUtils.js.
+const isDateOnly = (d: Date): boolean =>
+  d.getUTCHours() === 0 &&
+  d.getUTCMinutes() === 0 &&
+  d.getUTCSeconds() === 0 &&
+  d.getUTCMilliseconds() === 0;
+
 export const formatDate = (d?: string): string | null => {
   if (!d) return null;
   const date = new Date(d);
   if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };
+  if (isDateOnly(date)) options.timeZone = 'UTC';
+  return date.toLocaleDateString('en-US', options);
 };
 
 // Keep in sync with decodeEntities in shared/utils/textUtils.js — a name

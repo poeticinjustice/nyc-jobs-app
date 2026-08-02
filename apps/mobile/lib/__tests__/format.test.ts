@@ -1,8 +1,9 @@
 import { formatDate, formatSalary, stripHtml } from '../format';
 
-// The web/server share these helpers; mobile re-implements them because Metro
-// cannot resolve `shared/` yet. Load the real shared modules from disk so any
-// behavioural drift between the two copies shows up as a failing test.
+// The web/server share these helpers; mobile keeps its own copy because its
+// signatures differ (null instead of a placeholder string, so callers can
+// branch). Load the real shared modules from disk so any behavioural drift
+// between the two copies shows up as a failing test.
 type SharedFormatUtils = {
   formatSalary: (from?: unknown, to?: unknown, frequency?: string) => string;
   formatDate: (dateString?: unknown) => string;
@@ -256,5 +257,34 @@ describe('formatDate', () => {
     expect(formatDate()).toBeNull();
     expect(sharedFormat.formatDate()).toBe('Date not specified');
     expect(sharedFormat.formatDate('not-a-date')).toBe('Date not specified');
+  });
+
+  // A date-only value is stored as midnight UTC; read with local getters it
+  // lands on the previous day for every user west of UTC. jest.config.js pins
+  // TZ=UTC and jest-expo ignores a runtime TZ change, so this suite cannot
+  // observe the shift directly. What it CAN enforce is that mobile's copy
+  // stays byte-identical to shared, whose own suite does run under
+  // America/New_York and asserts the corrected day. Parity here plus that
+  // suite there is what keeps the two implementations from drifting.
+  it('matches shared on date-only values, which are the timezone-sensitive case', () => {
+    for (const input of [
+      '2026-09-15',
+      '2026-09-15T00:00:00.000Z',
+      '2026-01-01T00:00:00.000Z',
+      '2026-09-15T05:00:00.000Z',
+    ]) {
+      expect(formatDate(input)).toBe(sharedFormat.formatDate(input));
+    }
+  });
+
+  it('applies the same date-only detection as shared', () => {
+    // Guards against mobile keeping the naive implementation while shared is
+    // fixed: the two would still agree under UTC, so compare the rule itself.
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'format.ts'),
+      'utf8'
+    );
+    expect(src).toMatch(/getUTCHours\(\) === 0/);
+    expect(src).toMatch(/timeZone = 'UTC'/);
   });
 });

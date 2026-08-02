@@ -81,14 +81,45 @@ describe('formatSalary', () => {
 });
 
 describe('formatDate', () => {
+  // These assertions must pin the calendar day exactly. A loose /Jul \d{1,2}/
+  // matcher accepts both Jul 3 and Jul 4 and cannot catch a timezone shift.
   it('formats a valid date', () => {
-    expect(formatDate('2026-07-04T00:00:00.000Z')).toMatch(/Jul \d{1,2}, 2026/);
+    expect(formatDate('2026-07-04T00:00:00.000Z')).toBe('Jul 4, 2026');
   });
 
   it('handles null and unparseable input', () => {
     expect(formatDate(null)).toBe('Date not specified');
     expect(formatDate('')).toBe('Date not specified');
     expect(formatDate('not a date')).toBe('Date not specified');
+  });
+
+  describe('west of UTC', () => {
+    // Date-only values are stored as midnight UTC. Read with local getters they
+    // land on the previous day for the entire US — an interview set for Sep 15
+    // rendered "Sep 14". CI runs in UTC, so pin the zone here or the assertion
+    // proves nothing.
+    const original = process.env.TZ;
+    beforeAll(() => { process.env.TZ = 'America/New_York'; });
+    afterAll(() => { process.env.TZ = original; });
+
+    it('keeps a date-only value on its own calendar day', () => {
+      expect(formatDate('2026-09-15T00:00:00.000Z')).toBe('Sep 15, 2026');
+      expect(formatDate('2026-01-01T00:00:00.000Z')).toBe('Jan 1, 2026');
+    });
+
+    it('still renders a real timestamp in the viewer local zone', () => {
+      // 2026-09-15T02:00Z is 10pm on the 14th in New York, and that is correct:
+      // this one carries a time of day, so it is a moment, not a calendar date.
+      expect(formatDate('2026-09-15T02:00:00.000Z')).toBe('Sep 14, 2026');
+    });
+
+    it('does not mark a deadline that falls today as already closed', () => {
+      const now = new Date();
+      const todayUtcMidnight = new Date(
+        Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+      ).toISOString();
+      expect(getDeadlineInfo(todayUtcMidnight)).toMatchObject({ label: 'Closes today' });
+    });
   });
 });
 
