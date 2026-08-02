@@ -34,8 +34,13 @@ jobs:
 
       # Coverage thresholds are configured per-area in jest.config.js and fail
       # the build on a regression.
+      # The npm script pins TZ, but set it here too so a runner default can
+      # never silently put the date tests back into UTC — the one zone where
+      # a date-only off-by-one is invisible.
       - name: Run server and shared tests with coverage
         run: npm run test:server:coverage
+        env:
+          TZ: America/New_York
 
       - name: Upload coverage report
         if: matrix.node-version == '22.x'

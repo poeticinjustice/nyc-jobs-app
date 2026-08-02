@@ -93,15 +93,14 @@ describe('formatDate', () => {
     expect(formatDate('not a date')).toBe('Date not specified');
   });
 
+  // The npm test scripts run jest under TZ=America/New_York, which is the only
+  // place that setting works: once Node has resolved the zone, assigning
+  // process.env.TZ (from a beforeAll, or even from setupFiles) is ignored.
+  // A beforeAll appeared to work locally purely because this machine is already
+  // in New York; on the UTC CI runner it did nothing and these assertions were
+  // tautological. Testing dates only in UTC — the one zone where a date-only
+  // value cannot shift — is how the off-by-one shipped in the first place.
   describe('west of UTC', () => {
-    // Date-only values are stored as midnight UTC. Read with local getters they
-    // land on the previous day for the entire US — an interview set for Sep 15
-    // rendered "Sep 14". CI runs in UTC, so pin the zone here or the assertion
-    // proves nothing.
-    const original = process.env.TZ;
-    beforeAll(() => { process.env.TZ = 'America/New_York'; });
-    afterAll(() => { process.env.TZ = original; });
-
     it('keeps a date-only value on its own calendar day', () => {
       expect(formatDate('2026-09-15T00:00:00.000Z')).toBe('Sep 15, 2026');
       expect(formatDate('2026-01-01T00:00:00.000Z')).toBe('Jan 1, 2026');
