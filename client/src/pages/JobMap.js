@@ -290,7 +290,13 @@ const JobMap = () => {
         {metadata && !loading && (
           <div className='bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 ml-auto hidden md:block'>
             <span className='text-sm text-gray-600'>
-              <span className='font-semibold text-gray-900'>{metadata.geocoded.toLocaleString()}</span> jobs on map
+              {/* `geocoded` was a duplicate of `total` — every feature is
+                  geocoded by construction. `truncated` is new and real: the
+                  query caps out, and the count silently meant "the first N". */}
+              <span className='font-semibold text-gray-900'>
+                {(metadata.total ?? 0).toLocaleString()}
+              </span>
+              {metadata.truncated ? '+ jobs on map' : ' jobs on map'}
               {keyword && (
                 <span className='text-gray-400'> for &ldquo;{keyword}&rdquo;</span>
               )}

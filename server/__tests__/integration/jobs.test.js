@@ -703,7 +703,11 @@ describe('GET /api/jobs/map', () => {
     expect(Array.isArray(res.body.features)).toBe(true);
     expect(res.body.metadata).toBeDefined();
     expect(res.body.metadata).toHaveProperty('total');
-    expect(res.body.metadata).toHaveProperty('geocoded');
+    // 'geocoded' was always equal to 'total' — the filter requires
+    // coordinates, so every feature is geocoded. 'truncated' says whether the
+    // MAP_FEATURE_LIMIT cap was hit, which the client could not tell before.
+    expect(res.body.metadata).toHaveProperty('truncated');
+    expect(res.body.metadata.truncated).toBe(false);
   });
 
   it('returns features with valid GeoJSON Point geometry', async () => {
