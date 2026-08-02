@@ -19,6 +19,13 @@ import api from '@/lib/api';
 import { useAuth } from '@/auth/AuthContext';
 import { formatSalary, formatDate, stripHtml } from '@/lib/format';
 import BackButton from '@/components/BackButton';
+import {
+  APPLICATION_STATUS_VALUES,
+  DOC_LABEL_MAX,
+  DOC_LINK_MAX,
+  NOTE_CONTENT_MAX,
+  NOTE_TITLE_MAX,
+} from 'nyc-jobs-shared/constants';
 
 type StatusHistoryEntry = { status: string; changedAt: string };
 type DocLink = { label: string; url: string };
@@ -74,7 +81,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   rejected: { bg: '#FEE2E2', text: '#991B1B' },
 };
 
-const STATUSES = ['interested', 'applied', 'interviewing', 'offered', 'rejected'];
+// Values (and their order) come from the shared package, which also backs the
+// Mongoose enum and the server-side validators.
+const STATUSES = APPLICATION_STATUS_VALUES;
 
 export default function JobDetailScreen() {
   const { id, source } = useLocalSearchParams<{ id: string; source?: string }>();
@@ -106,21 +115,38 @@ export default function JobDetailScreen() {
     setError(null);
     setNotes([]);
 
+    // Guards against a slow response for a previously-viewed job landing after
+    // the one the user is actually looking at.
+    let active = true;
+
     const fetchJob = async () => {
       try {
-        const res = await api.get(`/api/jobs/${id}`, { params: { source: source || 'nyc' } });
+        const res = await api.get(`/api/jobs/${encodeURIComponent(id)}`, { params: { source: source || 'nyc' } });
+        if (!active) return;
         setJob(res.data);
+
+        // Notes are supplementary. They used to share this try, so a failed
+        // notes request set `error` and the screen rendered "Failed to load
+        // job details" over a job that had loaded perfectly well.
         if (res.data.isSaved) {
-          const notesRes = await api.get(`/api/notes/job/${id}`, { params: { limit: 5 } });
-          setNotes(notesRes.data.notes || []);
+          try {
+            const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
+            if (active) setNotes(notesRes.data.notes || []);
+          } catch {
+            if (active) setNotes([]);
+          }
         }
       } catch (e: any) {
-        setError(e?.response?.data?.message || 'Failed to load job details');
+        if (active) setError(e?.response?.data?.message || 'Failed to load job details');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     void fetchJob();
+
+    return () => {
+      active = false;
+    };
   }, [id, source]);
 
   const handleSave = async () => {
@@ -134,6 +160,13 @@ export default function JobDetailScreen() {
       } else {
         await api.post(`/api/jobs/${job.jobId}/save`, { source: job.source || 'nyc' });
         setJob({ ...job, isSaved: true, applicationStatus: 'interested', statusHistory: [{ status: 'interested', changedAt: new Date().toISOString() }] });
+        // Re-saving a previously saved job: fetch any notes that still exist for it.
+        try {
+          const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
+          setNotes(notesRes.data.notes || []);
+        } catch {
+          // Non-fatal: notes section will show empty until next load.
+        }
       }
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.message || 'Could not update saved status');
@@ -213,8 +246,8 @@ export default function JobDetailScreen() {
       return;
     }
     const newLinks = [...(job.documentLinks || []), { label: docLabel.trim(), url: docUrl.trim() }];
-    if (newLinks.length > 5) {
-      Alert.alert('Limit Reached', 'Maximum 5 document links allowed.');
+    if (newLinks.length > DOC_LINK_MAX) {
+      Alert.alert('Limit Reached', `Maximum ${DOC_LINK_MAX} document links allowed.`);
       return;
     }
     try {
@@ -258,7 +291,7 @@ export default function JobDetailScreen() {
         type: 'general',
         priority: 'medium',
       });
-      const notesRes = await api.get(`/api/notes/job/${id}`, { params: { limit: 5 } });
+      const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
       setNotes(notesRes.data.notes || []);
       setJob(job ? { ...job, noteCount: (job.noteCount || 0) + 1 } : job);
       setNoteModalVisible(false);
@@ -276,8 +309,12 @@ export default function JobDetailScreen() {
     const explicit = job.externalUrl || job.toApply;
     if (explicit?.startsWith('http://') || explicit?.startsWith('https://')) return explicit;
     const effectiveSource = job.source || source || 'nyc';
-    if (effectiveSource === 'federal') return `https://www.usajobs.gov/job/${job.jobId}`;
-    return `https://cityjobs.nyc.gov/job/${job.jobId}`;
+    const encodedId = encodeURIComponent(job.jobId);
+    if (effectiveSource === 'federal') return `https://www.usajobs.gov/job/${encodedId}`;
+    if (effectiveSource === 'nys') return `https://statejobs.ny.gov/public/vacancyDetailsView.cfm?id=${encodedId}`;
+    if (effectiveSource === 'nyc') return `https://cityjobs.nyc.gov/job/${encodedId}`;
+    // Other sources have no derivable apply URL — the apply button is hidden.
+    return null;
   };
 
   const handleApplyLink = async () => {
@@ -324,8 +361,11 @@ export default function JobDetailScreen() {
   const posted = formatDate(job.postDate);
   const deadline = formatDate(job.postUntil);
   const effectiveSource = job.source || source || 'nyc';
-  const applyLabel = effectiveSource === 'federal' ? 'Apply at USAJobs' : 'Apply at NYC Jobs';
-  const sc = STATUS_COLORS[job.applicationStatus || 'interested'] || STATUS_COLORS.interested;
+  const applyUrl = getApplyUrl();
+  const applyLabel =
+    effectiveSource === 'federal' ? 'Apply at USAJobs'
+    : effectiveSource === 'nyc' ? 'Apply at NYC Jobs'
+    : 'Apply on Employer Site';
 
   return (
     <View style={styles.screen}>
@@ -363,9 +403,11 @@ export default function JobDetailScreen() {
               </Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
-            <Text style={styles.applyButtonText}>{applyLabel}</Text>
-          </TouchableOpacity>
+          {applyUrl && (
+            <TouchableOpacity style={styles.applyButton} onPress={handleApplyLink}>
+              <Text style={styles.applyButtonText}>{applyLabel}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Important Dates */}
@@ -489,14 +531,14 @@ export default function JobDetailScreen() {
                 </TouchableOpacity>
               </View>
             ))}
-            {(job.documentLinks || []).length < 5 && (
+            {(job.documentLinks || []).length < DOC_LINK_MAX && (
               <View style={styles.docForm}>
                 <TextInput
                   style={styles.docInput}
                   placeholder="Label (e.g. Resume)"
                   value={docLabel}
                   onChangeText={setDocLabel}
-                  maxLength={100}
+                  maxLength={DOC_LABEL_MAX}
                 />
                 <TextInput
                   style={styles.docInput}
@@ -563,47 +605,54 @@ export default function JobDetailScreen() {
         )}
       </ScrollView>
 
-      {/* Date Picker Modal */}
-      {datePicker && (
+      {/* Date Picker — Android shows the native dialog directly (wrapping it in a
+          transparent Modal would leave a dimmed overlay behind the system dialog). */}
+      {datePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={datePicker.value}
+          mode="date"
+          display="default"
+          onChange={(_, date) => {
+            const dp = datePicker;
+            setDatePicker(null);
+            if (date && dp.field === 'timeline' && dp.timelineIndex != null) {
+              handleTimelineDateSave(dp.timelineIndex, date);
+            } else if (date) {
+              void handleDateSave(dp.field, date);
+            }
+          }}
+        />
+      )}
+
+      {/* Date Picker Modal (iOS spinner) */}
+      {datePicker && Platform.OS !== 'android' && (
         <Modal transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.datePickerCard}>
               <DateTimePicker
                 value={datePicker.value}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display="spinner"
                 onChange={(_, date) => {
-                  if (Platform.OS === 'android') {
-                    const dp = datePicker;
-                    setDatePicker(null);
-                    if (date && dp.field === 'timeline' && dp.timelineIndex != null) {
-                      handleTimelineDateSave(dp.timelineIndex, date);
-                    } else if (date) {
-                      void handleDateSave(dp.field, date);
-                    }
-                  } else {
-                    if (date) setDatePicker({ ...datePicker, value: date });
-                  }
+                  if (date) setDatePicker({ ...datePicker, value: date });
                 }}
               />
-              {Platform.OS === 'ios' && (
-                <View style={styles.datePickerActions}>
-                  <TouchableOpacity onPress={() => setDatePicker(null)}>
-                    <Text style={styles.datePickerCancel}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => {
-                    const dp = datePicker;
-                    setDatePicker(null);
-                    if (dp.field === 'timeline' && dp.timelineIndex != null) {
-                      handleTimelineDateSave(dp.timelineIndex, dp.value);
-                    } else {
-                      void handleDateSave(dp.field, dp.value);
-                    }
-                  }}>
-                    <Text style={styles.datePickerDone}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+              <View style={styles.datePickerActions}>
+                <TouchableOpacity onPress={() => setDatePicker(null)}>
+                  <Text style={styles.datePickerCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {
+                  const dp = datePicker;
+                  setDatePicker(null);
+                  if (dp.field === 'timeline' && dp.timelineIndex != null) {
+                    handleTimelineDateSave(dp.timelineIndex, dp.value);
+                  } else {
+                    void handleDateSave(dp.field, dp.value);
+                  }
+                }}>
+                  <Text style={styles.datePickerDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -629,7 +678,7 @@ export default function JobDetailScreen() {
               placeholder="Note title"
               value={noteTitle}
               onChangeText={setNoteTitle}
-              maxLength={200}
+              maxLength={NOTE_TITLE_MAX}
             />
             <TextInput
               style={[styles.noteInput, styles.noteTextArea]}
@@ -637,7 +686,7 @@ export default function JobDetailScreen() {
               value={noteContent}
               onChangeText={setNoteContent}
               multiline
-              maxLength={5000}
+              maxLength={NOTE_CONTENT_MAX}
               textAlignVertical="top"
             />
           </ScrollView>

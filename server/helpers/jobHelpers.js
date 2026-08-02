@@ -1,3 +1,4 @@
+const { JOB_SOURCES } = require('../../shared/constants');
 // Shared helpers for job data transformation, filtering, sorting, and deduplication
 
 // HTML entity decoder
@@ -26,8 +27,11 @@ const decodeHtmlEntities = (text) => {
   });
 };
 
-// Clean and decode text, fixing double-encoded UTF-8 from NYC API
-const cleanText = (text) => {
+// Clean and decode text, fixing double-encoded UTF-8 from NYC API.
+// addBreaks: convert multi-space runs to <br><br> paragraph markers — only
+// wanted for long-form fields; scalar fields (titles, agency, locations) must
+// stay plain text.
+const cleanText = (text, addBreaks = true) => {
   if (!text) return text;
 
   let cleaned = decodeHtmlEntities(text);
@@ -53,10 +57,15 @@ const cleanText = (text) => {
     .replace(/\u00c2\u00b3/g, '\u00b3')
     .replace(/\u00c2\u00bc/g, '\u00bc')
     .replace(/\u00c2\u00bd/g, '\u00bd')
-    .replace(/\u00c2\u00be/g, '\u00be')
+    .replace(/\u00c2\u00be/g, '\u00be');
 
+  if (addBreaks) {
     // Convert 2+ consecutive spaces to paragraph breaks, but preserve list formatting
-    .replace(/(?<!^|\n|\r|\t|\s*[•\-*+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
+    cleaned = cleaned.replace(/(?<!^|\n|\r|\t|\s*[•\-*+]\s*|\s*\d+\.\s*)\s{2,}/g, '<br><br>');
+  } else {
+    // Scalar fields: collapse space runs instead (newlines untouched)
+    cleaned = cleaned.replace(/[^\S\n]{2,}/g, ' ');
+  }
 
   return cleaned;
 };
@@ -80,19 +89,28 @@ const formatJobDescription = (text) => {
   return formatted;
 };
 
-// Clean all text fields on a raw NYC API job object (snake_case)
-const TEXT_FIELDS = [
-  'business_title', 'civil_service_title', 'job_category', 'work_location',
-  'work_location_1', 'division_work_unit', 'agency', 'job_description',
-  'minimum_qual_requirements', 'preferred_skills', 'additional_information',
-  'to_apply', 'hours_shift', 'residency_requirement',
+// Clean all text fields on a raw NYC API job object (snake_case).
+// Long-form fields get <br><br> paragraph markers; scalar fields must not —
+// a double space inside a title/agency/location would otherwise render as
+// literal "<br><br>" in plain-text contexts.
+const LONG_TEXT_FIELDS = [
+  'job_description', 'minimum_qual_requirements', 'preferred_skills',
+  'additional_information', 'to_apply', 'residency_requirement',
 ];
-
+const SCALAR_TEXT_FIELDS = [
+  'business_title', 'civil_service_title', 'job_category', 'work_location',
+  'work_location_1', 'division_work_unit', 'agency', 'hours_shift',
+];
 const cleanJobFields = (job) => {
   const cleaned = { ...job };
-  for (const field of TEXT_FIELDS) {
+  for (const field of LONG_TEXT_FIELDS) {
     if (cleaned[field]) {
       cleaned[field] = cleanText(cleaned[field]);
+    }
+  }
+  for (const field of SCALAR_TEXT_FIELDS) {
+    if (cleaned[field]) {
+      cleaned[field] = cleanText(cleaned[field], false);
     }
   }
   return cleaned;
@@ -108,128 +126,6 @@ const deduplicateJobs = (jobs) => {
     return true;
   });
 };
-
-// Filter jobs in-memory based on search parameters
-const filterJobs = (jobs, { q, category, location, agency, salary_min, salary_max }) => {
-  let filtered = jobs;
-
-  if (q) {
-    const term = q.toLowerCase();
-    filtered = filtered.filter(
-      (job) =>
-        job.business_title?.toLowerCase().includes(term) ||
-        job.job_description?.toLowerCase().includes(term) ||
-        job.civil_service_title?.toLowerCase().includes(term) ||
-        job.agency?.toLowerCase().includes(term) ||
-        job.job_category?.toLowerCase().includes(term) ||
-        job.work_location?.toLowerCase().includes(term) ||
-        job.work_location_1?.toLowerCase().includes(term) ||
-        job.division_work_unit?.toLowerCase().includes(term)
-    );
-  }
-
-  if (category) {
-    filtered = filtered.filter(
-      (job) => job.job_category?.toLowerCase() === category.toLowerCase()
-    );
-  }
-
-  if (location) {
-    const term = location.toLowerCase();
-    filtered = filtered.filter(
-      (job) =>
-        job.work_location?.toLowerCase().includes(term) ||
-        job.work_location_1?.toLowerCase().includes(term)
-    );
-  }
-
-  if (agency) {
-    const term = agency.toLowerCase();
-    filtered = filtered.filter(
-      (job) => job.agency?.toLowerCase().includes(term)
-    );
-  }
-
-  if (salary_min) {
-    const min = parseInt(salary_min, 10);
-    if (!isNaN(min)) {
-      filtered = filtered.filter((job) => {
-        const to = parseInt(job.salary_range_to, 10);
-        const from = parseInt(job.salary_range_from, 10);
-        // Include if the job's range overlaps with the minimum
-        if (!isNaN(to)) return to >= min;
-        return !isNaN(from) && from >= min;
-      });
-    }
-  }
-
-  if (salary_max) {
-    const max = parseInt(salary_max, 10);
-    if (!isNaN(max)) {
-      filtered = filtered.filter((job) => {
-        const from = parseInt(job.salary_range_from, 10);
-        const to = parseInt(job.salary_range_to, 10);
-        // Include if the job's range overlaps with the maximum
-        if (!isNaN(from)) return from <= max;
-        return !isNaN(to) && to <= max;
-      });
-    }
-  }
-
-  return filtered;
-};
-
-// Get salary midpoint for sorting (returns null when missing)
-const getSalaryMidpoint = (job, fields) => {
-  const from = parseFloat(job[fields.salaryFrom]);
-  if (isNaN(from)) return null;
-  const to = parseFloat(job[fields.salaryTo]);
-  return (from + (isNaN(to) ? from : to)) / 2;
-};
-
-// Field name maps for snake_case (NYC raw) and camelCase (transformed) data
-const SNAKE_FIELDS = { date: 'posting_date', title: 'business_title', salaryFrom: 'salary_range_from', salaryTo: 'salary_range_to' };
-const CAMEL_FIELDS = { date: 'postDate', title: 'businessTitle', salaryFrom: 'salaryRangeFrom', salaryTo: 'salaryRangeTo' };
-
-// Generic sort function that works with any field name map
-const sortJobsByFields = (jobs, sort, fields) => {
-  const sorted = [...jobs];
-  switch (sort) {
-    case 'date_asc':
-      sorted.sort((a, b) => new Date(a[fields.date] || 0) - new Date(b[fields.date] || 0));
-      break;
-    case 'title_asc':
-      sorted.sort((a, b) => (a[fields.title] || '').localeCompare(b[fields.title] || ''));
-      break;
-    case 'title_desc':
-      sorted.sort((a, b) => (b[fields.title] || '').localeCompare(a[fields.title] || ''));
-      break;
-    case 'salary_desc':
-    case 'salary_asc': {
-      const dir = sort === 'salary_desc' ? -1 : 1;
-      sorted.sort((a, b) => {
-        const sa = getSalaryMidpoint(a, fields);
-        const sb = getSalaryMidpoint(b, fields);
-        if (sa == null && sb == null) return 0;
-        if (sa == null) return 1;
-        if (sb == null) return -1;
-        return dir * (sa - sb);
-      });
-      break;
-    }
-    case 'date_desc':
-    default:
-      sorted.sort((a, b) => new Date(b[fields.date] || 0) - new Date(a[fields.date] || 0));
-      break;
-  }
-  return sorted;
-};
-
-// Sort raw NYC API jobs (snake_case)
-const sortJobs = (jobs, sort) => sortJobsByFields(jobs, sort, SNAKE_FIELDS);
-
-// Sort transformed camelCase jobs (for 'all' mode where NYC + federal are combined)
-const sortMergedJobs = (jobs, sort) => sortJobsByFields(jobs, sort, CAMEL_FIELDS);
 
 // Transform NYC API snake_case fields to camelCase model fields
 const transformNycJob = (nycJob, { clean = false } = {}) => {
@@ -324,15 +220,21 @@ const transformNysJob = (nys) => {
   const salaryStr = nys['Salary Range'] || '';
   const rangeMatch = salaryStr.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(?:to|-)\s*\$\s*([\d,]+(?:\.\d+)?)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
   const singleMatch = !rangeMatch && salaryStr.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(Annually|Hourly|Daily|Monthly|Bi-Weekly)?/i);
+  // Normalize NYS's adverb forms to the app-wide values ('Annually' -> 'Annual')
+  const normalizeFrequency = (freq) => {
+    if (!freq) return 'Annual';
+    const map = { annually: 'Annual', hourly: 'Hourly', daily: 'Daily', monthly: 'Monthly', 'bi-weekly': 'Bi-Weekly' };
+    return map[freq.toLowerCase()] || freq;
+  };
   if (rangeMatch) {
     salaryRangeFrom = parseFloat(rangeMatch[1].replace(/,/g, ''));
     salaryRangeTo = parseFloat(rangeMatch[2].replace(/,/g, ''));
     // If from === to, it's a single rate (e.g., "$22.59 to $22.59 Hourly")
     if (salaryRangeFrom === salaryRangeTo) salaryRangeTo = null;
-    salaryFrequency = rangeMatch[3] || 'Annual';
+    salaryFrequency = normalizeFrequency(rangeMatch[3]);
   } else if (singleMatch) {
     salaryRangeFrom = parseFloat(singleMatch[1].replace(/,/g, ''));
-    salaryFrequency = singleMatch[2] || 'Annual';
+    salaryFrequency = normalizeFrequency(singleMatch[2]);
   }
 
   // Parse dates from MM/DD/YY format
@@ -407,7 +309,8 @@ const escCsv = (val) => {
   if (/^[=+\-@\t\r]/.test(s)) {
     s = "'" + s;
   }
-  return s.includes(',') || s.includes('"') || s.includes('\n')
+  // A bare CR mid-value splits the row in some readers, so quote it too.
+  return /[,"\n\r]/.test(s)
     ? `"${s.replace(/"/g, '""')}"`
     : s;
 };
@@ -415,18 +318,128 @@ const escCsv = (val) => {
 // Escape special regex characters for safe use in RegExp constructors
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Build Mongoose sort from a sort query param.
+// Shared by the search routes and the saved-search alert engine.
+const buildSort = (sort) => {
+  switch (sort) {
+    case 'date_asc': return { postDate: 1 };
+    case 'title_asc': return { businessTitle: 1 };
+    case 'title_desc': return { businessTitle: -1 };
+    // Annual equivalents, not the raw figures: sorting on the raw column put
+    // a $16/hour role above a $60,000/year one.
+    case 'salary_desc': return { annualSalaryFrom: -1 };
+    case 'salary_asc': return { annualSalaryFrom: 1 };
+    case 'date_desc':
+    default: return { postDate: -1 };
+  }
+};
+
+// Build Mongoose filter from search params
+const buildSearchFilter = ({ q, category, location, agency, salary_min, salary_max, source }) => {
+  const filter = {};
+
+  if (source && source !== 'all') {
+    // Support comma-separated sources (e.g. "nyc,federal,cuny")
+    const sources = source.split(',').filter((s) => JOB_SOURCES.includes(s));
+    if (sources.length === 1) {
+      filter.source = sources[0];
+    } else if (sources.length > 1) {
+      filter.source = { $in: sources };
+    } else {
+      filter.source = { $in: JOB_SOURCES };
+    }
+  } else {
+    // 'all' still restricts to valid sources — prevents stale/unknown sources from leaking
+    filter.source = { $in: JOB_SOURCES };
+  }
+
+  // Exclude expired jobs (postUntil in the past)
+  const notExpired = {
+    $or: [
+      { postUntil: null },
+      { postUntil: { $exists: false } },
+      { postUntil: { $gte: new Date() } },
+    ],
+  };
+  filter.$and = filter.$and ? [...filter.$and, notExpired] : [notExpired];
+
+  if (q) {
+    filter.$text = { $search: q };
+  }
+
+  if (category) {
+    filter.jobCategory = new RegExp(`^${escapeRegex(category)}$`, 'i');
+  }
+
+  if (location) {
+    const locRegex = new RegExp(escapeRegex(location), 'i');
+    filter.$or = [
+      { workLocation: locRegex },
+      { workLocation1: locRegex },
+    ];
+  }
+
+  if (agency) {
+    filter.agency = new RegExp(escapeRegex(agency), 'i');
+  }
+
+  // Salary overlap: job range overlaps with [salary_min, salary_max].
+  // Compared on the annual columns — the raw ones hold whatever unit the source
+  // advertised, so a $95/hour posting (~$198k a year) was excluded by
+  // salary_min=100000 and matched by salary_max=60000.
+  if (salary_min || salary_max) {
+    const salaryConditions = [];
+    if (salary_min) {
+      const min = parseInt(salary_min, 10);
+      if (!isNaN(min)) {
+        // Job's upper bound >= min (or lower bound if no upper)
+        salaryConditions.push({
+          $or: [
+            { annualSalaryTo: { $gte: min } },
+            { annualSalaryTo: null, annualSalaryFrom: { $gte: min } },
+          ],
+        });
+      }
+    }
+    if (salary_max) {
+      const max = parseInt(salary_max, 10);
+      if (!isNaN(max)) {
+        // Job's lower bound <= max (or upper bound if no lower)
+        salaryConditions.push({
+          $or: [
+            { annualSalaryFrom: { $lte: max } },
+            { annualSalaryFrom: null, annualSalaryTo: { $lte: max } },
+          ],
+        });
+      }
+    }
+    if (salaryConditions.length > 0) {
+      // Ensure $and exists (it should, from notExpired)
+      if (!filter.$and) filter.$and = [];
+      // Move location $or into $and to avoid conflicts
+      if (filter.$or) {
+        filter.$and.push({ $or: filter.$or });
+        delete filter.$or;
+      }
+      filter.$and.push(...salaryConditions);
+    }
+  }
+
+  return filter;
+};
+
+
 module.exports = {
   cleanText,
   cleanJobFields,
   formatJobDescription,
   deduplicateJobs,
-  filterJobs,
-  sortJobs,
-  sortMergedJobs,
   transformNycJob,
   transformUsaJob,
   transformNysJob,
   getUserSaveEntry,
   escCsv,
   escapeRegex,
+  buildSearchFilter,
+  buildSort,
 };

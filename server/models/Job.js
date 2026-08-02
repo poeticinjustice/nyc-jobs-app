@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { deriveAnnualSalary } = require('../helpers/salary');
 const { APPLICATION_STATUS_VALUES, JOB_SOURCES } = require('../../shared/constants');
 
 const jobSchema = new mongoose.Schema(
@@ -41,6 +42,8 @@ const jobSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // As advertised by the source, in whatever unit salaryFrequency names.
+    // These are what the UI displays.
     salaryRangeFrom: {
       type: Number,
     },
@@ -50,6 +53,17 @@ const jobSchema = new mongoose.Schema(
     salaryFrequency: {
       type: String,
       trim: true,
+    },
+    // The same figures converted to an annual equivalent at upsert time
+    // (see helpers/salary.js). Filtering and sorting use these, because
+    // comparing a raw $95/hour against a raw $95,000/year is meaningless.
+    annualSalaryFrom: {
+      type: Number,
+      default: null,
+    },
+    annualSalaryTo: {
+      type: Number,
+      default: null,
     },
     workLocation: {
       type: String,
@@ -183,13 +197,24 @@ const jobSchema = new mongoose.Schema(
   }
 );
 
+// Keep the annual columns in step on any direct save (seeds, tests, one-off
+// fixes). The scrapers' bulkWrite path cannot trigger middleware, so it calls
+// deriveAnnualSalary itself in scrapers/utils.js — same function, both paths.
+jobSchema.pre('validate', function deriveAnnual() {
+  deriveAnnualSalary(this);
+});
+
 // Indexes for better query performance
 jobSchema.index({ jobId: 1, source: 1 }, { unique: true });
 jobSchema.index({ 'savedBy.user': 1, jobId: 1 });
 jobSchema.index({ jobCategory: 1 });
 jobSchema.index({ salaryRangeFrom: 1, salaryRangeTo: 1 });
+// Salary filtering and sorting run on the annual columns, so that is what
+// needs covering.
+jobSchema.index({ annualSalaryFrom: 1, annualSalaryTo: 1 });
 jobSchema.index({ postDate: -1 });
 jobSchema.index({ updatedAt: -1 });
+jobSchema.index({ createdAt: -1 });
 jobSchema.index({ source: 1, postDate: -1 });
 jobSchema.index({ postUntil: 1 });
 jobSchema.index(

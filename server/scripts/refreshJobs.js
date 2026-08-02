@@ -7,6 +7,8 @@
  */
 
 const Job = require('../models/Job');
+const ScraperRun = require('../models/ScraperRun');
+const { runSavedSearchAlerts } = require('../helpers/savedSearchAlerts');
 
 // Import all scrapers
 const refreshNycJobs = require('../scrapers/nyc');
@@ -29,6 +31,10 @@ const refreshAmnhJobs = require('../scrapers/amnh');
 const refreshMetMuseumJobs = require('../scrapers/metmuseum');
 const refreshFrickJobs = require('../scrapers/frick');
 const refreshGuggenheimJobs = require('../scrapers/guggenheim');
+const refreshMskJobs = require('../scrapers/msk');
+const refreshMontefioreJobs = require('../scrapers/montefiore');
+const refreshNyplJobs = require('../scrapers/nypl');
+const refreshNychhcJobs = require('../scrapers/nychhc');
 
 // ---------------------------------------------------------------------------
 // Cleanup
@@ -37,17 +43,39 @@ const refreshGuggenheimJobs = require('../scrapers/guggenheim');
 const cleanupStaleJobs = async (timestamp, counts) => {
   // Safety: only clean up a source if we actually fetched a meaningful number of jobs.
   // If an API returned 0 (e.g. outage), don't purge that source's jobs.
+  // Small sources (museums etc.) get a threshold of 1 — their normal inventory
+  // can be at or below a larger threshold, which would mean filled positions
+  // are never purged and stay listed forever.
   const thresholds = {
     nyc: 100, federal: 10, nys: 50, cuny: 10, nyu: 10, fordham: 5, pa: 3,
-    mountsinai: 50, idealist: 50, columbia: 20, nyp: 20, northwell: 50,
-    nyulangone: 50, newschool: 5, amtrak: 3, un: 10, amnh: 5, metmuseum: 3,
-    frick: 3, guggenheim: 3,
+    mountsinai: 50, idealist: 50, columbia: 20, nyp: 20, northwell: 20,
+    nyulangone: 50, newschool: 5, amtrak: 1, un: 10, amnh: 2, metmuseum: 1,
+    frick: 1, guggenheim: 1, msk: 10, montefiore: 20, nypl: 1, nychhc: 10,
   };
 
-  const sourceFilter = Object.entries(thresholds)
-    .filter(([src, min]) => (counts[src] || 0) > min)
-    .map(([src]) => src);
+  // Current stored count per source, to detect partial fetches: a scraper that
+  // errors mid-pagination reports its partial list as success, and without this
+  // guard everything beyond the failure point would be purged as stale.
+  const storedCounts = {};
+  const grouped = await Job.aggregate([{ $group: { _id: '$source', n: { $sum: 1 } } }]);
+  for (const g of grouped) storedCounts[g._id] = g.n;
 
+  const sourceFilter = [];
+  const partialSkipped = [];
+  for (const [src, min] of Object.entries(thresholds)) {
+    const fetched = counts[src] || 0;
+    if (fetched < min) continue; // not enough evidence the source responded
+    const stored = storedCounts[src] || 0;
+    if (stored >= 10 && fetched < stored * 0.5) {
+      partialSkipped.push(`${src} (${fetched}/${stored})`);
+      continue;
+    }
+    sourceFilter.push(src);
+  }
+
+  if (partialSkipped.length > 0) {
+    console.warn(`[refresh] Cleanup skipped for possibly-partial fetches: ${partialSkipped.join(', ')}`);
+  }
   if (sourceFilter.length === 0) {
     console.log('[refresh] Skipping cleanup — insufficient data from APIs');
     return 0;
@@ -83,43 +111,156 @@ const cleanupStaleJobs = async (timestamp, counts) => {
 // Main
 // ---------------------------------------------------------------------------
 
-const refreshAllJobs = async () => {
+const DEFAULT_SCRAPERS = [
+  { source: 'nyc', fn: refreshNycJobs },
+  { source: 'federal', fn: refreshFederalJobs },
+  { source: 'nys', fn: refreshNysJobs },
+  { source: 'cuny', fn: refreshCunyJobs },
+  { source: 'nyu', fn: refreshNyuJobs },
+  { source: 'fordham', fn: refreshFordhamJobs },
+  { source: 'pa', fn: refreshPortAuthorityJobs },
+  { source: 'mountsinai', fn: refreshMountSinaiJobs },
+  { source: 'idealist', fn: refreshIdealistJobs },
+  { source: 'columbia', fn: refreshColumbiaJobs },
+  { source: 'nyp', fn: refreshNypJobs },
+  { source: 'northwell', fn: refreshNorthwellJobs },
+  { source: 'nyulangone', fn: refreshNyuLangoneJobs },
+  { source: 'newschool', fn: refreshNewSchoolJobs },
+  { source: 'amtrak', fn: refreshAmtrakJobs },
+  { source: 'un', fn: refreshUnJobs },
+  { source: 'amnh', fn: refreshAmnhJobs },
+  { source: 'metmuseum', fn: refreshMetMuseumJobs },
+  { source: 'frick', fn: refreshFrickJobs },
+  { source: 'guggenheim', fn: refreshGuggenheimJobs },
+  { source: 'msk', fn: refreshMskJobs },
+  { source: 'montefiore', fn: refreshMontefioreJobs },
+  { source: 'nypl', fn: refreshNyplJobs },
+  { source: 'nychhc', fn: refreshNychhcJobs },
+];
+
+// One scraper must not be able to hold up the whole run. Columbia honours a
+// 5.5s robots.txt crawl delay serially, so a cold start legitimately takes
+// about an hour; this caps the worst case rather than the normal one. A capped
+// scraper reports 0 fetched, which makes cleanupStaleJobs skip its source —
+// so timing out is safe, it just leaves that source unrefreshed this cycle.
+const SCRAPER_TIMEOUT_MS = parseInt(process.env.SCRAPER_TIMEOUT_MS, 10) || 90 * 60 * 1000;
+
+// Timing out does not cancel the scraper — it keeps running to completion in
+// the background. Promise.race subscribes to it, so a late rejection is already
+// handled; the cost is just wasted work until it finishes.
+const withTimeout = (promise, ms, source) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Scraper "${source}" exceeded ${Math.round(ms / 1000)}s`)),
+        ms
+      );
+      // Don't hold the event loop open on the one-shot CLI path.
+      timer.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
+
+/**
+ * Run every scraper, then clean up stale jobs and record run metrics.
+ *
+ * `scrapers` is injectable so the pipeline itself can be tested without
+ * hitting the network; it defaults to the full production list.
+ */
+const refreshAllJobs = async ({ scrapers = DEFAULT_SCRAPERS, timeoutMs = SCRAPER_TIMEOUT_MS } = {}) => {
   const timestamp = new Date();
   console.log(`[refresh] Starting job refresh at ${timestamp.toISOString()}`);
 
-  const nyc = await refreshNycJobs(timestamp);
-  const federal = await refreshFederalJobs(timestamp);
-  const nys = await refreshNysJobs(timestamp);
-  const cuny = await refreshCunyJobs(timestamp);
-  const nyu = await refreshNyuJobs(timestamp);
-  const fordham = await refreshFordhamJobs(timestamp);
-  const pa = await refreshPortAuthorityJobs(timestamp);
-  const mountsinai = await refreshMountSinaiJobs(timestamp);
-  const idealist = await refreshIdealistJobs(timestamp);
-  const columbia = await refreshColumbiaJobs(timestamp);
-  const nyp = await refreshNypJobs(timestamp);
-  const northwell = await refreshNorthwellJobs(timestamp);
-  const nyulangone = await refreshNyuLangoneJobs(timestamp);
-  const newschool = await refreshNewSchoolJobs(timestamp);
-  const amtrak = await refreshAmtrakJobs(timestamp);
-  const un = await refreshUnJobs(timestamp);
-  const amnh = await refreshAmnhJobs(timestamp);
-  const metmuseum = await refreshMetMuseumJobs(timestamp);
-  const frick = await refreshFrickJobs(timestamp);
-  const guggenheim = await refreshGuggenheimJobs(timestamp);
-
-  const results = { nyc, federal, nys, cuny, nyu, fordham, pa, mountsinai, idealist, columbia, nyp, northwell, nyulangone, newschool, amtrak, un, amnh, metmuseum, frick, guggenheim };
-
+  const BATCH_SIZE = 5;
+  const results = {};
   const counts = {};
-  for (const [src, r] of Object.entries(results)) {
-    counts[src] = r.upserted + r.modified;
+  const metrics = [];
+  const runId = `${timestamp.toISOString()}-${Math.round(timestamp.getTime() % 100000)}`;
+
+  for (let i = 0; i < scrapers.length; i += BATCH_SIZE) {
+    const batch = scrapers.slice(i, i + BATCH_SIZE);
+    const batchNames = batch.map((s) => s.source).join(', ');
+    console.log(`[refresh] Running batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchNames}`);
+
+    // Time each scraper from its own start to its own finish. Reading the clock
+    // in the results loop instead — after the whole batch had settled — made
+    // every source in a batch report the slowest one's duration.
+    const settled = await Promise.all(
+      batch.map(async (s) => {
+        const startedAt = new Date();
+        try {
+          const value = await withTimeout(s.fn(timestamp), timeoutMs, s.source);
+          return { ok: true, value, startedAt, finishedAt: new Date() };
+        } catch (error) {
+          return { ok: false, error, startedAt, finishedAt: new Date() };
+        }
+      })
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      const { source } = batch[j];
+      const outcome = settled[j];
+      const metric = {
+        runId,
+        source,
+        startedAt: outcome.startedAt,
+        finishedAt: outcome.finishedAt,
+        durationMs: outcome.finishedAt - outcome.startedAt,
+      };
+
+      if (outcome.ok) {
+        const r = outcome.value;
+        results[source] = r;
+        counts[source] = r.upserted + r.modified;
+        metric.upserted = r.upserted;
+        metric.modified = r.modified;
+        metric.status = counts[source] === 0 ? 'empty' : 'ok';
+      } else {
+        console.error(`[refresh] Scraper "${source}" failed:`, outcome.error);
+        results[source] = { upserted: 0, modified: 0 };
+        counts[source] = 0;
+        metric.status = 'failed';
+        metric.error = String(outcome.error?.message || outcome.error).slice(0, 500);
+      }
+      metrics.push(metric);
+    }
   }
 
   const staleCount = await cleanupStaleJobs(timestamp, counts);
   const totalJobs = await Job.estimatedDocumentCount();
+
+  // Persist per-source metrics for the admin scraper-health view
+  try {
+    const storedBySource = Object.fromEntries(
+      (await Job.aggregate([{ $group: { _id: '$source', n: { $sum: 1 } } }]))
+        .map((g) => [g._id, g.n])
+    );
+    for (const m of metrics) {
+      m.storedAfter = storedBySource[m.source] || 0;
+      // A run that refreshed far less than what's stored looks partial —
+      // the same signal cleanupStaleJobs uses to refuse purging.
+      if (m.status === 'ok' && m.storedAfter >= 10 &&
+          (m.upserted + m.modified) < m.storedAfter * 0.5) {
+        m.status = 'partial';
+      }
+    }
+    if (metrics.length) await ScraperRun.insertMany(metrics, { ordered: false });
+  } catch (err) {
+    console.error('[refresh] Failed to record scraper metrics:', err.message);
+  }
+
   console.log(`[refresh] Done. DB now has ~${totalJobs} jobs. Stale removed: ${staleCount}`);
 
-  return { ...results, staleCount, totalJobs };
+  // Notify users whose saved searches have new matches
+  try {
+    await runSavedSearchAlerts();
+  } catch (err) {
+    console.error('[refresh] Saved-search alerts failed:', err.message);
+  }
+
+  return { ...results, staleCount, totalJobs, runId };
 };
 
 // Run standalone
@@ -142,4 +283,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { refreshAllJobs };
+module.exports = { refreshAllJobs, cleanupStaleJobs };

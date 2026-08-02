@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Map, { Source, Layer, Popup, NavigationControl } from 'react-map-gl';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { HiLocationMarker, HiSearch, HiX } from 'react-icons/hi';
 import api from '../utils/api';
 import { formatSalary } from '../utils/formatUtils';
@@ -52,6 +52,17 @@ const clusterCountLayer = {
   },
 };
 
+// Marker color groups — covers all JOB_SOURCES (plus 'mta') from shared constants
+const SOURCE_COLOR_GROUPS = [
+  { label: 'City', sources: ['nyc'], color: '#2563eb' },
+  { label: 'State & Transit', sources: ['nys', 'pa', 'mta', 'amtrak'], color: '#4f46e5' },
+  { label: 'Federal & International', sources: ['federal', 'un'], color: '#16a34a' },
+  { label: 'Healthcare', sources: ['mountsinai', 'nyp', 'northwell', 'nyulangone', 'msk', 'montefiore', 'nychhc'], color: '#dc2626' },
+  { label: 'Education', sources: ['cuny', 'nyu', 'fordham', 'columbia', 'newschool'], color: '#9333ea' },
+  { label: 'Culture & Libraries', sources: ['amnh', 'metmuseum', 'frick', 'guggenheim', 'nypl'], color: '#ea580c' },
+  { label: 'Non-Profit', sources: ['idealist'], color: '#0d9488' },
+];
+
 // Individual unclustered markers
 const unclusteredPointLayer = {
   id: 'unclustered-point',
@@ -61,8 +72,11 @@ const unclusteredPointLayer = {
   paint: {
     'circle-color': [
       'match', ['get', 'source'],
-      'federal', '#10b981', // green for federal
-      '#3b82f6', // blue for NYC (default)
+      ...SOURCE_COLOR_GROUPS.flatMap((group) => [
+        group.sources.length === 1 ? group.sources[0] : group.sources,
+        group.color,
+      ]),
+      '#2563eb', // fallback for unknown sources
     ],
     'circle-radius': 7,
     'circle-stroke-width': 2,
@@ -70,37 +84,69 @@ const unclusteredPointLayer = {
   },
 };
 
+// The map endpoint only accepts a single known source, so anything else falls back to 'all'
+const VALID_SOURCE_VALUES = new Set(SOURCE_OPTIONS.map((option) => option.value));
+
 const JobMap = () => {
   const mapRef = useRef(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [geojson, setGeojson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [popup, setPopup] = useState(null);
-  const [source, setSource] = useState('all');
-  const [keyword, setKeyword] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  // Seed the filters from the URL so /map?keyword=nurse&source=nychhc lands pre-filtered
+  const [source, setSource] = useState(() => {
+    const fromUrl = searchParams.get('source');
+    return fromUrl && VALID_SOURCE_VALUES.has(fromUrl) ? fromUrl : 'all';
+  });
+  const [keyword, setKeyword] = useState(() => searchParams.get('keyword')?.trim() || '');
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('keyword')?.trim() || '');
   const [metadata, setMetadata] = useState(null);
+
+  // Monotonically increasing ticket so stale responses never clobber newer ones
+  const fetchTicketRef = useRef(0);
 
   // Fetch map data
   const fetchMapData = useCallback(async () => {
+    const ticket = ++fetchTicketRef.current;
     setLoading(true);
     setError(null);
     try {
       const params = { source };
       if (keyword) params.keyword = keyword;
       const res = await api.get('/api/jobs/map', { params });
+      if (ticket !== fetchTicketRef.current) return;
       setGeojson(res.data);
       setMetadata(res.data.metadata);
     } catch (err) {
+      if (ticket !== fetchTicketRef.current) return;
       setError(err.response?.data?.message || 'Failed to load map data');
     } finally {
-      setLoading(false);
+      if (ticket === fetchTicketRef.current) setLoading(false);
     }
   }, [source, keyword]);
 
   useEffect(() => {
     fetchMapData();
   }, [fetchMapData]);
+
+  // Mirror the active filters back into the URL so the view stays shareable
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (keyword) {
+      nextParams.set('keyword', keyword);
+    } else {
+      nextParams.delete('keyword');
+    }
+    if (source && source !== 'all') {
+      nextParams.set('source', source);
+    } else {
+      nextParams.delete('source');
+    }
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [keyword, source, searchParams, setSearchParams]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -205,6 +251,7 @@ const JobMap = () => {
           <select
             value={source}
             onChange={(e) => setSource(e.target.value)}
+            aria-label='Filter map by job source'
             className='px-4 py-2 rounded-lg text-sm font-medium bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
           >
             {SOURCE_OPTIONS.map((tab) => (
@@ -231,6 +278,7 @@ const JobMap = () => {
             <button
               type='button'
               onClick={clearSearch}
+              aria-label='Clear map search'
               className='pr-3 text-gray-400 hover:text-gray-600'
             >
               <HiX className='h-4 w-4' />
@@ -242,7 +290,13 @@ const JobMap = () => {
         {metadata && !loading && (
           <div className='bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 ml-auto hidden md:block'>
             <span className='text-sm text-gray-600'>
-              <span className='font-semibold text-gray-900'>{metadata.geocoded.toLocaleString()}</span> jobs on map
+              {/* `geocoded` was a duplicate of `total` — every feature is
+                  geocoded by construction. `truncated` is new and real: the
+                  query caps out, and the count silently meant "the first N". */}
+              <span className='font-semibold text-gray-900'>
+                {(metadata.total ?? 0).toLocaleString()}
+              </span>
+              {metadata.truncated ? '+ jobs on map' : ' jobs on map'}
               {keyword && (
                 <span className='text-gray-400'> for &ldquo;{keyword}&rdquo;</span>
               )}
@@ -342,16 +396,17 @@ const JobMap = () => {
       </Map>
 
       {/* Legend */}
-      <div className='absolute bottom-8 left-4 bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 hidden md:block'>
-        <div className='flex items-center gap-4 text-xs text-gray-600'>
-          <div className='flex items-center gap-1.5'>
-            <span className='w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm' />
-            NYC Jobs
-          </div>
-          <div className='flex items-center gap-1.5'>
-            <span className='w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow-sm' />
-            Federal Jobs
-          </div>
+      <div className='absolute bottom-8 left-4 bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-2 hidden md:block max-w-md'>
+        <div className='flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600'>
+          {SOURCE_COLOR_GROUPS.map((group) => (
+            <div key={group.label} className='flex items-center gap-1.5'>
+              <span
+                className='w-3 h-3 rounded-full border-2 border-white shadow-sm'
+                style={{ backgroundColor: group.color }}
+              />
+              {group.label}
+            </div>
+          ))}
         </div>
       </div>
     </div>

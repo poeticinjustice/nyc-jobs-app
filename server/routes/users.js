@@ -83,7 +83,7 @@ router.get(
       }
 
       const { page = '1', limit = '20', role, isActive } = req.query;
-      const pageNum = parseInt(page) || 1;
+      const pageNum = Math.max(1, parseInt(page) || 1);
       const limitNum = Math.min(parseInt(limit) || 20, 100);
 
       const queryFilter = {};
@@ -149,7 +149,10 @@ router.put(
     body('lastName').optional().trim().isLength({ min: 1, max: NAME_MAX }),
     body('email').optional().isEmail().normalizeEmail(),
     body('role').optional().isIn(USER_ROLE_VALUES),
-    body('isActive').optional().isBoolean(),
+    // toBoolean matters: without it a JSON string "false" passes isBoolean but
+    // slips through the strict `isActive === false` self-guard below, and
+    // Mongoose would still cast it and deactivate the account.
+    body('isActive').optional().isBoolean().toBoolean(),
   ],
   async (req, res) => {
     try {
@@ -177,6 +180,22 @@ router.put(
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // An admin can reach these fields for their own account, so without a
+      // guard two clicks in the admin UI can strip your own access with no way
+      // back — there is no CLI to restore it. DELETE /:id already refuses
+      // self-deactivation; do the same here. This is also what keeps the app
+      // from losing its last admin: every requester is an active user (the
+      // auth middleware rejects deactivated accounts), so any change to
+      // *another* admin always leaves at least the requester in place.
+      if (isSelf) {
+        if (role !== undefined && role !== user.role) {
+          return res.status(400).json({ message: 'Cannot change your own role' });
+        }
+        if (isActive === false) {
+          return res.status(400).json({ message: 'Cannot deactivate your own account' });
+        }
+      }
+
       const updates = {};
       if (firstName !== undefined) updates.firstName = firstName;
       if (lastName !== undefined) updates.lastName = lastName;
@@ -197,6 +216,9 @@ router.put(
 
       res.json({ message: 'User updated successfully', user: updatedUser });
     } catch (error) {
+      if (error.code === 11000) {
+        return res.status(400).json({ message: 'Email already in use' });
+      }
       console.error('Update user error:', error);
       res.status(500).json({ message: 'Error updating user' });
     }

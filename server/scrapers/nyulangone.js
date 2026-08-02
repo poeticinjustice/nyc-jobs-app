@@ -2,7 +2,7 @@
  * NYU Langone Health (SilkRoad RSS feed)
  */
 
-const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, cheerio, Job, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const NYULANGONE_RSS_URL = 'https://jobs.silkroad.com/NYULangone/NYULHCareers/Rss';
 const NYULANGONE_DETAIL_CONCURRENCY = 5;
@@ -142,53 +142,43 @@ const refreshNyuLangoneJobs = async (timestamp) => {
     }
   }
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const existingById = new Map(existingJobs.map((j) => [j.jobId, j]));
+  const jobs = metroJobs.map((raw) => {
+    const hasDetail = detailMap.has(raw.jobId);
+    const detail = detailMap.get(raw.jobId) || {};
+    const existing = existingById.get(raw.jobId);
 
-  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
-    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const detail = detailMap.get(raw.jobId) || {};
-      const existing = existingJobs.find((j) => j.jobId === raw.jobId);
+    // Detail-derived fields: undefined = keep stored values for cached jobs
+    // (batchUpsert strips them from $set).
+    const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
 
-      const job = {
-        jobId: raw.jobId,
-        businessTitle: raw.title || null,
-        agency: detail.department ? `NYU Langone Health — ${detail.department}` : 'NYU Langone Health',
-        workLocation: raw.location || 'New York',
-        workLocation1: null,
-        jobDescription: detail.description || existing?.jobDescription || raw.description || null,
-        minimumQualRequirements: detail.qualifications || existing?.minimumQualRequirements || null,
-        preferredSkills: detail.preferredSkills || null,
-        jobCategory: null,
-        salaryRangeFrom: detail.salaryFrom || raw.salaryFrom,
-        salaryRangeTo: detail.salaryTo || raw.salaryTo,
-        salaryFrequency: detail.salaryFrequency || raw.salaryFrequency,
-        fullTimePartTimeIndicator: detail.employmentType || null,
-        postDate: raw.pubDate ? new Date(raw.pubDate) : null,
-        externalUrl: raw.link || null,
-      };
+    // The RSS items carry no <pubDate> (verified live) — stamp first-seen on
+    // insert so "Most Recent First" still works for this source.
+    const feedDate = safeDate(raw.pubDate);
 
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyulangone');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'nyulangone' },
-          update: {
-            $set: { ...job, source: 'nyulangone', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
+    return {
+      jobId: raw.jobId,
+      businessTitle: raw.title || null,
+      agency: detail.department
+        ? `NYU Langone Health — ${detail.department}`
+        : (hasDetail || !existing ? 'NYU Langone Health' : undefined),
+      workLocation: raw.location || 'New York',
+      workLocation1: null,
+      jobDescription: detail.description || existing?.jobDescription || raw.description || null,
+      minimumQualRequirements: detail.qualifications || existing?.minimumQualRequirements || null,
+      preferredSkills: keep(detail.preferredSkills),
+      jobCategory: null,
+      salaryRangeFrom: detail.salaryFrom || raw.salaryFrom,
+      salaryRangeTo: detail.salaryTo || raw.salaryTo,
+      salaryFrequency: detail.salaryFrequency || raw.salaryFrequency,
+      fullTimePartTimeIndicator: keep(detail.employmentType),
+      postDate: feedDate || undefined,
+      externalUrl: raw.link || null,
+      ...(feedDate ? {} : { _setOnInsert: { postDate: timestamp } }),
+    };
+  });
 
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] NYU Langone: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'nyulangone', timestamp, 'NYU Langone');
 };
 
 module.exports = refreshNyuLangoneJobs;

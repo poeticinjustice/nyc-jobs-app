@@ -13,6 +13,7 @@ puppeteer.use(StealthPlugin());
 const mongoose = require('mongoose');
 const Job = require('../models/Job');
 const { geocodeLocationBase } = require('../helpers/geocoding');
+const { safeDate } = require('../scrapers/utils');
 
 const UPSERT_BATCH = 500;
 
@@ -168,7 +169,9 @@ const scrapeMtaJobs = async (browser, timestamp) => {
             salaryRangeTo: null,
             salaryFrequency: null,
             fullTimePartTimeIndicator: raw.type || null,
-            postDate: raw.postedDate || raw.dateCreated || null,
+            // safeDate: a junk date string from the site would otherwise become
+            // an Invalid Date and abort the whole bulkWrite batch at cast time.
+            postDate: safeDate(raw.postedDate || raw.dateCreated),
             externalUrl: raw.href
               ? (raw.href.startsWith('http') ? raw.href : `https://careers.mta.org${raw.href}`)
               : `https://careers.mta.org/jobs/${raw.jobId || ''}`,

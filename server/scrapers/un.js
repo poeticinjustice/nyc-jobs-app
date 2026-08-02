@@ -2,7 +2,7 @@
  * United Nations Jobs scraper — fetches from UN Careers REST API.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, safeDate, batchUpsert } = require('./utils');
 
 const UN_API_URL = 'https://careers.un.org/api/public/opening/jo/list/filteredV2/en';
 
@@ -49,52 +49,26 @@ const refreshUnJobs = async (timestamp) => {
   if (activeJobs.length === 0) return { upserted: 0, modified: 0 };
   allJobs = activeJobs;
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => ({
+    jobId: String(raw.jobId),
+    businessTitle: raw.postingTitle || raw.jobTitle || null,
+    agency: raw.dept?.name || 'United Nations',
+    workLocation: raw.dutyStation?.[0]?.description || 'New York',
+    workLocation1: null,
+    divisionWorkUnit: raw.dept?.name || null,
+    jobDescription: raw.jobDescription || null,
+    jobCategory: raw.jc?.name || raw.jf?.Name || null,
+    salaryRangeFrom: null,
+    salaryRangeTo: null,
+    salaryFrequency: null,
+    fullTimePartTimeIndicator: raw.recruitmentType === 'I' ? 'Full-Time' : null,
+    postDate: safeDate(raw.startDate),
+    postUntil: safeDate(raw.endDate),
+    externalUrl: `https://careers.un.org/jobSearchDescription/${raw.jobId}?language=en`,
+    level: raw.jl?.name || raw.jobLevel || null,
+  }));
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const dutyStation = raw.dutyStation?.[0]?.description || 'New York';
-      const job = {
-        jobId: String(raw.jobId),
-        businessTitle: raw.postingTitle || raw.jobTitle || null,
-        agency: raw.dept?.name || 'United Nations',
-        workLocation: dutyStation,
-        workLocation1: null,
-        divisionWorkUnit: raw.dept?.name || null,
-        jobDescription: raw.jobDescription || null,
-        jobCategory: raw.jc?.name || raw.jf?.Name || null,
-        salaryRangeFrom: null,
-        salaryRangeTo: null,
-        salaryFrequency: null,
-        fullTimePartTimeIndicator: raw.recruitmentType === 'I' ? 'Full-Time' : null,
-        postDate: raw.startDate ? new Date(raw.startDate) : null,
-        postUntil: raw.endDate ? new Date(raw.endDate) : null,
-        externalUrl: `https://careers.un.org/jobSearchDescription/${raw.jobId}?language=en`,
-        level: raw.jl?.name || raw.jobLevel || null,
-      };
-
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'un');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'un' },
-          update: {
-            $set: { ...job, source: 'un', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] UN: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'un', timestamp, 'UN');
 };
 
 module.exports = refreshUnJobs;

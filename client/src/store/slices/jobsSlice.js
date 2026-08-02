@@ -126,6 +126,34 @@ export const getJobNotes = createAsyncThunk(
   }
 );
 
+export const bulkUpdateJobStatus = createAsyncThunk(
+  'jobs/bulkUpdateJobStatus',
+  async ({ jobs, status }, { rejectWithValue }) => {
+    try {
+      const response = await api.put('/api/jobs/saved/bulk-status', { jobs, status });
+      return { ...response.data, jobs, status };
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to update statuses'
+      );
+    }
+  }
+);
+
+export const markJobsSeen = createAsyncThunk(
+  'jobs/markJobsSeen',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.post('/api/jobs/seen');
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to mark jobs as seen'
+      );
+    }
+  }
+);
+
 const initialState = {
   searchResults: [],
   currentJob: null,
@@ -145,12 +173,14 @@ const initialState = {
     pages: 0,
   },
   statusFilter: '',
+  newSinceLastSeen: 0,
+  searchLatestRequestId: null,
+  detailsLatestRequestId: null,
+  savedJobsLatestRequestId: null,
+  jobNotesLatestRequestId: null,
   searchLoading: false,
   detailsLoading: false,
   savedJobsLoading: false,
-  saveLoading: false,
-  statusLoading: false,
-  trackingLoading: false,
   searchError: null,
   detailsError: null,
   savedJobsError: null,
@@ -172,43 +202,49 @@ const jobsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       // Search Jobs
-      .addCase(searchJobs.pending, (state) => {
+      .addCase(searchJobs.pending, (state, action) => {
+        state.searchLatestRequestId = action.meta.requestId;
         state.searchLoading = true;
         state.searchError = null;
       })
       .addCase(searchJobs.fulfilled, (state, action) => {
+        // Ignore stale responses — only the latest request may update state
+        if (action.meta.requestId !== state.searchLatestRequestId) return;
         state.searchLoading = false;
         state.searchResults = action.payload.jobs;
         state.searchPagination = action.payload.pagination;
+        state.newSinceLastSeen = action.payload.newSinceLastSeen || 0;
       })
       .addCase(searchJobs.rejected, (state, action) => {
+        if (action.meta.requestId !== state.searchLatestRequestId) return;
         state.searchLoading = false;
         state.searchError = action.payload;
       })
 
       // Get Job Details — clear currentJob in pending to avoid flash
-      .addCase(getJobDetails.pending, (state) => {
+      .addCase(getJobDetails.pending, (state, action) => {
+        state.detailsLatestRequestId = action.meta.requestId;
         state.detailsLoading = true;
         state.detailsError = null;
         state.currentJob = null;
         state.jobNotes = [];
       })
       .addCase(getJobDetails.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.detailsLatestRequestId) return;
         state.detailsLoading = false;
         state.currentJob = action.payload;
       })
       .addCase(getJobDetails.rejected, (state, action) => {
+        if (action.meta.requestId !== state.detailsLatestRequestId) return;
         state.detailsLoading = false;
         state.detailsError = action.payload;
       })
 
       // Save Job
       .addCase(saveJob.pending, (state) => {
-        state.saveLoading = true;
         state.saveError = null;
       })
       .addCase(saveJob.fulfilled, (state, action) => {
-        state.saveLoading = false;
         const { jobId, source, applicationStatus, statusHistory } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
@@ -224,17 +260,14 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(saveJob.rejected, (state, action) => {
-        state.saveLoading = false;
         state.saveError = action.payload;
       })
 
       // Unsave Job
       .addCase(unsaveJob.pending, (state) => {
-        state.saveLoading = true;
         state.saveError = null;
       })
       .addCase(unsaveJob.fulfilled, (state, action) => {
-        state.saveLoading = false;
         const { jobId, source } = action.payload;
         if (state.currentJob && state.currentJob.jobId === jobId &&
             (!source || state.currentJob.source === source)) {
@@ -259,17 +292,14 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(unsaveJob.rejected, (state, action) => {
-        state.saveLoading = false;
         state.saveError = action.payload;
       })
 
       // Update Job Status
       .addCase(updateJobStatus.pending, (state) => {
-        state.statusLoading = true;
         state.saveError = null;
       })
       .addCase(updateJobStatus.fulfilled, (state, action) => {
-        state.statusLoading = false;
         const { jobId, source, applicationStatus, statusHistory } = action.payload;
         const savedJob = state.savedJobs.find(
           (job) => job.jobId === jobId && (!source || job.source === source)
@@ -289,17 +319,14 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(updateJobStatus.rejected, (state, action) => {
-        state.statusLoading = false;
         state.saveError = action.payload;
       })
 
       // Update Job Tracking
       .addCase(updateJobTracking.pending, (state) => {
-        state.trackingLoading = true;
         state.saveError = null;
       })
       .addCase(updateJobTracking.fulfilled, (state, action) => {
-        state.trackingLoading = false;
         const { jobId, source, applicationDate, interviewDate, followUpDate, documentLinks } = action.payload;
 
         const savedJob = state.savedJobs.find(
@@ -321,36 +348,67 @@ const jobsSlice = createSlice({
         }
       })
       .addCase(updateJobTracking.rejected, (state, action) => {
-        state.trackingLoading = false;
         state.saveError = action.payload;
       })
 
-      // Get Job Notes
-      .addCase(getJobNotes.pending, (state) => {
+      // Get Job Notes — guarded like the other list fetches. Without this,
+      // opening job A then job B renders A's notes under B whenever A's
+      // request resolves second.
+      .addCase(getJobNotes.pending, (state, action) => {
+        state.jobNotesLatestRequestId = action.meta.requestId;
         state.jobNotesLoading = true;
       })
       .addCase(getJobNotes.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.jobNotesLatestRequestId) return;
         state.jobNotesLoading = false;
         state.jobNotes = action.payload.notes;
       })
-      .addCase(getJobNotes.rejected, (state) => {
+      .addCase(getJobNotes.rejected, (state, action) => {
+        if (action.meta.requestId !== state.jobNotesLatestRequestId) return;
         state.jobNotesLoading = false;
         state.jobNotes = [];
       })
 
       // Get Saved Jobs
-      .addCase(getSavedJobs.pending, (state) => {
+      .addCase(getSavedJobs.pending, (state, action) => {
+        state.savedJobsLatestRequestId = action.meta.requestId;
         state.savedJobsLoading = true;
         state.savedJobsError = null;
       })
       .addCase(getSavedJobs.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.savedJobsLatestRequestId) return;
         state.savedJobsLoading = false;
         state.savedJobs = action.payload.jobs;
         state.savedPagination = action.payload.pagination;
       })
       .addCase(getSavedJobs.rejected, (state, action) => {
+        if (action.meta.requestId !== state.savedJobsLatestRequestId) return;
         state.savedJobsLoading = false;
         state.savedJobsError = action.payload;
+      })
+
+      .addCase(bulkUpdateJobStatus.fulfilled, (state, action) => {
+        state.saveError = null;
+        const { jobs, status } = action.payload;
+        const touched = new Set(
+          jobs.map((j) => `${j.source || 'nyc'}:${j.jobId}`)
+        );
+        state.savedJobs = state.savedJobs.map((job) =>
+          touched.has(`${job.source || 'nyc'}:${job.jobId}`)
+            ? { ...job, applicationStatus: status }
+            : job
+        );
+      })
+      .addCase(bulkUpdateJobStatus.rejected, (state, action) => {
+        state.saveError = action.payload;
+      })
+
+      .addCase(markJobsSeen.fulfilled, (state) => {
+        state.newSinceLastSeen = 0;
+        state.searchResults = state.searchResults.map((job) => ({
+          ...job,
+          isNew: false,
+        }));
       })
 
       // Reset user-specific state on logout
@@ -360,10 +418,26 @@ const jobsSlice = createSlice({
         state.jobNotes = [];
         state.savedPagination = initialState.savedPagination;
         state.statusFilter = '';
+        state.newSinceLastSeen = 0;
         state.searchError = null;
         state.detailsError = null;
         state.savedJobsError = null;
         state.saveError = null;
+        // Drop the in-flight markers too. Clearing the data alone was not
+        // enough: a response already on the wire for the previous user still
+        // matched its request id and repopulated the store after logout.
+        state.searchLatestRequestId = null;
+        state.detailsLatestRequestId = null;
+        state.savedJobsLatestRequestId = null;
+        state.jobNotesLatestRequestId = null;
+        // The postings themselves are public, so they stay — but isSaved and
+        // isNew are per-user, and leaving them set showed the next person to
+        // sign in the previous user's bookmarks against the same results.
+        state.searchResults = state.searchResults.map((job) => ({
+          ...job,
+          isSaved: false,
+          isNew: false,
+        }));
       });
   },
 });

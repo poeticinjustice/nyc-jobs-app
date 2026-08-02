@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { getDashboard } from '../store/slices/dashboardSlice';
+import { SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 import {
   HiSearch,
   HiBookmark,
@@ -347,10 +348,10 @@ const Home = () => {
       <div className='bg-gradient-to-br from-primary-600 to-primary-800 rounded-lg shadow-lg p-8 text-white'>
         <div className='text-center max-w-2xl mx-auto'>
           <h1 className='text-3xl sm:text-4xl font-bold mb-3'>
-            Find Your Next Government Job
+            Find Your Next NYC Job
           </h1>
           <p className='text-primary-100 text-lg mb-6'>
-            Search thousands of NYC city and federal government positions
+            Search thousands of jobs across government, universities, hospitals, museums, and more
           </p>
 
           <form onSubmit={handleSearch} className='max-w-xl mx-auto'>
@@ -394,7 +395,7 @@ const Home = () => {
             Browse Jobs
           </h3>
           <p className='text-sm text-gray-600'>
-            Search thousands of NYC and federal government postings
+            Search across {SOURCE_OPTIONS.length - 1} NYC-area employers
           </p>
         </button>
 
@@ -406,7 +407,7 @@ const Home = () => {
             <HiLocationMarker className='h-6 w-6 text-green-600' />
           </div>
           <h3 className='text-lg font-medium text-gray-900 mb-1'>
-            Job Map
+            Map
           </h3>
           <p className='text-sm text-gray-600'>
             Explore jobs by location on an interactive map

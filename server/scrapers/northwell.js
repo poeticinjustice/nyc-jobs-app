@@ -2,7 +2,7 @@
  * Northwell Health (Oracle HCM REST API)
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH } = require('./utils');
+const { axios, safeDate, batchUpsert } = require('./utils');
 
 const NORTHWELL_API_URL = 'https://eppr.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions';
 const NORTHWELL_PAGE_SIZE = 25;
@@ -49,49 +49,26 @@ const refreshNorthwellJobs = async (timestamp) => {
   });
   console.log(`[refresh] Northwell metro area jobs: ${metroJobs.length}/${allJobs.length}`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = metroJobs.map((raw) => ({
+    jobId: String(raw.Id),
+    businessTitle: raw.Title || null,
+    agency: 'Northwell Health',
+    workLocation: raw.PrimaryLocation || null,
+    workLocation1: null,
+    jobDescription: raw.ShortDescriptionStr || null,
+    jobCategory: null,
+    // The Oracle HCM feed carries no salary figures at all — verified against
+    // both the list and detail endpoints, so these stay null by design.
+    salaryRangeFrom: null,
+    salaryRangeTo: null,
+    salaryFrequency: null,
+    fullTimePartTimeIndicator: raw.WorkplaceTypeCode || null,
+    postDate: safeDate(raw.PostedDate),
+    postUntil: safeDate(raw.PostingEndDate),
+    externalUrl: `https://eppr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/job/${raw.Id}`,
+  }));
 
-  for (let i = 0; i < metroJobs.length; i += UPSERT_BATCH) {
-    const slice = metroJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const job = {
-        jobId: String(raw.Id),
-        businessTitle: raw.Title || null,
-        agency: 'Northwell Health',
-        workLocation: raw.PrimaryLocation || null,
-        workLocation1: null,
-        jobDescription: raw.ShortDescriptionStr || null,
-        jobCategory: null,
-        salaryRangeFrom: null,
-        salaryRangeTo: null,
-        salaryFrequency: null,
-        fullTimePartTimeIndicator: raw.WorkplaceTypeCode || null,
-        postDate: raw.PostedDate || null,
-        postUntil: raw.PostingEndDate || null,
-        externalUrl: `https://eppr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/job/${raw.Id}`,
-      };
-
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'northwell');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'northwell' },
-          update: {
-            $set: { ...job, source: 'northwell', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] Northwell: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'northwell', timestamp, 'Northwell');
 };
 
 module.exports = refreshNorthwellJobs;

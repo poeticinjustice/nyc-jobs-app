@@ -5,6 +5,14 @@ import { decodeEntities as decode } from 'nyc-jobs-shared/utils/textUtils';
 // Re-export platform-agnostic text utilities from shared
 export { decodeEntities, stripHtml, truncateText } from 'nyc-jobs-shared/utils/textUtils';
 
+// Reverse-tabnabbing hardening: any sanitized <a> with a target must carry
+// rel="noopener noreferrer". Registered once at module level.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A' && node.getAttribute('target')) {
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
 // Check if content has real HTML structure (not just <br> tags)
 const hasRichHtml = (str) => /<(?:p|ul|ol|li|h[1-6]|div|table|section|b|strong|em|i)\b/i.test(str);
 

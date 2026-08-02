@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,26 +13,57 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { exportCsv } from '@/lib/exportCsv';
+import {
+  PagedState,
+  initialPagedState,
+  nextPage,
+  patchCriteria,
+  resetPage,
+} from '@/lib/searchCriteria';
+import {
+  NOTE_CONTENT_MAX,
+  NOTE_PRIORITY_VALUES,
+  NOTE_TITLE_MAX,
+  NOTE_TYPE_VALUES,
+} from 'nyc-jobs-shared/constants';
 
+// The shared package owns the *values* (they back the Mongoose enums); it does
+// not ship display labels for note types/priorities, so those live here.
+// Anything the shared list gains without a label here still shows up, title-cased.
+const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+
+const TYPE_LABELS: Record<string, string> = {
+  general: 'General',
+  interview: 'Interview',
+  application: 'Application',
+  followup: 'Follow-up',
+  research: 'Research',
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
+// '' is the mobile-only "no filter" pill, not a stored value.
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
-  { value: 'general', label: 'General' },
-  { value: 'interview', label: 'Interview' },
-  { value: 'application', label: 'Application' },
-  { value: 'followup', label: 'Follow-up' },
-  { value: 'research', label: 'Research' },
+  ...NOTE_TYPE_VALUES.map((value) => ({ value, label: TYPE_LABELS[value] || titleCase(value) })),
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: '', label: 'All' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'urgent', label: 'Urgent' },
+  { value: '', label: 'All Priorities' },
+  ...NOTE_PRIORITY_VALUES.map((value) => ({
+    value,
+    label: PRIORITY_LABELS[value] || titleCase(value),
+  })),
 ];
 
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
@@ -73,6 +104,11 @@ type NoteForm = {
 
 const emptyForm: NoteForm = { title: '', content: '', type: 'general', priority: 'medium', tags: '' };
 
+// What this list is querying. '' means "any" for either facet.
+type NotesCriteria = { type: string; priority: string };
+
+const DEFAULT_NOTES_CRITERIA: NotesCriteria = { type: '', priority: '' };
+
 export default function NotesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -80,9 +116,12 @@ export default function NotesScreen() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [typeFilter, setTypeFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  const [page, setPage] = useState(1);
+  // Criteria + page in one state so lib/searchCriteria enforces the page reset.
+  const [search, setSearch] = useState<PagedState<NotesCriteria>>(() =>
+    initialPagedState(DEFAULT_NOTES_CRITERIA)
+  );
+  const { criteria, page } = search;
+  const { type: typeFilter, priority: priorityFilter } = criteria;
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
@@ -92,6 +131,7 @@ export default function NotesScreen() {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [form, setForm] = useState<NoteForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchNotes = useCallback(async (p: number, type: string, priority: string, append = false) => {
     try {
@@ -101,35 +141,84 @@ export default function NotesScreen() {
       const res = await api.get('/api/notes', { params });
       const fetched = res.data.notes || [];
       if (append) {
-        setNotes((prev) => [...prev, ...fetched]);
+        // Dedupe by id in case overlapping pages return the same note.
+        setNotes((prev) => {
+          const seen = new Set(prev.map((n) => n._id));
+          const additions = (fetched as Note[]).filter((n) => !seen.has(n._id));
+          return [...prev, ...additions];
+        });
       } else {
         setNotes(fetched);
       }
       setTotal(res.data.pagination?.total || fetched.length);
       setHasMore(p < (res.data.pagination?.pages || 1));
     } catch (err: any) {
+      if (!append) {
+        // Clear any stale list (e.g. a previous account's notes) rather than
+        // keep rendering it after a failed page-1 fetch.
+        setNotes([]);
+        setTotal(0);
+        setHasMore(false);
+      }
       Alert.alert('Error', err?.response?.data?.message || 'Failed to load notes');
     }
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    fetchNotes(1, typeFilter, priorityFilter).finally(() => setLoading(false));
-  }, [user, typeFilter, priorityFilter, fetchNotes]);
+  // Tracks the last filter combo so focus-regain refetches are silent while
+  // first load and filter changes still show the spinner.
+  const lastQueryKey = useRef<string | null>(null);
+
+  // Refetch page 1 on initial load, filter changes, and whenever the tab
+  // regains focus (so notes added on other screens are reflected).
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      const queryKey = `${typeFilter}|${priorityFilter}`;
+      const showSpinner = lastQueryKey.current !== queryKey;
+      lastQueryKey.current = queryKey;
+      if (showSpinner) setLoading(true);
+      setSearch(resetPage);
+      fetchNotes(1, typeFilter, priorityFilter).finally(() => {
+        if (showSpinner) setLoading(false);
+      });
+    }, [user, typeFilter, priorityFilter, fetchNotes])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setPage(1);
+    setSearch(resetPage);
     await fetchNotes(1, typeFilter, priorityFilter);
     setRefreshing(false);
   };
 
+  // Guards against onEndReached firing again while an append is in flight,
+  // which would fetch the same next page twice.
+  const loadingMoreRef = useRef(false);
+
   const onEndReached = () => {
-    if (!hasMore || loading) return;
+    if (!hasMore || loading || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     const next = page + 1;
-    setPage(next);
-    fetchNotes(next, typeFilter, priorityFilter, true);
+    setSearch(nextPage);
+    fetchNotes(next, typeFilter, priorityFilter, true).finally(() => {
+      loadingMoreRef.current = false;
+    });
+  };
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportCsv({
+        path: '/api/notes/export',
+        filename: 'notes.csv',
+        dialogTitle: 'Export Notes',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to export CSV');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const openCreate = () => {
@@ -188,7 +277,7 @@ export default function NotesScreen() {
         await api.post('/api/notes', payload);
         // Refresh list to get server-assigned fields
         await fetchNotes(1, typeFilter, priorityFilter);
-        setPage(1);
+        setSearch(resetPage);
       }
       setModalVisible(false);
     } catch (err: any) {
@@ -293,9 +382,22 @@ export default function NotesScreen() {
             <Text style={styles.title}>My Notes</Text>
             <Text style={styles.subtitle}>{total} {total === 1 ? 'note' : 'notes'}</Text>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={openCreate}>
-            <Text style={styles.addButtonText}>+ New</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {notes.length > 0 && (
+              <TouchableOpacity
+                style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+                onPress={handleExport}
+                disabled={exporting}
+              >
+                <Text style={styles.exportButtonText}>
+                  {exporting ? 'Exporting...' : 'Export'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.addButton} onPress={openCreate}>
+              <Text style={styles.addButtonText}>+ New</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -310,7 +412,7 @@ export default function NotesScreen() {
           <TouchableOpacity
             key={f.value}
             style={[styles.filterChip, typeFilter === f.value && styles.filterChipActive]}
-            onPress={() => { setTypeFilter(f.value); setPage(1); }}
+            onPress={() => setSearch((prev) => patchCriteria(prev, { type: f.value }))}
           >
             <Text style={[styles.filterChipText, typeFilter === f.value && styles.filterChipTextActive]}>
               {f.label}
@@ -322,7 +424,7 @@ export default function NotesScreen() {
           <TouchableOpacity
             key={`p-${f.value}`}
             style={[styles.filterChip, priorityFilter === f.value && styles.filterChipActivePriority]}
-            onPress={() => { setPriorityFilter(f.value); setPage(1); }}
+            onPress={() => setSearch((prev) => patchCriteria(prev, { priority: f.value }))}
           >
             <Text style={[styles.filterChipText, priorityFilter === f.value && styles.filterChipTextActive]}>
               {f.label}
@@ -431,7 +533,7 @@ export default function NotesScreen() {
                   value={form.title}
                   onChangeText={(t) => setForm((f) => ({ ...f, title: t }))}
                   placeholder="Note title"
-                  maxLength={200}
+                  maxLength={NOTE_TITLE_MAX}
                 />
 
                 <Text style={styles.fieldLabel}>Content</Text>
@@ -441,7 +543,7 @@ export default function NotesScreen() {
                   onChangeText={(t) => setForm((f) => ({ ...f, content: t }))}
                   placeholder="Write your note..."
                   multiline
-                  maxLength={5000}
+                  maxLength={NOTE_CONTENT_MAX}
                   textAlignVertical="top"
                 />
 
@@ -531,6 +633,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   addButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  exportButton: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#fff',
+  },
+  exportButtonDisabled: { opacity: 0.5 },
+  exportButtonText: { color: '#374151', fontWeight: '600', fontSize: 14 },
   filterWrapper: { paddingVertical: 10, marginTop: 4 },
   filterContent: { paddingHorizontal: 16, gap: 6, alignItems: 'center' },
   filterChip: {

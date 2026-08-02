@@ -11,7 +11,7 @@ const APPLICATION_STATUSES = [
 ];
 
 // Valid job sources for DB storage
-const JOB_SOURCES = ['nyc', 'federal', 'nys', 'cuny', 'nyu', 'fordham', 'pa', 'mountsinai', 'idealist', 'columbia', 'nyp', 'northwell', 'nyulangone', 'newschool', 'amtrak', 'un', 'amnh', 'metmuseum', 'frick', 'guggenheim'];
+const JOB_SOURCES = ['nyc', 'federal', 'nys', 'cuny', 'nyu', 'fordham', 'pa', 'mta', 'mountsinai', 'idealist', 'columbia', 'nyp', 'northwell', 'nyulangone', 'newschool', 'amtrak', 'un', 'amnh', 'metmuseum', 'frick', 'guggenheim', 'msk', 'montefiore', 'nypl', 'nychhc'];
 
 // Source filter options including 'all' (used in search UI and validators)
 const SOURCE_OPTIONS = [
@@ -23,6 +23,7 @@ const SOURCE_OPTIONS = [
   { value: 'nyu', label: 'NYU' },
   { value: 'fordham', label: 'Fordham' },
   { value: 'pa', label: 'Port Authority' },
+  { value: 'mta', label: 'MTA' },
   { value: 'mountsinai', label: 'Mount Sinai' },
   { value: 'idealist', label: 'Non-Profit' },
   { value: 'columbia', label: 'Columbia' },
@@ -36,6 +37,10 @@ const SOURCE_OPTIONS = [
   { value: 'metmuseum', label: 'Met Museum' },
   { value: 'frick', label: 'Frick Collection' },
   { value: 'guggenheim', label: 'Guggenheim' },
+  { value: 'msk', label: 'MSK' },
+  { value: 'montefiore', label: 'Montefiore' },
+  { value: 'nypl', label: 'NYPL' },
+  { value: 'nychhc', label: 'NYC H+H' },
 ];
 
 // All valid source filter values (JOB_SOURCES + 'all')
@@ -63,7 +68,8 @@ const USER_ROLE_VALUES = ['user', 'admin', 'moderator'];
 
 // Validation limits (shared between client validators and server express-validator rules)
 const NAME_MAX = 50;
-const PASSWORD_MIN = 6;
+const PASSWORD_MIN = 8; // register/change only — login never enforces length, so existing users are unaffected
+const PASSWORD_MAX = 128; // bcrypt DoS guard
 const NOTE_TITLE_MAX = 200;
 const NOTE_CONTENT_MAX = 5000;
 const SEARCH_NAME_MAX = 100;
@@ -80,6 +86,7 @@ module.exports = {
   SORT_VALUES,
   NAME_MAX,
   PASSWORD_MIN,
+  PASSWORD_MAX,
   NOTE_TITLE_MAX,
   NOTE_CONTENT_MAX,
   SEARCH_NAME_MAX,

@@ -45,6 +45,12 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // Reference point for "new since you last looked" badges in job search.
+    // Advanced only by an explicit mark-seen call, so badges survive reloads.
+    lastJobsSeenAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,

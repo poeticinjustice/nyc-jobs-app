@@ -2,7 +2,7 @@
  * CUNY Jobs scraper — fetches from DirectEmployers / Solr API.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const CUNY_SEARCH_URL = 'https://prod-search-api.jobsyn.org/api/v1/solr/search';
 const CUNY_PAGE_SIZE = 10; // API enforces max 10
@@ -36,55 +36,31 @@ const refreshCunyJobs = async (timestamp) => {
 
   console.log(`[refresh] Fetched ${allJobs.length} CUNY jobs`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    // Parse salary from description text
+    const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } =
+      parseSalaryRange(raw.description || '') || {};
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      // Parse salary from description text
-      const desc = raw.description || '';
-      const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc) || {};
+    return {
+      jobId: raw.guid || raw.reqid,
+      businessTitle: raw.title_exact || raw.title,
+      agency: raw.location_name || 'CUNY',
+      workLocation: raw.city_exact || null,
+      workLocation1: raw.location_exact || null,
+      jobDescription: raw.description || null,
+      jobCategory: null,
+      salaryRangeFrom: salaryFrom,
+      salaryRangeTo: salaryTo,
+      salaryFrequency,
+      fullTimePartTimeIndicator: raw.job_type || null,
+      postDate: safeDate(raw.date_new || raw.date_added),
+      externalUrl: raw.title_slug && raw.guid
+        ? `https://cuny.jobs/${raw.title_slug}/${raw.guid}/job/`
+        : `https://cuny.jobs/jobs/${raw.guid || ''}`,
+    };
+  });
 
-
-      const job = {
-        jobId: raw.guid || raw.reqid,
-        businessTitle: raw.title_exact || raw.title,
-        agency: raw.location_name || 'CUNY',
-        workLocation: raw.city_exact || null,
-        workLocation1: raw.location_exact || null,
-        jobDescription: raw.description || null,
-        jobCategory: null,
-        salaryRangeFrom: salaryFrom,
-        salaryRangeTo: salaryTo,
-        salaryFrequency,
-        fullTimePartTimeIndicator: raw.job_type || null,
-        postDate: raw.date_new || raw.date_added || null,
-        externalUrl: raw.title_slug && raw.guid
-          ? `https://cuny.jobs/${raw.title_slug}/${raw.guid}/job/`
-          : `https://cuny.jobs/jobs/${raw.guid || ''}`,
-      };
-
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'cuny');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'cuny' },
-          update: {
-            $set: { ...job, source: 'cuny', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] CUNY: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'cuny', timestamp, 'CUNY');
 };
 
 module.exports = refreshCunyJobs;

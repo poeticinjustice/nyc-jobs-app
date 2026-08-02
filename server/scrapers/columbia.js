@@ -1,4 +1,4 @@
-const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, cheerio, Job, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 // ---------------------------------------------------------------------------
 // Columbia University Jobs (PageUp HTML scraping)
@@ -135,63 +135,47 @@ const refreshColumbiaJobs = async (timestamp) => {
   console.log(`[refresh] Columbia: scraped ${detailResults.size} detail pages`);
 
   // Phase 4: upsert all jobs
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    const hasDetail = detailResults.has(raw.slug);
+    const detail = detailResults.get(raw.slug) || {};
+    const existing = existingMap.get(raw.slug);
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const detail = detailResults.get(raw.slug) || {};
-      const existing = existingMap.get(raw.slug);
+    // Title: detail page when fetched; keep the stored title for cached jobs
+    // (undefined = leave DB value); slug-derived only for brand-new jobs.
+    const slugTitle = raw.slug
+      .replace(/-united-states.*$/, '')
+      .replace(/-new-york.*$/, '')
+      .replace(/-[a-f0-9]{8}-[a-f0-9]{4}.*$/, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    const title = hasDetail ? (detail.title || slugTitle) : (existing ? undefined : slugTitle);
 
-      // Use detail page title if available, otherwise derive from slug
-      const title = detail.title || existing?.businessTitle || raw.slug
-        .replace(/-united-states.*$/, '')
-        .replace(/-new-york.*$/, '')
-        .replace(/-[a-f0-9]{8}-[a-f0-9]{4}.*$/, '')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+    // Detail-derived fields: undefined when this run didn't fetch the detail
+    // page for an existing job — batchUpsert strips them, preserving stored values.
+    const keep = (value) => (hasDetail || !existing ? (value ?? null) : undefined);
 
-      const job = {
-        jobId: raw.slug,
-        businessTitle: title,
-        agency: 'Columbia University',
-        workLocation: 'New York',
-        workLocation1: null,
-        divisionWorkUnit: detail.jobType || null,
-        jobDescription: detail.description || existing?.jobDescription || null,
-        minimumQualRequirements: detail.qualifications || null,
-        jobCategory: detail.jobType || null,
-        salaryRangeFrom: detail.salaryFrom || null,
-        salaryRangeTo: detail.salaryTo || null,
-        salaryFrequency: detail.salaryFrequency || null,
-        fullTimePartTimeIndicator: detail.employmentType || null,
-        hoursShift: detail.hours || null,
-        postDate: detail.postDate ? new Date(detail.postDate) : null,
-        postUntil: detail.postUntil ? new Date(detail.postUntil) : null,
-        externalUrl: raw.url,
-      };
+    return {
+      jobId: raw.slug,
+      businessTitle: title,
+      agency: 'Columbia University',
+      workLocation: 'New York',
+      workLocation1: null,
+      divisionWorkUnit: keep(detail.jobType),
+      jobDescription: detail.description || existing?.jobDescription || undefined,
+      minimumQualRequirements: keep(detail.qualifications),
+      jobCategory: keep(detail.jobType),
+      salaryRangeFrom: keep(detail.salaryFrom),
+      salaryRangeTo: keep(detail.salaryTo),
+      salaryFrequency: keep(detail.salaryFrequency),
+      fullTimePartTimeIndicator: keep(detail.employmentType),
+      hoursShift: keep(detail.hours),
+      postDate: keep(safeDate(detail.postDate)),
+      postUntil: keep(safeDate(detail.postUntil)),
+      externalUrl: raw.url,
+    };
+  });
 
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'columbia');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'columbia' },
-          update: {
-            $set: { ...job, source: 'columbia', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] Columbia: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'columbia', timestamp, 'Columbia');
 };
 
 module.exports = refreshColumbiaJobs;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -12,12 +12,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
-import { formatDate } from '@/lib/format';
+import { NAME_MAX, PASSWORD_MIN } from 'nyc-jobs-shared/constants';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile');
 
   // Profile form
@@ -31,6 +31,14 @@ export default function ProfileScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Re-initialize form fields whenever the authenticated user changes (the
+  // screen can mount before login, leaving the initial state empty).
+  useEffect(() => {
+    setFirstName(user?.firstName || '');
+    setLastName(user?.lastName || '');
+    setEmail(user?.email || '');
+  }, [user]);
 
   if (!user) {
     return (
@@ -48,6 +56,10 @@ export default function ProfileScreen() {
       Alert.alert('Required', 'Please enter your first name.');
       return;
     }
+    if (!lastName.trim()) {
+      Alert.alert('Required', 'Please enter your last name.');
+      return;
+    }
     if (!email.trim()) {
       Alert.alert('Required', 'Please enter your email.');
       return;
@@ -55,11 +67,16 @@ export default function ProfileScreen() {
 
     setProfileLoading(true);
     try {
-      await api.put('/api/auth/profile', {
+      const res = await api.put('/api/auth/profile', {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
       });
+      // Sync the auth context with the server's copy so other screens
+      // (e.g. Home's welcome message) reflect the change immediately.
+      if (res.data?.user) {
+        updateUser(res.data.user);
+      }
       Alert.alert('Success', 'Profile updated successfully.');
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.message || 'Could not update profile');
@@ -73,8 +90,8 @@ export default function ProfileScreen() {
       Alert.alert('Required', 'Please fill in all password fields.');
       return;
     }
-    if (newPassword.length < 6) {
-      Alert.alert('Weak Password', 'New password must be at least 6 characters.');
+    if (newPassword.length < PASSWORD_MIN) {
+      Alert.alert('Weak Password', `New password must be at least ${PASSWORD_MIN} characters.`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -149,16 +166,16 @@ export default function ProfileScreen() {
             value={firstName}
             onChangeText={setFirstName}
             placeholder="First name"
-            maxLength={50}
+            maxLength={NAME_MAX}
           />
 
-          <Text style={styles.fieldLabel}>Last Name</Text>
+          <Text style={styles.fieldLabel}>Last Name (required)</Text>
           <TextInput
             style={styles.input}
             value={lastName}
             onChangeText={setLastName}
-            placeholder="Last name (optional)"
-            maxLength={50}
+            placeholder="Last name"
+            maxLength={NAME_MAX}
           />
 
           <Text style={styles.fieldLabel}>Email</Text>
@@ -197,7 +214,7 @@ export default function ProfileScreen() {
             style={styles.input}
             value={newPassword}
             onChangeText={setNewPassword}
-            placeholder="New password (min 6 chars)"
+            placeholder={`New password (min ${PASSWORD_MIN} chars)`}
             secureTextEntry
           />
 

@@ -19,6 +19,8 @@ if (missingOptional.length > 0) {
 const app = require('./app');
 const Job = require('./models/Job');
 const { refreshAllJobs } = require('./scripts/refreshJobs');
+const { backfillAnnualSalary } = require('./scripts/backfillAnnualSalary');
+let refreshRunning = false;
 
 const PORT = process.env.PORT || 8000;
 
@@ -28,19 +30,40 @@ mongoose
   .then(async () => {
     console.log('Connected to MongoDB');
 
-    // Seed on startup if database is empty
+    // Seed on startup if database is empty (holds the overlap lock so a cron
+    // tick during the seed can't start a second concurrent refresh)
     const count = await Job.estimatedDocumentCount();
     if (count === 0) {
       console.log('Database is empty — triggering initial seed...');
-      refreshAllJobs().catch((err) => console.error('Initial seed failed:', err));
+      refreshRunning = true;
+      refreshAllJobs()
+        .catch((err) => console.error('Initial seed failed:', err))
+        .finally(() => { refreshRunning = false; });
     } else {
       console.log(`Database has ~${count} jobs`);
+
+      // Salary filtering reads annualSalaryFrom/To, which jobs written before
+      // those columns existed do not have — and a document missing them matches
+      // no salary filter at all, so every salary-filtered search would come
+      // back empty. A refresh cycle rewrites them, but the cron only fires at
+      // 00/06/12/18 UTC and this process may be asleep then, so waiting on it
+      // is not a guarantee. Run the backfill once instead; it is idempotent and
+      // costs a single indexed count once there is nothing left to do.
+      backfillAnnualSalary()
+        .catch((err) => console.error('Annual-salary backfill failed:', err.message));
     }
 
-    // Schedule refresh every 6 hours
+    // Schedule refresh every 6 hours (with overlap protection)
     cron.schedule('0 0,6,12,18 * * *', () => {
+      if (refreshRunning) {
+        console.log('Cron: skipping — previous refresh still running');
+        return;
+      }
       console.log('Cron: starting scheduled job refresh');
-      refreshAllJobs().catch((err) => console.error('Scheduled refresh failed:', err));
+      refreshRunning = true;
+      refreshAllJobs()
+        .catch((err) => console.error('Scheduled refresh failed:', err))
+        .finally(() => { refreshRunning = false; });
     });
 
     const server = app.listen(PORT, () => {

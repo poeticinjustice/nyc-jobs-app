@@ -1,4 +1,4 @@
-const { axios, cheerio, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, cheerio, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 // ---------------------------------------------------------------------------
 // NYU Jobs (iCIMS)
@@ -48,9 +48,9 @@ const scrapeNyuDetail = async (jobId) => {
   });
 
   // Parse salary from page text
-  const { from: salaryFrom, to: salaryTo } = parseSalaryRange($.text());
+  const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange($.text());
 
-  return { jsonLd, salaryFrom, salaryTo };
+  return { jsonLd, salaryFrom, salaryTo, salaryFrequency };
 };
 
 const refreshNyuJobs = async (timestamp) => {
@@ -72,6 +72,22 @@ const refreshNyuJobs = async (timestamp) => {
   } catch (err) {
     console.warn('[refresh] NYU listing fetch failed:', err.message);
     return { upserted: 0, modified: 0 };
+  }
+
+  // Dedupe across pages — the same job can appear on multiple listing pages,
+  // and duplicate upsert ops in one bulkWrite can throw E11000 on the unique index.
+  {
+    const seenIds = new Set();
+    const deduped = allJobIds.filter((j) => {
+      if (seenIds.has(j.id)) return false;
+      seenIds.add(j.id);
+      return true;
+    });
+    if (deduped.length < allJobIds.length) {
+      console.log(`[refresh] NYU: removed ${allJobIds.length - deduped.length} duplicate listings across pages`);
+    }
+    allJobIds.length = 0;
+    allJobIds.push(...deduped);
   }
 
   console.log(`[refresh] Found ${allJobIds.length} NYU job IDs`);
@@ -99,52 +115,29 @@ const refreshNyuJobs = async (timestamp) => {
 
   console.log(`[refresh] Scraped ${allJobs.length} NYU job details`);
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    const ld = raw.jsonLd || {};
+    const loc = ld.jobLocation?.[0]?.address || {};
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const ld = raw.jsonLd || {};
-      const loc = ld.jobLocation?.[0]?.address || {};
+    return {
+      jobId: raw.id,
+      businessTitle: ld.title || raw.title,
+      agency: 'New York University',
+      workLocation: loc.addressLocality || null,
+      workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
+      jobDescription: ld.description || null,
+      jobCategory: ld.occupationalCategory || null,
+      salaryRangeFrom: raw.salaryFrom,
+      salaryRangeTo: raw.salaryTo,
+      salaryFrequency: raw.salaryFrom ? (raw.salaryFrequency || 'Annual') : null,
+      fullTimePartTimeIndicator: ld.employmentType || null,
+      postDate: safeDate(ld.datePosted),
+      postUntil: safeDate(ld.validThrough),
+      externalUrl: ld.url || `${NYU_DETAIL_URL}/${raw.id}/job`,
+    };
+  });
 
-      const job = {
-        jobId: raw.id,
-        businessTitle: ld.title || raw.title,
-        agency: 'New York University',
-        workLocation: loc.addressLocality || null,
-        workLocation1: [loc.addressLocality, loc.addressRegion].filter(Boolean).join(', ') || null,
-        jobDescription: ld.description || null,
-        jobCategory: ld.occupationalCategory || null,
-        salaryRangeFrom: raw.salaryFrom,
-        salaryRangeTo: raw.salaryTo,
-        salaryFrequency: raw.salaryFrom ? 'Annual' : null,
-        fullTimePartTimeIndicator: ld.employmentType || null,
-        postDate: ld.datePosted || null,
-        postUntil: ld.validThrough || null,
-        externalUrl: ld.url || `${NYU_DETAIL_URL}/${raw.id}/job`,
-      };
-
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'nyu');
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source: 'nyu' },
-          update: {
-            $set: { ...job, source: 'nyu', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] NYU: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'nyu', timestamp, 'NYU');
 };
 
 module.exports = refreshNyuJobs;

@@ -8,13 +8,16 @@ import {
   HiEye,
   HiExternalLink,
   HiDownload,
+  HiX,
 } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import NoteModal from '../components/Notes/NoteModal';
 import Pagination from '../components/UI/Pagination';
 import { formatDate } from '../utils/formatUtils';
 import { downloadFile } from '../utils/downloadFile';
+import { getNoteTypeColor, getNotePriorityColor } from '../utils/noteConstants';
 
 const Notes = () => {
   const dispatch = useDispatch();
@@ -34,6 +37,9 @@ const Notes = () => {
   const currentPage = parseInt(searchParams.get('page') || '1');
   const pageSize = 20; // Number of notes per page
 
+  // Deep link from JobDetails: /notes?jobId=... filters notes to one job
+  const jobIdFilter = searchParams.get('jobId') || '';
+
   useEffect(() => {
     // Fetch notes with current filters and pagination
     const updatedFilters = {
@@ -41,8 +47,9 @@ const Notes = () => {
       page: currentPage,
       limit: pageSize,
     };
+    if (jobIdFilter) updatedFilters.jobId = jobIdFilter;
     dispatch(getNotes(updatedFilters));
-  }, [dispatch, filters, currentPage, pageSize]);
+  }, [dispatch, filters, currentPage, pageSize, jobIdFilter]);
 
   // Update URL when page changes
   const handlePageChange = (newPage) => {
@@ -73,12 +80,21 @@ const Notes = () => {
     });
   };
 
+  const handleClearJobFilter = () => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      newParams.delete('jobId');
+      newParams.set('page', '1');
+      return newParams;
+    });
+  };
+
   const handleDeleteNote = async (noteId) => {
     if (window.confirm('Are you sure you want to delete this note?')) {
       try {
         await dispatch(deleteNote(noteId)).unwrap();
-      } catch {
-        // Error displayed via Redux state
+      } catch (err) {
+        toast.error(err?.message || err || 'Failed to delete note');
       }
     }
   };
@@ -107,37 +123,7 @@ const Notes = () => {
     try {
       await downloadFile('/api/notes/export', 'notes.csv');
     } catch (error) {
-      console.error('Export failed:', error);
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800';
-      case 'high':
-        return 'bg-orange-100 text-orange-800';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'low':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getTypeColor = (type) => {
-    switch (type) {
-      case 'interview':
-        return 'bg-blue-100 text-blue-800';
-      case 'application':
-        return 'bg-purple-100 text-purple-800';
-      case 'followup':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'research':
-        return 'bg-teal-100 text-teal-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      toast.error(error.response?.data?.message || 'Failed to export CSV');
     }
   };
 
@@ -152,6 +138,19 @@ const Notes = () => {
               {pagination?.total || notes.length}{' '}
               {(pagination?.total || notes.length) === 1 ? 'note' : 'notes'}
             </p>
+            {jobIdFilter && (
+              <span className='inline-flex items-center gap-1 mt-2 px-2.5 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium'>
+                Filtered by job
+                <button
+                  onClick={handleClearJobFilter}
+                  className='hover:text-primary-900'
+                  title='Clear job filter'
+                  aria-label='Clear job filter'
+                >
+                  <HiX className='h-3.5 w-3.5' />
+                </button>
+              </span>
+            )}
           </div>
           <div className='flex items-center space-x-2'>
             {notes.length > 0 && (
@@ -263,14 +262,14 @@ const Notes = () => {
                       {note.title}
                     </h3>
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getNoteTypeColor(
                         note.type
                       )}`}
                     >
                       {note.type}
                     </span>
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getNotePriorityColor(
                         note.priority
                       )}`}
                     >

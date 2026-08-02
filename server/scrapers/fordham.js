@@ -1,4 +1,4 @@
-const { axios, cheerio, Job, geocodeLocationBase } = require('./utils');
+const { axios, cheerio, safeDate, batchUpsert } = require('./utils');
 
 // ---------------------------------------------------------------------------
 // Fordham University Jobs (PeopleAdmin Atom feed + detail scraping)
@@ -102,11 +102,8 @@ const refreshFordhamJobs = async (timestamp) => {
     }
   }
 
-  let totalUpserted = 0;
-  let totalModified = 0;
-
-  const ops = entries.map((raw) => {
-    const job = {
+  const jobs = entries.map((raw) => {
+    return {
       jobId: raw.postingId || raw.title,
       businessTitle: raw.title,
       agency: 'Fordham University',
@@ -121,31 +118,12 @@ const refreshFordhamJobs = async (timestamp) => {
       salaryFrequency: raw.salaryFrom ? 'Annual' : null,
       fullTimePartTimeIndicator: raw.positionType || null,
       hoursShift: raw.hours || null,
-      postDate: raw.postDate || null,
+      postDate: safeDate(raw.postDate),
       externalUrl: raw.url,
-    };
-
-    const coords = geocodeLocationBase(job.workLocation, job.workLocation1, 'fordham');
-    return {
-      updateOne: {
-        filter: { jobId: job.jobId, source: 'fordham' },
-        update: {
-          $set: { ...job, source: 'fordham', coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-          $setOnInsert: { savedBy: [] },
-        },
-        upsert: true,
-      },
     };
   });
 
-  if (ops.length > 0) {
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted = result.upsertedCount;
-    totalModified = result.modifiedCount;
-  }
-
-  console.log(`[refresh] Fordham: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, 'fordham', timestamp, 'Fordham');
 };
 
 module.exports = refreshFordhamJobs;

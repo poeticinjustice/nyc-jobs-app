@@ -71,11 +71,11 @@ const initialState = {
     total: 0,
     pages: 0,
   },
+  notesLatestRequestId: null,
   loading: false,
   error: null,
   createLoading: false,
   updateLoading: false,
-  deleteLoading: false,
 };
 
 const notesSlice = createSlice({
@@ -117,17 +117,21 @@ const notesSlice = createSlice({
       })
 
       // Get Notes
-      .addCase(getNotes.pending, (state) => {
+      .addCase(getNotes.pending, (state, action) => {
+        state.notesLatestRequestId = action.meta.requestId;
         state.loading = true;
         state.error = null;
       })
       .addCase(getNotes.fulfilled, (state, action) => {
+        // Ignore stale responses — only the latest request may update state
+        if (action.meta.requestId !== state.notesLatestRequestId) return;
         state.loading = false;
         state.notes = action.payload.notes;
         state.pagination = action.payload.pagination;
         state.error = null;
       })
       .addCase(getNotes.rejected, (state, action) => {
+        if (action.meta.requestId !== state.notesLatestRequestId) return;
         state.loading = false;
         state.error = action.payload;
       })
@@ -154,11 +158,9 @@ const notesSlice = createSlice({
 
       // Delete Note
       .addCase(deleteNote.pending, (state) => {
-        state.deleteLoading = true;
         state.error = null;
       })
       .addCase(deleteNote.fulfilled, (state, action) => {
-        state.deleteLoading = false;
         const { noteId } = action.payload;
         state.notes = state.notes.filter((note) => note._id !== noteId);
         if (state.pagination.total > 0) {
@@ -170,7 +172,6 @@ const notesSlice = createSlice({
         state.error = null;
       })
       .addCase(deleteNote.rejected, (state, action) => {
-        state.deleteLoading = false;
         state.error = action.payload;
       })
 

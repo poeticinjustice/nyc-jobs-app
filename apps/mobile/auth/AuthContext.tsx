@@ -26,6 +26,7 @@ type AuthContextType = {
     lastName: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (user: User) => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -86,8 +87,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  // Replace the in-context user (e.g. with the server's response after a
+  // profile update) so screens rendering user data stay in sync.
+  const updateUser = (updated: User) => {
+    setUser(updated);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

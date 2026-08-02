@@ -31,12 +31,29 @@ router.get('/', authenticateToken, async (req, res) => {
           },
         ]),
 
-        // Get 5 most recently saved jobs
-        Job.find({ 'savedBy.user': userId })
-          .sort({ updatedAt: -1 })
-          .limit(5)
-          .select('jobId source businessTitle agency workLocation salaryRangeFrom salaryRangeTo salaryFrequency savedBy')
-          .lean(),
+        // Get 5 most recently saved jobs — sorted on THIS user's savedAt,
+        // not the shared doc's updatedAt (which every refresh cycle bumps)
+        Job.aggregate([
+          { $match: { 'savedBy.user': userId } },
+          {
+            $addFields: {
+              _userEntry: {
+                $arrayElemAt: [
+                  { $filter: { input: '$savedBy', cond: { $eq: ['$$this.user', userId] } } },
+                  0,
+                ],
+              },
+            },
+          },
+          { $sort: { '_userEntry.savedAt': -1, _id: 1 } },
+          { $limit: 5 },
+          {
+            $project: {
+              jobId: 1, source: 1, businessTitle: 1, agency: 1, workLocation: 1,
+              salaryRangeFrom: 1, salaryRangeTo: 1, salaryFrequency: 1, savedBy: 1,
+            },
+          },
+        ]),
 
         // Get 5 most recent notes
         Note.find({ user: userId, status: 'active' })

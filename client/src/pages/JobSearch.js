@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   searchJobs,
   clearSearchResults,
   saveJob,
   unsaveJob,
+  markJobsSeen,
 } from '../store/slices/jobsSlice';
 import {
   getSavedSearches,
   saveSearch,
   deleteSavedSearch,
+  fetchSavedSearch,
+  markSearchSeen,
 } from '../store/slices/searchesSlice';
 import {
   HiSearch,
@@ -17,21 +20,41 @@ import {
   HiBookmarkAlt,
   HiStar,
   HiTrash,
+  HiFilter,
+  HiDownload,
+  HiMap,
+  HiX,
 } from 'react-icons/hi';
+import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import SourceBadge from '../components/UI/SourceBadge';
+import NewBadge from '../components/UI/NewBadge';
+import DeadlineBadge from '../components/UI/DeadlineBadge';
 import Pagination from '../components/UI/Pagination';
+import useClickOutside from '../hooks/useClickOutside';
 import { Link, useSearchParams } from 'react-router-dom';
-import { formatSalary, formatDate, getDeadlineInfo } from '../utils/formatUtils';
+import { formatSalary, formatDate } from '../utils/formatUtils';
 import { truncateText } from '../utils/textUtils';
+import { downloadFile } from '../utils/downloadFile';
 import { SEARCH_NAME_MAX, SORT_OPTIONS, SOURCE_OPTIONS } from 'nyc-jobs-shared/constants';
 
+// Filters forwarded verbatim to the CSV export endpoint
+const EXPORT_PARAM_KEYS = [
+  'q',
+  'category',
+  'location',
+  'agency',
+  'salary_min',
+  'salary_max',
+  'sort',
+  'source',
+];
 
 // Build URLSearchParams from a params object, always including sort/source
 const buildUrlParams = (params, page = 1, limit = 20) => {
   const newParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === 'page' || key === 'limit') continue;
+    if (key === 'page' || key === 'limit' || key === 'savedSearch') continue;
     if (value && String(value).trim() !== '') {
       newParams.set(key, String(value).trim());
     }
@@ -45,8 +68,13 @@ const buildUrlParams = (params, page = 1, limit = 20) => {
 
 const JobSearch = () => {
   const dispatch = useDispatch();
-  const { searchResults, searchLoading, searchError: error, searchPagination: pagination } =
-    useSelector((state) => state.jobs);
+  const {
+    searchResults,
+    searchLoading,
+    searchError: error,
+    searchPagination: pagination,
+    newSinceLastSeen,
+  } = useSelector((state) => state.jobs);
   const { isAuthenticated } = useSelector((state) => state.auth);
   const { savedSearches } = useSelector((state) => state.searches);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -59,6 +87,11 @@ const JobSearch = () => {
   const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState('');
   const [showSavedSearches, setShowSavedSearches] = useState(false);
+  const [showSourceDropdown, setShowSourceDropdown] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [activeSavedSearch, setActiveSavedSearch] = useState(null);
+  const sortDropdownRef = useClickOutside(showSortDropdown, () => setShowSortDropdown(false));
+  const sourceDropdownRef = useClickOutside(showSourceDropdown, () => setShowSourceDropdown(false));
 
   // Local form state for inputs before submitting
   const [localSearchParams, setLocalSearchParams] = useState({
@@ -78,6 +111,9 @@ const JobSearch = () => {
 
   // Single source of truth: URL drives all searches
   useEffect(() => {
+    // Hold off until the saved-search deep link has swapped in its criteria
+    if (searchParams.get('savedSearch')) return;
+
     const hasParams = Array.from(searchParams.values()).some((value) => value);
 
     if (hasParams) {
@@ -113,17 +149,50 @@ const JobSearch = () => {
     }
   }, [searchParams, dispatch]);
 
-  // Handle clicking outside sort dropdown to close it
+  // Push a saved search's criteria into both the form state and the URL
+  const applySavedSearchCriteria = useCallback((criteria = {}, limit = 20) => {
+    setLocalSearchParams({
+      q: criteria.q || '',
+      salary_min: criteria.salary_min || '',
+      salary_max: criteria.salary_max || '',
+      sort: criteria.sort || 'date_desc',
+      source: criteria.source || 'all',
+    });
+    setSearchParams(buildUrlParams(criteria, 1, limit));
+  }, [setSearchParams]);
+
+  // Deep link: /search?savedSearch=<id> runs that saved search, then drops the param
   useEffect(() => {
-    if (!showSortDropdown) return;
-    const handleClickOutside = (event) => {
-      if (!event.target.closest('.sort-dropdown-container')) {
-        setShowSortDropdown(false);
+    const savedSearchId = searchParams.get('savedSearch');
+    if (!savedSearchId) return;
+
+    let cancelled = false;
+
+    const runSavedSearch = async () => {
+      try {
+        const { search } = await dispatch(fetchSavedSearch(savedSearchId)).unwrap();
+        if (cancelled) return;
+        applySavedSearchCriteria(
+          search.criteria || {},
+          parseInt(searchParams.get('limit')) || 20
+        );
+        setActiveSavedSearch({ id: search._id, name: search.name });
+        dispatch(markSearchSeen(savedSearchId));
+      } catch (err) {
+        if (cancelled) return;
+        toast.error(err?.message || err || 'Failed to load saved search');
+        // Drop the param so a refresh doesn't retry a search that isn't there
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('savedSearch');
+        setSearchParams(newParams, { replace: true });
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showSortDropdown]);
+
+    runSavedSearch();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams, dispatch, applySavedSearchCriteria]);
 
   const handleSearch = (page = 1) => {
     setSearchParams(buildUrlParams(localSearchParams, page, resultsPerPage));
@@ -137,10 +206,31 @@ const JobSearch = () => {
     }));
   };
 
-  const handleSourceChange = (source) => {
-    const updated = { ...localSearchParams, source };
-    setLocalSearchParams(updated);
-    setSearchParams(buildUrlParams(updated, 1, resultsPerPage));
+  const selectedSources = localSearchParams.source === 'all'
+    ? new Set()
+    : new Set(localSearchParams.source.split(',').filter(Boolean));
+  const isAllSelected = selectedSources.size === 0;
+
+  const handleSourceToggle = (sourceValue) => {
+    let next;
+    if (sourceValue === 'all') {
+      next = 'all';
+    } else {
+      const allSourceValues = SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((o) => o.value);
+      // From "all", start with every source checked so unchecking one keeps the rest
+      const updated = isAllSelected ? new Set(allSourceValues) : new Set(selectedSources);
+      if (updated.has(sourceValue)) {
+        updated.delete(sourceValue);
+      } else {
+        updated.add(sourceValue);
+      }
+      next = updated.size === 0 || updated.size === allSourceValues.length
+        ? 'all'
+        : Array.from(updated).join(',');
+    }
+    const params = { ...localSearchParams, source: next };
+    setLocalSearchParams(params);
+    setSearchParams(buildUrlParams(params, 1, resultsPerPage));
   };
 
   const handleSortChange = (sortValue) => {
@@ -150,15 +240,18 @@ const JobSearch = () => {
     setSearchParams(buildUrlParams(updated, 1, resultsPerPage));
   };
 
-  const handleSaveJob = (job) => {
+  const handleSaveJob = async (job) => {
     if (!isAuthenticated) return;
 
-    if (job.isSaved) {
-      if (window.confirm('Are you sure you want to remove this bookmark?')) {
-        dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
+    try {
+      if (job.isSaved) {
+        if (!window.confirm('Are you sure you want to remove this bookmark?')) return;
+        await dispatch(unsaveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
+      } else {
+        await dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' })).unwrap();
       }
-    } else {
-      dispatch(saveJob({ jobId: job.jobId, source: job.source || 'nyc' }));
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to update saved job');
     }
   };
 
@@ -194,32 +287,55 @@ const JobSearch = () => {
       await dispatch(saveSearch({ name: saveSearchName.trim(), criteria })).unwrap();
       setSaveSearchName('');
       setShowSaveSearchModal(false);
-    } catch {
-      // Error is in Redux state; keep modal open so user can retry
+    } catch (err) {
+      // Keep modal open so user can retry
+      toast.error(err?.message || err || 'Failed to save search');
     }
   };
 
   const handleLoadSavedSearch = (search) => {
-    const { criteria } = search;
-    setLocalSearchParams({
-      q: criteria.q || '',
-      salary_min: criteria.salary_min || '',
-      salary_max: criteria.salary_max || '',
-      sort: criteria.sort || 'date_desc',
-      source: criteria.source || 'all',
-    });
-    setSearchParams(buildUrlParams(criteria, 1, resultsPerPage));
+    applySavedSearchCriteria(search.criteria || {}, resultsPerPage);
+    setActiveSavedSearch({ id: search._id, name: search.name });
     setShowSavedSearches(false);
   };
 
-  const handleDeleteSavedSearch = (id, e) => {
+  const handleDeleteSavedSearch = async (id, e) => {
     e.stopPropagation();
-    dispatch(deleteSavedSearch(id));
+    try {
+      await dispatch(deleteSavedSearch(id)).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to delete saved search');
+    }
   };
 
   const handleClearSearch = () => {
     setLocalSearchParams({ q: '', salary_min: '', salary_max: '', sort: 'date_desc', source: 'all' });
+    setActiveSavedSearch(null);
     setSearchParams(new URLSearchParams());
+  };
+
+  const handleMarkJobsSeen = async () => {
+    try {
+      await dispatch(markJobsSeen()).unwrap();
+    } catch (err) {
+      toast.error(err?.message || err || 'Failed to mark jobs as seen');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setExportLoading(true);
+    try {
+      const params = new URLSearchParams();
+      EXPORT_PARAM_KEYS.forEach((key) => {
+        const value = searchParams.get(key);
+        if (value && value.trim() !== '') params.set(key, value.trim());
+      });
+      await downloadFile(`/api/jobs/search/export?${params.toString()}`, 'job-search-results.csv');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to export CSV');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const totalPages = pagination?.pages || 0;
@@ -237,10 +353,22 @@ const JobSearch = () => {
     searchParams.get('salary_max') ||
     (searchParams.get('source') && searchParams.get('source') !== 'all');
 
+  const showNewJobs = isAuthenticated;
+
+  // The map endpoint takes a single source, so only carry one over
+  const mapLinkUrl = (() => {
+    const params = new URLSearchParams();
+    if (localSearchParams.q) params.set('keyword', localSearchParams.q);
+    const sources = (localSearchParams.source || 'all').split(',').filter(Boolean);
+    if (sources.length === 1 && sources[0] !== 'all') params.set('source', sources[0]);
+    const queryString = params.toString();
+    return queryString ? `/map?${queryString}` : '/map';
+  })();
+
   return (
     <div className='space-y-6'>
       {/* Search Header */}
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 overflow-hidden'>
+      <div className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6'>
         <h1 className='text-2xl font-bold text-gray-900 mb-4'>
           Search Jobs
         </h1>
@@ -309,18 +437,54 @@ const JobSearch = () => {
           {/* Filter Bar: Source Tabs | Salary | Sort */}
           <div className='flex flex-wrap items-center gap-3 justify-between'>
             {/* Left: Source Dropdown */}
-            <div>
-              <select
-                value={localSearchParams.source || 'all'}
-                onChange={(e) => handleSourceChange(e.target.value)}
-                className='px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer'
+            <div className='relative' ref={sourceDropdownRef}>
+              <button
+                type='button'
+                onClick={() => setShowSourceDropdown(!showSourceDropdown)}
+                className='flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors'
               >
-                {SOURCE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <HiFilter className='h-4 w-4' />
+                {isAllSelected
+                  ? 'All Sources'
+                  : selectedSources.size === 1
+                    ? SOURCE_OPTIONS.find((o) => o.value === Array.from(selectedSources)[0])?.label || 'Source'
+                    : `${selectedSources.size} Sources`}
+                <svg className='w-3.5 h-3.5 text-gray-400' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 9l-7 7-7-7' />
+                </svg>
+              </button>
+
+              {showSourceDropdown && (
+                <div className='absolute left-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto'>
+                  <div className='p-2'>
+                    <label className='flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-50 cursor-pointer text-sm font-medium text-gray-900 border-b border-gray-100 mb-1'>
+                      <input
+                        type='checkbox'
+                        checked={isAllSelected}
+                        onChange={() => handleSourceToggle('all')}
+                        className='rounded border-gray-300 text-primary-600 focus:ring-primary-500'
+                      />
+                      All Sources
+                    </label>
+                    <div className='grid grid-cols-2 gap-0.5'>
+                      {SOURCE_OPTIONS.filter((o) => o.value !== 'all').map((opt) => (
+                        <label
+                          key={opt.value}
+                          className='flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer text-sm text-gray-700'
+                        >
+                          <input
+                            type='checkbox'
+                            checked={isAllSelected || selectedSources.has(opt.value)}
+                            onChange={() => handleSourceToggle(opt.value)}
+                            className='rounded border-gray-300 text-primary-600 focus:ring-primary-500'
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Right: Salary + Sort (desktop) */}
@@ -347,7 +511,7 @@ const JobSearch = () => {
                 />
               </div>
 
-              <div className='relative sort-dropdown-container'>
+              <div className='relative' ref={sortDropdownRef}>
               <button
                 type='button'
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
@@ -454,9 +618,11 @@ const JobSearch = () => {
                           </span>
                         )}
                         {search.criteria.source && search.criteria.source !== 'all' && (
-                          <span className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                            {SOURCE_OPTIONS.find((o) => o.value === search.criteria.source)?.label || search.criteria.source}
-                          </span>
+                          search.criteria.source.split(',').map((s) => (
+                            <span key={s} className='px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs'>
+                              {SOURCE_OPTIONS.find((o) => o.value === s)?.label || s}
+                            </span>
+                          ))
                         )}
                       </div>
                     </div>
@@ -477,6 +643,24 @@ const JobSearch = () => {
 
       {/* Search Results */}
       <div className='space-y-4'>
+        {/* Active saved search indicator */}
+        {activeSavedSearch && (
+          <div className='flex'>
+            <span className='inline-flex items-center gap-2 pl-3 pr-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium max-w-full'>
+              <HiStar className='h-3.5 w-3.5 flex-shrink-0' />
+              <span className='truncate'>From saved search: {activeSavedSearch.name}</span>
+              <button
+                type='button'
+                onClick={() => setActiveSavedSearch(null)}
+                aria-label={`Clear saved search indicator for ${activeSavedSearch.name}`}
+                className='p-0.5 rounded-full text-yellow-700 hover:text-yellow-900 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-colors flex-shrink-0'
+              >
+                <HiX className='h-3.5 w-3.5' />
+              </button>
+            </span>
+          </div>
+        )}
+
         {error && (
           <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
             <p className='text-red-800'>{error}</p>
@@ -505,17 +689,17 @@ const JobSearch = () => {
                 Ready to Search Jobs
               </h3>
               <p className='text-blue-700 max-w-md mx-auto'>
-                Search across NYC city and federal government jobs. Enter keywords, set a salary range, or click Search to see all available jobs.
+                Search across government, universities, hospitals, museums, non-profits, and more. Enter keywords, set a salary range, or click Search to see all available jobs.
               </p>
             </div>
 
             <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm'>
               <div className='bg-white/60 rounded-lg p-4'>
                 <div className='text-blue-600 font-medium mb-1'>
-                  City + Federal
+                  {SOURCE_OPTIONS.length - 1} Sources
                 </div>
                 <div className='text-blue-700'>
-                  NYC and US government jobs in one place
+                  City, state, federal, universities, hospitals, museums, and more
                 </div>
               </div>
               <div className='bg-white/60 rounded-lg p-4'>
@@ -523,7 +707,7 @@ const JobSearch = () => {
                   Filter by Source
                 </div>
                 <div className='text-blue-700'>
-                  Browse city or federal jobs separately
+                  Browse each employer separately or search all at once
                 </div>
               </div>
               <div className='bg-white/60 rounded-lg p-4'>
@@ -531,7 +715,7 @@ const JobSearch = () => {
                   Save Favorites
                 </div>
                 <div className='text-blue-700'>
-                  Bookmark jobs you're interested in
+                  Bookmark jobs and track your applications
                 </div>
               </div>
             </div>
@@ -546,18 +730,64 @@ const JobSearch = () => {
           <>
             {/* Search Results Summary */}
             <div className='bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4'>
-              <div className='text-sm text-gray-600'>
-                <span className='font-medium'>
-                  {pagination ? pagination.total.toLocaleString() : searchResults.length}
-                </span>{' '}
-                jobs found
-                {pagination && pagination.total > searchResults.length && (
-                  <span className='ml-2'>
-                    (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
-                    total)
-                  </span>
-                )}
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <div className='text-sm text-gray-600'>
+                  <span className='font-medium'>
+                    {pagination ? pagination.total.toLocaleString() : searchResults.length}
+                  </span>{' '}
+                  jobs found
+                  {pagination && pagination.total > searchResults.length && (
+                    <span className='ml-2'>
+                      (showing {searchResults.length} of {pagination.total.toLocaleString()}{' '}
+                      total)
+                    </span>
+                  )}
+                </div>
+
+                <div className='flex items-center gap-2'>
+                  <button
+                    type='button'
+                    onClick={handleExportCsv}
+                    disabled={!searchResults.length || exportLoading}
+                    aria-label='Export these search results as CSV'
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                  >
+                    {exportLoading ? (
+                      <LoadingSpinner size='sm' />
+                    ) : (
+                      <HiDownload className='h-4 w-4' />
+                    )}
+                    <span>Export CSV</span>
+                  </button>
+                  <Link
+                    to={mapLinkUrl}
+                    aria-label='Open the current search on the job map'
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors'
+                  >
+                    <HiMap className='h-4 w-4' />
+                    <span>Open in Map</span>
+                  </Link>
+                </div>
               </div>
+
+              {/* New since last seen */}
+              {showNewJobs && newSinceLastSeen > 0 && (
+                <div className='mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm'>
+                  <NewBadge />
+                  <span className='text-gray-700'>
+                    {newSinceLastSeen.toLocaleString()} new since you last looked
+                  </span>
+                  <span className='text-gray-300' aria-hidden='true'>·</span>
+                  <button
+                    type='button'
+                    onClick={handleMarkJobsSeen}
+                    aria-label='Mark all new jobs as seen'
+                    className='font-medium text-primary-600 hover:text-primary-700 underline focus:outline-none focus:ring-2 focus:ring-primary-500 rounded'
+                  >
+                    Mark all seen
+                  </button>
+                </div>
+              )}
 
               {/* Current Search Parameters */}
               {hasActiveFilters && (
@@ -572,9 +802,11 @@ const JobSearch = () => {
                       </span>
                     )}
                     {localSearchParams.source && localSearchParams.source !== 'all' && (
-                      <span className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
-                        {`${SOURCE_OPTIONS.find((o) => o.value === localSearchParams.source)?.label || localSearchParams.source} Jobs`}
-                      </span>
+                      localSearchParams.source.split(',').map((s) => (
+                        <span key={s} className='px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs'>
+                          {SOURCE_OPTIONS.find((o) => o.value === s)?.label || s}
+                        </span>
+                      ))
                     )}
                     {localSearchParams.salary_min && (
                       <span className='px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs'>
@@ -642,9 +874,9 @@ const JobSearch = () => {
             )}
 
             <div className='space-y-4'>
-              {searchResults.map((job, index) => (
+              {searchResults.map((job) => (
                 <div
-                  key={job.jobId || `job-${index}`}
+                  key={`${job.source}-${job.jobId}`}
                   className='bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow overflow-hidden'
                 >
                   <div className='flex justify-between items-start'>
@@ -654,20 +886,8 @@ const JobSearch = () => {
                           {job.businessTitle}
                         </h3>
                         <SourceBadge source={job.source} />
-                        {(() => {
-                          const deadline = getDeadlineInfo(job.postUntil);
-                          if (!deadline) return null;
-                          const colors = deadline.urgency === 'closed'
-                            ? 'bg-gray-100 text-gray-700'
-                            : deadline.urgency === 'urgent'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-yellow-100 text-yellow-700';
-                          return (
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors}`}>
-                              {deadline.label}
-                            </span>
-                          );
-                        })()}
+                        {showNewJobs && job.isNew && <NewBadge />}
+                        <DeadlineBadge postUntil={job.postUntil} />
                       </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600'>
                         <div>

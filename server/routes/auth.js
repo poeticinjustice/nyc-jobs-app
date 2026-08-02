@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
-const { NAME_MAX, PASSWORD_MIN } = require('../../shared/constants');
+const { NAME_MAX, PASSWORD_MIN, PASSWORD_MAX } = require('../../shared/constants');
 
 const router = express.Router();
 
@@ -19,7 +19,7 @@ router.post(
   '/register',
   [
     body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: PASSWORD_MIN }),
+    body('password').isLength({ min: PASSWORD_MIN, max: PASSWORD_MAX }),
     body('firstName').trim().isLength({ min: 1, max: NAME_MAX }),
     body('lastName').trim().isLength({ min: 1, max: NAME_MAX }),
   ],
@@ -60,6 +60,11 @@ router.post(
         user: user.getProfile(),
       });
     } catch (error) {
+      // Two concurrent registers can pass the existence check; the unique
+      // index rejects the second — that's a client error, not a server fault.
+      if (error.code === 11000) {
+        return res.status(400).json({ message: 'User already exists' });
+      }
       console.error('Registration error:', error);
       res.status(500).json({ message: 'Server error' });
     }
@@ -90,9 +95,12 @@ router.post(
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      // Check if account is active
+      // Deactivated accounts get the same generic failure as a wrong password.
+      // Saying "deactivated" here confirms the address is registered, which is
+      // the one enumeration leak on this route that can be closed without
+      // moving to a verification-email signup flow.
       if (!user.isActive) {
-        return res.status(401).json({ message: 'Account is deactivated' });
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       // Verify password
@@ -186,6 +194,9 @@ router.put(
         user: updatedUser.getProfile(),
       });
     } catch (error) {
+      if (error.code === 11000) {
+        return res.status(400).json({ message: 'Email already in use' });
+      }
       console.error('Update profile error:', error);
       res.status(500).json({ message: 'Server error' });
     }
@@ -200,7 +211,7 @@ router.put(
   [
     authenticateToken,
     body('currentPassword').notEmpty(),
-    body('newPassword').isLength({ min: PASSWORD_MIN }),
+    body('newPassword').isLength({ min: PASSWORD_MIN, max: PASSWORD_MAX }),
   ],
   async (req, res) => {
     try {

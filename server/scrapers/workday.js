@@ -2,11 +2,17 @@
  * Workday platform scraper — shared by Met Museum, NYP, New School, etc.
  */
 
-const { axios, Job, geocodeLocationBase, UPSERT_BATCH, parseSalaryRange } = require('./utils');
+const { axios, Job, parseSalaryRange, safeDate, batchUpsert } = require('./utils');
 
 const WORKDAY_PAGE_SIZE = 20;
 const WORKDAY_DETAIL_CONCURRENCY = 5;
 const WORKDAY_DETAIL_DELAY = 200;
+
+// Single canonical job id per posting. Every lookup (existing docs, detail map,
+// upsert filter) must use this — deriving it differently in different places
+// caused fetched descriptions to be discarded and cache checks to never match.
+const workdayReqId = (raw) =>
+  raw.bulletFields?.[0] || raw.externalPath?.match(/_([\w]+)$/)?.[1] || raw.externalPath;
 
 const fetchWorkdayDetail = async (baseUrl, externalPath) => {
   try {
@@ -63,15 +69,13 @@ const refreshWorkdayJobs = async (timestamp, config) => {
 
   // Fetch detail pages for jobs missing descriptions
   const existingJobs = await Job.find(
-    { source, jobId: { $in: allJobs.map((j) => j.bulletFields?.[0] || j.externalPath) } },
+    { source, jobId: { $in: allJobs.map(workdayReqId) } },
     { jobId: 1, jobDescription: 1 }
   ).lean();
+  const existingById = new Map(existingJobs.map((j) => [j.jobId, j]));
   const hasDesc = new Set(existingJobs.filter((j) => j.jobDescription).map((j) => j.jobId));
 
-  const needsDetail = allJobs.filter((j) => {
-    const reqId = j.bulletFields?.[0] || j.externalPath;
-    return !hasDesc.has(reqId) && j.externalPath;
-  });
+  const needsDetail = allJobs.filter((j) => !hasDesc.has(workdayReqId(j)) && j.externalPath);
 
   console.log(`[refresh] ${name}: fetching ${needsDetail.length} detail pages (${allJobs.length - needsDetail.length} cached)`);
 
@@ -83,8 +87,7 @@ const refreshWorkdayJobs = async (timestamp, config) => {
     );
     for (let k = 0; k < results.length; k++) {
       if (results[k].status === 'fulfilled' && results[k].value) {
-        const reqId = batch[k].bulletFields?.[0] || batch[k].externalPath;
-        detailMap.set(reqId, results[k].value);
+        detailMap.set(workdayReqId(batch[k]), results[k].value);
       }
     }
     if (i + WORKDAY_DETAIL_CONCURRENCY < needsDetail.length) {
@@ -95,57 +98,39 @@ const refreshWorkdayJobs = async (timestamp, config) => {
     }
   }
 
-  let totalUpserted = 0;
-  let totalModified = 0;
+  const jobs = allJobs.map((raw) => {
+    const reqId = workdayReqId(raw);
+    const detail = detailMap.get(reqId);
+    const existing = existingById.get(reqId);
 
-  for (let i = 0; i < allJobs.length; i += UPSERT_BATCH) {
-    const slice = allJobs.slice(i, i + UPSERT_BATCH);
-    const ops = slice.map((raw) => {
-      const reqId = raw.bulletFields?.[0] || raw.externalPath?.match(/_([\w]+)$/)?.[1] || raw.externalPath;
-      const detail = detailMap.get(reqId);
-      const existing = existingJobs.find((j) => j.jobId === reqId);
+    // Parse salary from detail description
+    const desc = detail?.description || existing?.jobDescription || null;
+    const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc || '');
 
-      // Parse salary from detail description
-      const desc = detail?.description || existing?.jobDescription || null;
-      const { from: salaryFrom, to: salaryTo, frequency: salaryFrequency } = parseSalaryRange(desc || '');
+    // Detail-derived fields: undefined = keep the stored value for cached
+    // jobs whose detail page wasn't refetched this run (batchUpsert strips them).
+    const cached = !detail && existing;
+    const absoluteDate = raw.postedOn && !raw.postedOn.startsWith('Posted') ? safeDate(raw.postedOn) : null;
 
-      const job = {
-        jobId: reqId,
-        businessTitle: raw.title || null,
-        agency,
-        workLocation: raw.locationsText || 'New York',
-        workLocation1: raw.locationsText || null,
-        jobDescription: desc,
-        jobCategory: null,
-        salaryRangeFrom: salaryFrom,
-        salaryRangeTo: salaryTo,
-        salaryFrequency: salaryFrequency,
-        fullTimePartTimeIndicator: detail?.timeType || null,
-        postDate: raw.postedOn && !raw.postedOn.startsWith('Posted') ? new Date(raw.postedOn) : (detail?.startDate || null),
-        postUntil: detail?.endDate || null,
-        externalUrl: raw.externalPath ? `${publicBaseUrl}${raw.externalPath}` : null,
-      };
+    return {
+      jobId: reqId,
+      businessTitle: raw.title || null,
+      agency,
+      workLocation: raw.locationsText || 'New York',
+      workLocation1: raw.locationsText || null,
+      jobDescription: desc,
+      jobCategory: null,
+      salaryRangeFrom: salaryFrom,
+      salaryRangeTo: salaryTo,
+      salaryFrequency: salaryFrequency,
+      fullTimePartTimeIndicator: cached ? undefined : (detail?.timeType || null),
+      postDate: absoluteDate || (cached ? undefined : safeDate(detail?.startDate)),
+      postUntil: cached ? undefined : safeDate(detail?.endDate),
+      externalUrl: raw.externalPath ? `${publicBaseUrl}${raw.externalPath}` : null,
+    };
+  });
 
-      const coords = geocodeLocationBase(job.workLocation, job.workLocation1, source);
-      return {
-        updateOne: {
-          filter: { jobId: job.jobId, source },
-          update: {
-            $set: { ...job, source, coordinates: coords || { lat: null, lng: null }, lastRefreshedAt: timestamp },
-            $setOnInsert: { savedBy: [] },
-          },
-          upsert: true,
-        },
-      };
-    });
-
-    const result = await Job.bulkWrite(ops, { ordered: false });
-    totalUpserted += result.upsertedCount;
-    totalModified += result.modifiedCount;
-  }
-
-  console.log(`[refresh] ${name}: ${totalUpserted} inserted, ${totalModified} updated`);
-  return { upserted: totalUpserted, modified: totalModified };
+  return batchUpsert(jobs, source, timestamp, name);
 };
 
 module.exports = refreshWorkdayJobs;

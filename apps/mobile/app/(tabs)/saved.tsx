@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,21 +10,33 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import api from '@/lib/api';
 import { formatSalary, formatDate } from '@/lib/format';
+import { exportCsv } from '@/lib/exportCsv';
 import FilterPills from '@/components/FilterPills';
+import {
+  PagedState,
+  initialPagedState,
+  nextPage,
+  patchCriteria,
+  resetPage,
+} from '@/lib/searchCriteria';
+import { APPLICATION_STATUS_VALUES, APPLICATION_STATUSES } from 'nyc-jobs-shared/constants';
 
-const STATUS_FILTERS = [
-  { value: '', label: 'All' },
-  { value: 'interested', label: 'Interested' },
-  { value: 'applied', label: 'Applied' },
-  { value: 'interviewing', label: 'Interviewing' },
-  { value: 'offered', label: 'Offered' },
-  { value: 'rejected', label: 'Rejected' },
-];
+// What this list is querying. '' status means "any status".
+type SavedJobsCriteria = { status: string; sort: string };
 
+const DEFAULT_SAVED_CRITERIA: SavedJobsCriteria = { status: '', sort: 'updated_desc' };
+
+// Values and labels come from the shared package; '' is the mobile-only
+// "no filter" pill and is not a stored status.
+const STATUS_FILTERS = [{ value: '', label: 'All' }, ...APPLICATION_STATUSES];
+
+// Saved-jobs sorting is deliberately NOT shared SORT_OPTIONS: this list adds
+// updated_desc/saved_desc (which only exist for saved jobs) and uses shorter
+// labels that fit the pill row on a phone.
 const SORT_OPTIONS = [
   { value: 'updated_desc', label: 'Recently Updated' },
   { value: 'saved_desc', label: 'Recently Saved' },
@@ -66,11 +78,15 @@ export default function SavedJobsScreen() {
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [sort, setSort] = useState('updated_desc');
-  const [page, setPage] = useState(1);
+  // Criteria + page in one state so lib/searchCriteria enforces the page reset.
+  const [search, setSearch] = useState<PagedState<SavedJobsCriteria>>(() =>
+    initialPagedState(DEFAULT_SAVED_CRITERIA)
+  );
+  const { criteria, page } = search;
+  const { status: statusFilter, sort } = criteria;
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchSavedJobs = useCallback(async (p: number, filter: string, sortBy: string, append = false) => {
     try {
@@ -80,7 +96,12 @@ export default function SavedJobsScreen() {
       const data = res.data;
       const fetched = data.jobs || data.savedJobs || [];
       if (append) {
-        setJobs((prev) => [...prev, ...fetched]);
+        // Dedupe by source+jobId in case overlapping pages return the same job.
+        setJobs((prev) => {
+          const seen = new Set(prev.map((j) => `${j.source}-${j.jobId}`));
+          const additions = (fetched as SavedJob[]).filter((j) => !seen.has(`${j.source}-${j.jobId}`));
+          return [...prev, ...additions];
+        });
       } else {
         setJobs(fetched);
       }
@@ -91,24 +112,63 @@ export default function SavedJobsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    fetchSavedJobs(1, statusFilter, sort).finally(() => setLoading(false));
-  }, [user, statusFilter, sort, fetchSavedJobs]);
+  // Tracks the last filter/sort combo so focus-regain refetches are silent
+  // while first load and filter/sort changes still show the spinner.
+  const lastQueryKey = useRef<string | null>(null);
+
+  // Refetch page 1 on initial load, filter/sort changes, and whenever the tab
+  // regains focus (so edits made on other screens are reflected).
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      const queryKey = `${statusFilter}|${sort}`;
+      const showSpinner = lastQueryKey.current !== queryKey;
+      lastQueryKey.current = queryKey;
+      if (showSpinner) setLoading(true);
+      setSearch(resetPage);
+      fetchSavedJobs(1, statusFilter, sort).finally(() => {
+        if (showSpinner) setLoading(false);
+      });
+    }, [user, statusFilter, sort, fetchSavedJobs])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setPage(1);
+    setSearch(resetPage);
     await fetchSavedJobs(1, statusFilter, sort);
     setRefreshing(false);
   };
 
+  // Guards against onEndReached firing again while an append is in flight,
+  // which would fetch the same next page twice.
+  const loadingMoreRef = useRef(false);
+
   const onEndReached = () => {
-    if (!hasMore || loading) return;
+    if (!hasMore || loading || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     const next = page + 1;
-    setPage(next);
-    fetchSavedJobs(next, statusFilter, sort, true);
+    setSearch(nextPage);
+    fetchSavedJobs(next, statusFilter, sort, true).finally(() => {
+      loadingMoreRef.current = false;
+    });
+  };
+
+  // Mirrors the web export: the active status filter narrows the CSV too.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportCsv({
+        path: '/api/jobs/saved/export',
+        filename: 'saved-jobs.csv',
+        params: statusFilter ? { status: statusFilter } : undefined,
+        dialogTitle: 'Export Saved Jobs',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to export CSV');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleUnsave = (job: SavedJob) => {
@@ -122,7 +182,12 @@ export default function SavedJobsScreen() {
             await api.delete(`/api/jobs/${job.jobId}/save`, {
               params: { source: job.source || 'nyc' },
             });
-            setJobs((prev) => prev.filter((j) => j.jobId !== job.jobId));
+            // Match on source AND jobId — different sources can share a jobId.
+            setJobs((prev) =>
+              prev.filter(
+                (j) => !(j.jobId === job.jobId && (j.source || 'nyc') === (job.source || 'nyc'))
+              )
+            );
             setTotal((t) => t - 1);
           } catch (err: any) {
             Alert.alert('Error', err?.response?.data?.message || 'Could not unsave job');
@@ -140,7 +205,9 @@ export default function SavedJobsScreen() {
       });
       setJobs((prev) =>
         prev.map((j) =>
-          j.jobId === job.jobId ? { ...j, applicationStatus: newStatus } : j
+          j.jobId === job.jobId && (j.source || 'nyc') === (job.source || 'nyc')
+            ? { ...j, applicationStatus: newStatus }
+            : j
         )
       );
     } catch (err: any) {
@@ -213,7 +280,7 @@ export default function SavedJobsScreen() {
             <TouchableOpacity
               style={styles.statusButton}
               onPress={() => {
-                const statuses = ['interested', 'applied', 'interviewing', 'offered', 'rejected'];
+                const statuses = APPLICATION_STATUS_VALUES;
                 const current = item.applicationStatus || 'interested';
                 const idx = statuses.indexOf(current);
                 const next = statuses[(idx + 1) % statuses.length];
@@ -234,21 +301,36 @@ export default function SavedJobsScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Saved Jobs</Text>
-        <Text style={styles.subtitle}>
-          {total} {total === 1 ? 'job' : 'jobs'}{statusFilter ? ` · ${statusFilter}` : ''}
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerMain}>
+            <Text style={styles.title}>Saved Jobs</Text>
+            <Text style={styles.subtitle}>
+              {total} {total === 1 ? 'job' : 'jobs'}{statusFilter ? ` · ${statusFilter}` : ''}
+            </Text>
+          </View>
+          {jobs.length > 0 && (
+            <TouchableOpacity
+              style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+              onPress={handleExport}
+              disabled={exporting}
+            >
+              <Text style={styles.exportButtonText}>
+                {exporting ? 'Exporting...' : 'Export'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <FilterPills
         options={STATUS_FILTERS}
         selected={statusFilter}
-        onSelect={(v) => { setStatusFilter(v); setPage(1); }}
+        onSelect={(v) => setSearch((prev) => patchCriteria(prev, { status: v }))}
       />
       <FilterPills
         options={SORT_OPTIONS}
         selected={sort}
-        onSelect={(v) => { setSort(v); setPage(1); }}
+        onSelect={(v) => setSearch((prev) => patchCriteria(prev, { sort: v }))}
       />
 
       {loading && !refreshing ? (
@@ -279,7 +361,7 @@ export default function SavedJobsScreen() {
               {statusFilter ? (
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={() => setStatusFilter('')}
+                  onPress={() => setSearch((prev) => patchCriteria(prev, { status: '' }))}
                 >
                   <Text style={styles.primaryButtonText}>Show All</Text>
                 </TouchableOpacity>
@@ -303,6 +385,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  headerMain: { flex: 1 },
+  exportButton: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#fff',
+  },
+  exportButtonDisabled: { opacity: 0.5 },
+  exportButtonText: { color: '#374151', fontWeight: '600', fontSize: 14 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827' },
   subtitle: { fontSize: 14, color: '#6B7280', marginTop: 2 },
   list: { padding: 16, paddingTop: 12, gap: 12 },
