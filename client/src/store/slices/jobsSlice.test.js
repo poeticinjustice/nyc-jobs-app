@@ -362,7 +362,11 @@ describe('jobsSlice — logout', () => {
       detailsError: 'x',
       savedJobsError: 'x',
       saveError: 'x',
-      searchResults: [{ jobId: '42' }],
+      searchResults: [{ jobId: '42', isSaved: true, isNew: true }],
+      searchLatestRequestId: 'req-search',
+      detailsLatestRequestId: 'req-details',
+      savedJobsLatestRequestId: 'req-saved',
+      jobNotesLatestRequestId: 'req-notes',
     };
 
     const next = reducer(state, logout());
@@ -377,7 +381,43 @@ describe('jobsSlice — logout', () => {
     expect(next.detailsError).toBeNull();
     expect(next.savedJobsError).toBeNull();
     expect(next.saveError).toBeNull();
-    // Public search results are not user-specific
-    expect(next.searchResults).toEqual([{ jobId: '42' }]);
+    // The postings are public so they survive, but the per-user flags on them
+    // must not: they showed the next person to sign in the previous user's
+    // bookmarks against the same results.
+    expect(next.searchResults).toEqual([{ jobId: '42', isSaved: false, isNew: false }]);
+  });
+
+  it('invalidates in-flight requests so a late response cannot repopulate', () => {
+    // Clearing the data alone was not enough — a response already on the wire
+    // for the previous user still matched its request id and landed after.
+    const state = {
+      ...initialState,
+      searchLatestRequestId: 'req-search',
+      detailsLatestRequestId: 'req-details',
+      savedJobsLatestRequestId: 'req-saved',
+      jobNotesLatestRequestId: 'req-notes',
+    };
+
+    const next = reducer(state, logout());
+
+    expect(next.searchLatestRequestId).toBeNull();
+    expect(next.detailsLatestRequestId).toBeNull();
+    expect(next.savedJobsLatestRequestId).toBeNull();
+    expect(next.jobNotesLatestRequestId).toBeNull();
+  });
+
+  it('drops a saved-jobs response that arrives after logout', () => {
+    const loggedOut = reducer(
+      { ...initialState, savedJobsLatestRequestId: 'req-saved' },
+      logout()
+    );
+
+    const late = reducer(loggedOut, {
+      type: 'jobs/getSavedJobs/fulfilled',
+      payload: { jobs: [{ jobId: 'PRIVATE' }], pagination: initialState.savedPagination },
+      meta: { requestId: 'req-saved' },
+    });
+
+    expect(late.savedJobs).toEqual([]);
   });
 });

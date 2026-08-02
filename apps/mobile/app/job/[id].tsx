@@ -115,21 +115,38 @@ export default function JobDetailScreen() {
     setError(null);
     setNotes([]);
 
+    // Guards against a slow response for a previously-viewed job landing after
+    // the one the user is actually looking at.
+    let active = true;
+
     const fetchJob = async () => {
       try {
         const res = await api.get(`/api/jobs/${encodeURIComponent(id)}`, { params: { source: source || 'nyc' } });
+        if (!active) return;
         setJob(res.data);
+
+        // Notes are supplementary. They used to share this try, so a failed
+        // notes request set `error` and the screen rendered "Failed to load
+        // job details" over a job that had loaded perfectly well.
         if (res.data.isSaved) {
-          const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
-          setNotes(notesRes.data.notes || []);
+          try {
+            const notesRes = await api.get(`/api/notes/job/${encodeURIComponent(id)}`, { params: { limit: 5 } });
+            if (active) setNotes(notesRes.data.notes || []);
+          } catch {
+            if (active) setNotes([]);
+          }
         }
       } catch (e: any) {
-        setError(e?.response?.data?.message || 'Failed to load job details');
+        if (active) setError(e?.response?.data?.message || 'Failed to load job details');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     void fetchJob();
+
+    return () => {
+      active = false;
+    };
   }, [id, source]);
 
   const handleSave = async () => {

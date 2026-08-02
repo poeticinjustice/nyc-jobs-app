@@ -177,6 +177,7 @@ const initialState = {
   searchLatestRequestId: null,
   detailsLatestRequestId: null,
   savedJobsLatestRequestId: null,
+  jobNotesLatestRequestId: null,
   searchLoading: false,
   detailsLoading: false,
   savedJobsLoading: false,
@@ -350,15 +351,20 @@ const jobsSlice = createSlice({
         state.saveError = action.payload;
       })
 
-      // Get Job Notes
-      .addCase(getJobNotes.pending, (state) => {
+      // Get Job Notes — guarded like the other list fetches. Without this,
+      // opening job A then job B renders A's notes under B whenever A's
+      // request resolves second.
+      .addCase(getJobNotes.pending, (state, action) => {
+        state.jobNotesLatestRequestId = action.meta.requestId;
         state.jobNotesLoading = true;
       })
       .addCase(getJobNotes.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.jobNotesLatestRequestId) return;
         state.jobNotesLoading = false;
         state.jobNotes = action.payload.notes;
       })
-      .addCase(getJobNotes.rejected, (state) => {
+      .addCase(getJobNotes.rejected, (state, action) => {
+        if (action.meta.requestId !== state.jobNotesLatestRequestId) return;
         state.jobNotesLoading = false;
         state.jobNotes = [];
       })
@@ -382,6 +388,7 @@ const jobsSlice = createSlice({
       })
 
       .addCase(bulkUpdateJobStatus.fulfilled, (state, action) => {
+        state.saveError = null;
         const { jobs, status } = action.payload;
         const touched = new Set(
           jobs.map((j) => `${j.source || 'nyc'}:${j.jobId}`)
@@ -416,6 +423,21 @@ const jobsSlice = createSlice({
         state.detailsError = null;
         state.savedJobsError = null;
         state.saveError = null;
+        // Drop the in-flight markers too. Clearing the data alone was not
+        // enough: a response already on the wire for the previous user still
+        // matched its request id and repopulated the store after logout.
+        state.searchLatestRequestId = null;
+        state.detailsLatestRequestId = null;
+        state.savedJobsLatestRequestId = null;
+        state.jobNotesLatestRequestId = null;
+        // The postings themselves are public, so they stay — but isSaved and
+        // isNew are per-user, and leaving them set showed the next person to
+        // sign in the previous user's bookmarks against the same results.
+        state.searchResults = state.searchResults.map((job) => ({
+          ...job,
+          isSaved: false,
+          isNew: false,
+        }));
       });
   },
 });
